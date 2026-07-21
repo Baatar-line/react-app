@@ -1,0 +1,199 @@
+// Big Bang — database schema, modeled after the hand-drawn ER diagram.
+//
+// A few things were corrected from the diagram (typos/copy-paste slips in the
+// original, not intentional design):
+//   - Place.aimagId was typed "Enum(user-host-admin)" in the diagram — that enum
+//     belongs to User.role. Here it's a proper relation to Aimag, matching how
+//     ScenicPin.aimagId and Event.aimagId are already modeled.
+//   - Place.lng was typed "Date" in the diagram (clearly a copy/paste slip from
+//     createdAt/updatedAt above it) — it's Float here, and `lat` was added since
+//     every other pinned model (ScenicPin, Event) has both lat and lng.
+//   - Place had its own "favorite Place[]" field, which doesn't make sense on
+//     Place itself (a place favoriting other places). Favoriting is modeled via
+//     the Favorite join table + User.favorites, matching the intent of
+//     User.favorite in the diagram.
+//   - Favorite.placeId is a plain String (not a hard FK) because a favorite can
+//     point at either a Place or a ScenicPin — same "s:<id>" vs "<id>" prefix
+//     convention already used on the frontend (see BigBang.tsx toggleFav).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  user
+  host
+  admin
+}
+
+enum PlaceStatus {
+  pending
+  approved
+  rejected
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  email       String   @unique
+  password    String
+  username    String   @unique
+  phoneNumber String?
+  role        Role     @default(user)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  profile    Profile?
+  places     Place[]     @relation("PlaceAddedBy")
+  scenicPins ScenicPin[] @relation("ScenicPinAddedBy")
+  favorites  Favorite[]
+
+  @@map("users")
+}
+
+model Profile {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  about           String?
+  avatarImage     String?
+  socialMediaURL  String?
+  backgroundImage String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("profiles")
+}
+
+// Generic favorite join table — placeId holds either a Place id or a
+// "s:<ScenicPin id>" reference, mirroring the frontend's existing convention.
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  placeId   String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, placeId])
+  @@map("favorites")
+}
+
+model Category {
+  id            Int      @id @default(autoincrement())
+  slug          String   @unique
+  name          String
+  nameEn        String
+  image         String?
+  subCategories String[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  places Place[]
+
+  @@map("categories")
+}
+
+model Aimag {
+  id              Int      @id @default(autoincrement())
+  name            String   @unique
+  nameEn          String
+  backgroundImage String?
+  geoShape        String?
+  labelX          Float?
+  labelY          Float?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  places     Place[]
+  scenicPins ScenicPin[]
+  events     Event[]
+
+  @@map("aimags")
+}
+
+model Place {
+  id           Int         @id @default(autoincrement())
+  name         String
+  description  String?
+  image        String?
+  categoryId   Int
+  category     Category    @relation(fields: [categoryId], references: [id])
+  aimagId      Int
+  aimag        Aimag       @relation(fields: [aimagId], references: [id])
+  lat          Float?
+  lng          Float?
+  openTime     String?
+  closeTime    String?
+  googleMapUrl String?
+  addedBy      Int
+  addedByUser  User        @relation("PlaceAddedBy", fields: [addedBy], references: [id])
+  status       PlaceStatus @default(pending)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@map("places")
+}
+
+model ScenicPin {
+  id           Int      @id @default(autoincrement())
+  name         String
+  type         String
+  description  String?
+  image        String?
+  aimagId      Int
+  aimag        Aimag    @relation(fields: [aimagId], references: [id])
+  lat          Float?
+  lng          Float?
+  googleMapUrl String?
+  addedBy      Int
+  addedByUser  User     @relation("ScenicPinAddedBy", fields: [addedBy], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("scenic_pins")
+}
+
+// Singleton row (id always 1) for site-wide settings that aren't tied to any
+// other model — the "Бидний тухай" hero background and the home screen's
+// default background (shown before any category/aimag is hovered/selected).
+model SiteSettings {
+  id                   Int      @id @default(1)
+  aboutBackgroundImage String?
+  homeBackgroundImage  String?
+  // Real flag photo/graphic for Mongolia's country shape on the 3D globe
+  // (Дэлхийн архив) — falls back to the procedural Soyombo drawing in
+  // globe-engine.js when this isn't set.
+  mongoliaFlagImage    String?
+  // Per-"Санал болгох" card background photo, keyed by the card's static slug
+  // (SUGGESTS in data.ts — games/movies/boardgame/...). A JSON map here instead
+  // of one column per slug since that list isn't a db table and can grow in
+  // code without a migration.
+  suggestBackgroundImages Json?
+  updatedAt            DateTime @updatedAt
+
+  @@map("site_settings")
+}
+
+model Event {
+  id        Int       @id @default(autoincrement())
+  name      String
+  tag       String?
+  meta      String?
+  image     String?
+  startDate DateTime
+  endDate   DateTime?
+  aimagId   Int
+  aimag     Aimag     @relation(fields: [aimagId], references: [id])
+  lat       Float?
+  lng       Float?
+  featured  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("events")
+}

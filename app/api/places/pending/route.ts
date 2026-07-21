@@ -1,0 +1,18 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '../../../../lib/prisma';
+import { requireAuth, requireRole, jsonError } from '../../../../lib/auth-helpers';
+
+export async function GET(request: Request) {
+  try {
+    const user = await requireAuth(request);
+    requireRole(user, 'admin');
+    const places = await prisma.place.findMany({
+      where: { status: 'pending' },
+      include: { category: true, aimag: true, addedByUser: { select: { id: true, username: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return NextResponse.json(places);
+  } catch (err) {
+    return jsonError(err);
+  }
+}
