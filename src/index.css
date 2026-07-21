@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #0b0a08;
+  font-family: 'Manrope', system-ui, sans-serif;
+}
+
+a {
+  color: #e8b77d;
+  text-decoration: none;
+}
+a:hover {
+  color: #f2d3a8;
+}
+
+/* hide horizontal-scroll bars used by rails */
+.bb-hscroll::-webkit-scrollbar {
+  display: none;
+}
+.bb-hscroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* globe button beside the Big Bang logo — always visible, lifts on hover */
+.bb-logo-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 13px;
+}
+.bb-globe-reveal {
+  transition: transform 0.28s cubic-bezier(0.34, 1.35, 0.5, 1), box-shadow 0.28s ease;
+}
+.bb-globe-reveal:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 9px 22px rgba(0, 0, 0, 0.5);
+}
+
+/* visually-impaired high-contrast + larger text mode */
+.bb-hc {
+  font-size: 150%;
+  letter-spacing: 0.005em;
+}
+.bb-hc button,
+.bb-hc h1,
+.bb-hc h2,
+.bb-hc p,
+.bb-hc span,
+.bb-hc div,
+.bb-hc input,
+.bb-hc select,
+.bb-hc textarea,
+.bb-hc label {
+  font-weight: 700 !important;
+}
+.bb-hc h1,
+.bb-hc h2 {
+  font-weight: 800 !important;
+}
+.bb-hc p,
+.bb-hc label span {
+  color: #f6f1e7 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+  }
+}
