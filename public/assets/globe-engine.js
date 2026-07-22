@@ -85,6 +85,7 @@
     this.raf = 0;
     this.alive = false;
     this.selName = null;
+    this.selLL = null;
     this.hovName = null;
     this.filter = null;
     this.pins = [];
@@ -422,7 +423,17 @@
     this.raycaster.setFromCamera(ndc, this.camera);
     var hit = this.raycaster.intersectObject(this.globe, false);
     if (!hit.length) return null;
-    return hit[0].point.clone().applyQuaternion(this.group.quaternion.clone().invert());
+    // The globe sits under tiltGroup -> group -> mesh (see updatePins, which
+    // applies both quaternions the same way going the other direction:
+    // .applyQuaternion(q).applyQuaternion(tq)). This only undid `group`'s
+    // rotation and ignored the 23.5° axial tilt entirely, so every pick was
+    // off by the current tilt angle — clicking Mongolia could resolve to a
+    // neighboring country instead, which then gets stuck selected since the
+    // miscalculation is consistent.
+    var p = hit[0].point.clone();
+    p.applyQuaternion(this.tiltGroup.quaternion.clone().invert());
+    p.applyQuaternion(this.group.quaternion.clone().invert());
+    return p;
   };
 
   GlobeEngine.prototype.countryAt = function (cx, cy) {
@@ -479,6 +490,7 @@
     }
     if (!ll) return;
     this.selName = name;
+    this.selLL = ll;
     this.hovName = null;
     this.targetTilt = this.uprightQuat.clone();   // straighten axis on select
     this._texDirty = true;
@@ -489,6 +501,7 @@
 
   GlobeEngine.prototype.clearSelection = function () {
     this.selName = null;
+    this.selLL = null;
     this.targetTilt = this.tiltQuat.clone();      // restore 23.5° tilt
     this._texDirty = true;
     this.targetZ = 3.2;
@@ -511,7 +524,23 @@
     var q = this.group.quaternion;
     var tq = this.tiltGroup.quaternion;
     var t = (performance.now() % 1600) / 1600;
-    if (!this.selName && this.nameLabel) this.nameLabel.style.opacity = "0";
+    // Driven directly by the actual selection (selName/selLL, set in
+    // selectByName for *any* of the ~180 real countries) instead of only the
+    // 15 curated `countries` pins below — that loop previously left the label
+    // showing whichever curated country was selected last (e.g. "Egypt")
+    // frozen in place whenever a non-curated country got picked afterwards,
+    // since nothing in the loop ever matched to update or clear it.
+    if (this.selName && this.selLL && this.nameLabel) {
+      var lwv = this.llToVec(this.selLL[0], this.selLL[1], 1.015).applyQuaternion(q).applyQuaternion(tq);
+      var lproj = lwv.clone().project(cam);
+      var lfront = lwv.z > 0;
+      this.nameLabel.textContent = this.selName;
+      this.nameLabel.style.left = (lproj.x * 0.5 + 0.5) * w + "px";
+      this.nameLabel.style.top = (-lproj.y * 0.5 + 0.5) * h + "px";
+      this.nameLabel.style.opacity = (lfront && this.selName !== "Mongolia") ? "1" : "0";
+    } else if (this.nameLabel) {
+      this.nameLabel.style.opacity = "0";
+    }
     for (var i = 0; i < this.pins.length; i++) {
       var p = this.pins[i];
       var selected = p.name === this.selName;
@@ -525,12 +554,6 @@
       var showBadge = bfront && !selected;
       p.badge.style.opacity = showBadge ? (dim ? "0.15" : "1") : "0";
       p.badge.style.pointerEvents = showBadge ? "auto" : "none";
-      if (selected && this.nameLabel) {
-        this.nameLabel.textContent = p.name;
-        this.nameLabel.style.left = (bproj.x * 0.5 + 0.5) * w + "px";
-        this.nameLabel.style.top = (-bproj.y * 0.5 + 0.5) * h + "px";
-        this.nameLabel.style.opacity = (bfront && p.name !== "Mongolia") ? "1" : "0";
-      }
       // scattered archive pins (only for selected country)
       for (var k = 0; k < p.dots.length; k++) {
         var d = p.dots[k];

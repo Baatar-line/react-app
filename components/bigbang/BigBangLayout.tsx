@@ -13,7 +13,7 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { Target, Users, Zap, Globe } from 'lucide-react';
 import { css, Hover } from './ui';
-import LanyardBadge from './LanyardBadge';
+import CreateForm, { CreateFormData } from '../CreateForm';
 import {
   U, ratingOf, STR, CATS, PINS, TEAM, EVENTS, SUGGESTS, TRAVEL_APPS, sitesFor, FEATURED_EVENT, AIMAGS, AIMAG_MN_SCRIPT,
   GEO_MN, LABEL_OFF, AIMAG_BG, PIN_OFFS, FCRIT, ACCESS_NAMES,
@@ -77,8 +77,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
     pin: -1, saved: {}, favs: {}, joined: {}, mapAimag: null, hoverAimag: null,
     spNeeds: false, bigText: false, globeCountry: null, globeHover: null, globeFilter: null,
     globeQuery: '', globeReady: false, myScenic: [], myEvents: [],
-    showScenicForm: false, sName: '', sDesc: '', sAimag: 'Улаанбаатар', sImg: '',
-    showEventForm: false, eName: '', eDate: '', eTime: '', eDesc: '', eTag: '', eImg: '',
+    showScenicForm: false,
+    showEventForm: false,
     userPins: [], showAddForm: false,
     fRole: 'host', fName: '', fCat: '', fSub: '', fAimag: 'Дорнод', fOpen: '', fClose: '',
     fDesc: '', fMapUrl: '', fImg: '', fLat: null, fLng: null, fPhone: '',
@@ -646,16 +646,31 @@ export default class BigBangLayout extends React.Component<Props, any> {
       }));
     };
 
-    const openScenicForm = () => this.setState({ showScenicForm: true, sName: '', sDesc: '', sAimag: 'Улаанбаатар', sImg: '', sErr: false });
-    const submitScenic = () => this.setState((s: any) => { if (!s.sName.trim()) return { sErr: true }; return { myScenic: [{ name: s.sName.trim(), aimag: s.sAimag, desc: s.sDesc.trim() || '—', img: s.sImg }].concat(s.myScenic), showScenicForm: false, sErr: false }; });
-    const openEventForm = () => this.setState({ showEventForm: true, eName: '', eDate: '', eTime: '', eDesc: '', eTag: '', eImg: '', eErr: false });
-    const submitEvent = () => this.setState((s: any) => {
-      if (!s.eName.trim()) return { eErr: true };
+    // Same shared "add place/scenic/event" modal Host and Admin use (map picker +
+    // what3words + satellite tiles included) instead of this layout's own hand-rolled
+    // scenic/event forms — see CreateForm.tsx.
+    const openScenicForm = () => this.setState({ showScenicForm: true });
+    const onScenicSubmit = (data: CreateFormData) => {
+      this.setState((s: any) => ({
+        myScenic: [{
+          name: data.name.trim(),
+          aimag: data.lat != null ? data.lat.toFixed(3) + ', ' + data.lng!.toFixed(3) : data.aimag,
+          desc: data.desc.trim() || '—',
+          img: data.images[0] || '',
+        }].concat(s.myScenic),
+        showScenicForm: false,
+      }));
+    };
+    const openEventForm = () => this.setState({ showEventForm: true });
+    const onEventSubmit = (data: CreateFormData) => {
       let day = '01', mon = L.eMonFallback;
-      if (s.eDate) { const d = new Date(s.eDate); if (!isNaN(+d)) { day = String(d.getDate()).padStart(2, '0'); mon = (d.getMonth() + 1) + (lang === 'en' ? '' : '-р сар'); } }
-      const meta = [s.eTime, s.eDesc.trim()].filter(Boolean).join(' · ') || '—';
-      return { myEvents: [{ day, mon, name: s.eName.trim(), meta, tag: s.eTag.trim() || L.eTagFallback, img: s.eImg }].concat(s.myEvents), showEventForm: false, eErr: false };
-    });
+      if (data.date) { const d = new Date(data.date); if (!isNaN(+d)) { day = String(d.getDate()).padStart(2, '0'); mon = (d.getMonth() + 1) + (lang === 'en' ? '' : '-р сар'); } }
+      const meta = [data.time, data.desc.trim()].filter(Boolean).join(' · ') || '—';
+      this.setState((s: any) => ({
+        myEvents: [{ day, mon, name: data.name.trim(), meta, tag: L.eTagFallback, img: data.images[0] || '' }].concat(s.myEvents),
+        showEventForm: false,
+      }));
+    };
     const readImg = (key: string) => (ev: any) => { const f = ev.target.files && ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => this.setState({ [key]: r.result }); r.readAsDataURL(f); };
     const evThumb = (img: any) => img ? 'url("' + img + '")' : 'linear-gradient(135deg, rgba(232, 184, 75,.25), rgba(120,200,170,.15))';
     const fe = FEATURED_EVENT;
@@ -733,14 +748,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       spSwBg: st.spNeeds ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.2)', spSwKnob: st.spNeeds ? '23px' : '3px',
       openScenicForm, closeScenicForm: () => this.setState({ showScenicForm: false }),
       openEventForm, closeEventForm: () => this.setState({ showEventForm: false }),
-      showScenicForm: st.showScenicForm, showEventForm: st.showEventForm, submitScenic, submitEvent,
-      sName: st.sName, onSName: setF('sName'), sDesc: st.sDesc, onSDesc: setF('sDesc'),
-      sAimag: st.sAimag, onSAimag: setF('sAimag'), onSImg: readImg('sImg'),
-      sImgPreview: st.sImg ? 'url("' + st.sImg + '")' : 'rgba(255,255,255,.04)', sNoImg: !st.sImg, sErr: !!st.sErr,
-      eName: st.eName, onEName: setF('eName'), eDate: st.eDate, onEDate: setF('eDate'),
-      eTime: st.eTime, onETime: setF('eTime'), eDesc: st.eDesc, onEDesc: setF('eDesc'),
-      eTag: st.eTag, onETag: setF('eTag'), onEImg: readImg('eImg'),
-      eImgPreview: st.eImg ? 'url("' + st.eImg + '")' : 'rgba(255,255,255,.04)', eNoImg: !st.eImg, eErr: !!st.eErr,
+      showScenicForm: st.showScenicForm, showEventForm: st.showEventForm, onScenicSubmit, onEventSubmit,
       hasMyScenic: st.myScenic.length > 0, myScenicItems: st.myScenic.map((s: any) => ({ ...s, thumb: evThumb(s.img) })),
       hasMyEvents: st.myEvents.length > 0, myEventItems: st.myEvents,
       aboutNavColor: route === 'about' ? accent : 'rgba(242,237,227,.75)',
@@ -771,7 +779,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       aimagBgOpacity: (aimagImg && this._lastAimagBg === aimagImg) ? 1 : 0,
       pickerSvg: this.buildPickerSvg(accent, lang, aimag === 'Бүгд' ? null : aimag, this.state.heroHover, false, this.state.bigText),
       pickerWrapRef: this.handlePickerWrapRef,
-      heroAimagLabel: aimag === 'Бүгд' ? L.locSub : aimagName(aimag, lang),
+      heroAimagLabel: aimag === 'Бүгд' ? '' : aimagName(aimag, lang),
       // Traditional (vertical) Mongolian script for the selected aimag — see
       // AIMAG_MN_SCRIPT in data.ts for the accuracy caveat on this transliteration.
       heroAimagVert: aimag !== 'Бүгд' && lang === 'mn' ? AIMAG_MN_SCRIPT[aimag] || '' : '',
@@ -850,11 +858,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
             <button onClick={V.goHome} style={css('all:unset;cursor:pointer;display:flex;align-items:center;position:relative;z-index:2')}>
               <span style={{ ...css("font-family:'Playfair Display',serif;font-style:italic;font-weight:700;letter-spacing:-0.01em;color:#f2ede3"), fontSize: V.isMobile ? 19 : 23 }}>Big Bang</span>
             </button>
-            {V.isHome && !V.isMobile && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                {['A', 'B', 'N', 'M', 'J'].map((ch, i) => <LanyardBadge key={i} letter={ch} />)}
-              </div>
-            )}
           </div>
 
           {V.isMobile ? (
@@ -949,93 +952,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
         <BigBangContext.Provider value={V}>{this.props.children}</BigBangContext.Provider>
 
-        {/* ══ SCENIC FORM MODAL ══ */}
-        {V.showScenicForm && (
-          <div onClick={V.closeScenicForm} style={css('position:fixed;inset:0;z-index:80;background:rgba(6,8,12,.72);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:36px;box-sizing:border-box;animation:bbFadeUp .25s ease both')}>
-            <div onClick={V.stop} style={css('width:480px;max-width:100%;max-height:88vh;overflow:auto;background:#171410;border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:26px 28px 28px;box-sizing:border-box;box-shadow:0 30px 80px rgba(0,0,0,.6)')}>
-              <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:20px')}>
-                <div style={css('font-size:18px;font-weight:800;letter-spacing:-0.02em;color:#f6f1e7')}>{V.L.scModalTitle}</div>
-                <button onClick={V.closeScenicForm} style={css('cursor:pointer;font-family:inherit;font-size:18px;line-height:1;width:32px;height:32px;border-radius:50%;border:1px solid rgba(242,237,227,.2);background:transparent;color:rgba(242,237,227,.75)')}>×</button>
-              </div>
-              <div style={css('display:flex;flex-direction:column;gap:15px')}>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.scName} <span style={css('color:#f08a8a')}>*</span></span>
-                  <input value={V.sName} onChange={V.onSName} placeholder={V.L.scNamePh} style={css('font-family:inherit;font-size:13.5px;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none')} />
-                </label>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.fAimag}</span>
-                  <select value={V.sAimag} onChange={V.onSAimag} style={css('font-family:inherit;font-size:13px;padding:11px 10px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none')}>
-                    {V.aimagFormOpts.map((o: any) => <option key={o.value} value={o.value} style={{ background: '#1a1712', color: '#f2ede3' }}>{o.label}</option>)}
-                  </select>
-                </label>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.scDesc}</span>
-                  <textarea value={V.sDesc} onChange={V.onSDesc} rows={2} placeholder={V.L.scDescPh} style={css('font-family:inherit;font-size:13px;line-height:1.5;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none;resize:vertical')}></textarea>
-                </label>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.fImg}</span>
-                  <Hover as="label" s={`display:flex;align-items:center;justify-content:center;height:110px;border-radius:12px;border:1.5px dashed rgba(242,237,227,.25);background:${V.sImgPreview};background-size:cover;background-position:center;cursor:pointer`} h="border-color:var(--accent,#E8B84B)">
-                    {V.sNoImg && <span style={css('font-size:12.5px;color:rgba(242,237,227,.5)')}>{V.L.fImgPh}</span>}
-                    <input type="file" accept="image/*" onChange={V.onSImg} style={{ display: 'none' }} />
-                  </Hover>
-                </label>
-                <div style={css('display:flex;align-items:center;gap:12px;margin-top:4px')}>
-                  <button onClick={V.submitScenic} style={css('cursor:pointer;font-family:inherit;font-size:13px;font-weight:800;padding:11px 28px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f')}>{V.L.scSave}</button>
-                  <button onClick={V.closeScenicForm} style={css('cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;padding:10px 20px;border-radius:999px;border:1px solid rgba(242,237,227,.25);background:transparent;color:rgba(242,237,227,.7)')}>{V.L.cancel}</button>
-                  {V.sErr && <span style={css('font-size:11.5px;font-weight:700;color:#f08a8a')}>{V.L.errName}</span>}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ══ EVENT FORM MODAL ══ */}
-        {V.showEventForm && (
-          <div onClick={V.closeEventForm} style={css('position:fixed;inset:0;z-index:80;background:rgba(6,8,12,.72);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:36px;box-sizing:border-box;animation:bbFadeUp .25s ease both')}>
-            <div onClick={V.stop} style={css('width:480px;max-width:100%;max-height:88vh;overflow:auto;background:#171410;border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:26px 28px 28px;box-sizing:border-box;box-shadow:0 30px 80px rgba(0,0,0,.6)')}>
-              <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:20px')}>
-                <div style={css('font-size:18px;font-weight:800;letter-spacing:-0.02em;color:#f6f1e7')}>{V.L.evModalTitle}</div>
-                <button onClick={V.closeEventForm} style={css('cursor:pointer;font-family:inherit;font-size:18px;line-height:1;width:32px;height:32px;border-radius:50%;border:1px solid rgba(242,237,227,.2);background:transparent;color:rgba(242,237,227,.75)')}>×</button>
-              </div>
-              <div style={css('display:flex;flex-direction:column;gap:15px')}>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.evName} <span style={css('color:#f08a8a')}>*</span></span>
-                  <input value={V.eName} onChange={V.onEName} placeholder={V.L.evNamePh} style={css('font-family:inherit;font-size:13.5px;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none')} />
-                </label>
-                <div style={css('display:grid;grid-template-columns:1.3fr 1fr;gap:10px')}>
-                  <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                    <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.evDate}</span>
-                    <input type="date" value={V.eDate} onChange={V.onEDate} style={css('font-family:inherit;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none;color-scheme:dark')} />
-                  </label>
-                  <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                    <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.evTime}</span>
-                    <input type="time" value={V.eTime} onChange={V.onETime} style={css('font-family:inherit;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none;color-scheme:dark')} />
-                  </label>
-                </div>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.evTag}</span>
-                  <input value={V.eTag} onChange={V.onETag} placeholder={V.L.evTagPh} style={css('font-family:inherit;font-size:13.5px;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none')} />
-                </label>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.scDesc}</span>
-                  <textarea value={V.eDesc} onChange={V.onEDesc} rows={2} placeholder={V.L.evDescPh} style={css('font-family:inherit;font-size:13px;line-height:1.5;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none;resize:vertical')}></textarea>
-                </label>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>{V.L.fImg}</span>
-                  <Hover as="label" s={`display:flex;align-items:center;justify-content:center;height:110px;border-radius:12px;border:1.5px dashed rgba(242,237,227,.25);background:${V.eImgPreview};background-size:cover;background-position:center;cursor:pointer`} h="border-color:var(--accent,#E8B84B)">
-                    {V.eNoImg && <span style={css('font-size:12.5px;color:rgba(242,237,227,.5)')}>{V.L.fImgPh}</span>}
-                    <input type="file" accept="image/*" onChange={V.onEImg} style={{ display: 'none' }} />
-                  </Hover>
-                </label>
-                <div style={css('display:flex;align-items:center;gap:12px;margin-top:4px')}>
-                  <button onClick={V.submitEvent} style={css('cursor:pointer;font-family:inherit;font-size:13px;font-weight:800;padding:11px 28px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f')}>{V.L.evSave}</button>
-                  <button onClick={V.closeEventForm} style={css('cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;padding:10px 20px;border-radius:999px;border:1px solid rgba(242,237,227,.25);background:transparent;color:rgba(242,237,227,.7)')}>{V.L.cancel}</button>
-                  {V.eErr && <span style={css('font-size:11.5px;font-weight:700;color:#f08a8a')}>{V.L.errName}</span>}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Same shared modal Host/Admin use — map picker, what3words, satellite tiles included. */}
+        {V.showScenicForm && <CreateForm kind="scenic" onClose={V.closeScenicForm} onSubmit={V.onScenicSubmit} />}
+        {V.showEventForm && <CreateForm kind="event" onClose={V.closeEventForm} onSubmit={V.onEventSubmit} />}
       </div>
     );
   }

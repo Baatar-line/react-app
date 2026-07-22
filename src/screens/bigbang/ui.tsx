@@ -28,11 +28,26 @@ export function css(decl?: string): React.CSSProperties {
     const rawProp = part.slice(0, idx).trim();
     const value = part.slice(idx + 1).trim();
     if (!rawProp || value === '') continue;
-    // -webkit-foo -> WebkitFoo ; foo-bar -> fooBar
+    // -webkit-foo -> WebkitFoo ; -ms-foo -> msFoo ; foo-bar -> fooBar
     const prop = rawProp
       .replace(/^-ms-/, 'ms-')
+      .replace(/^-(webkit|moz|o)-/, (_, p) => `${p[0].toUpperCase()}${p.slice(1)}-`)
       .replace(/^-/, '')
-      .replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      .replace(/-([a-zA-Z])/g, (_, c) => c.toUpperCase());
+    if (prop === 'border') {
+      // Always split the shorthand into its longhand parts. `Hover` (below)
+      // concatenates a base `s` string with a `border:` decl and a `h`/`f`/`a`
+      // string that overrides just `border-color:` — parsed as two separate
+      // keys, that leaves `border` and `borderColor` both set while hovered
+      // but only `border` once it's not, which is exactly the shorthand vs.
+      // longhand conflict React's setValueForStyles warns about on removal.
+      // Longhand-only keeps the key set identical across every state.
+      const m = value.match(/^(\S+)\s+(\S+)\s+(.+)$/);
+      if (m) {
+        out.borderWidth = m[1]; out.borderStyle = m[2]; out.borderColor = m[3];
+        continue;
+      }
+    }
     out[prop] = value;
   }
   return out as React.CSSProperties;

@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  // Dev-only "N" badge (+ its green build-activity glow) in the corner —
+  // not part of the app, just the framework's own dev overlay.
+  devIndicators: false,
 };
 
 export default nextConfig;

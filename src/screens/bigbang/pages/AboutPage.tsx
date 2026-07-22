@@ -92,7 +92,7 @@ export default function AboutPage() {
               to ~1px and the next section would render right through the
               hanging cards. min-height reserves roughly ring + cord + card
               so the page below doesn't overlap them. */}
-          <div style={css('display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;gap:32px;padding-top:8px;min-height:260px')}>
+          <div style={css('display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;gap:32px;padding-top:8px;min-height:300px')}>
             {V.team.map((tm: any, i: number) => (
               <LanyardBadge key={i} large letter={tm.initial} name={tm.name} role={tm.role} color={tm.avatarBg} />
             ))}

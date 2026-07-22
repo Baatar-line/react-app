@@ -27,6 +27,9 @@ type Props = {
   duration?: number;
   className?: string;
   style?: React.CSSProperties;
+  /** Optional full-bleed photo behind the grid/footprints (admin-set via the
+   * "Ачаалж буй дэлгэцийн фон" tab) — falls back to the plain dark gradient below. */
+  backgroundImage?: string;
 };
 
 // ---- tunables -------------------------------------------------------------
@@ -106,7 +109,7 @@ function buildTrails(w: number, h: number): Foot[] {
   return feet;
 }
 
-export default function MarauderLoader({ loop = true, onFinish, duration = 5000, className, style }: Props) {
+export default function MarauderLoader({ loop = true, onFinish, duration = 5000, className, style, backgroundImage }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const finishRef = useRef(onFinish);
   finishRef.current = onFinish;
@@ -172,7 +175,12 @@ export default function MarauderLoader({ loop = true, onFinish, duration = 5000,
     <div ref={wrapRef} className={`mloader${className ? ' ' + className : ''}`} style={style}>
       <style>{CSS}</style>
 
-      <div className="mloader__grid" />
+      {backgroundImage && (
+        <div
+          className="mloader__photo"
+          style={{ backgroundImage: `linear-gradient(rgba(5,6,4,.48), rgba(5,6,4,.62)), url("${backgroundImage}")` }}
+        />
+      )}
 
       <svg
         className={`mloader__trail${fading ? ' fade' : ''}`}
@@ -239,13 +247,9 @@ const CSS = `
   animation:ml-candle 7s ease-in-out infinite;
 }
 @keyframes ml-candle{ 0%,100%{opacity:.85;} 50%{opacity:1;} }
-.mloader__grid{
-  position:absolute; inset:-2px; z-index:0; pointer-events:none; opacity:.5;
-  background-image:
-    repeating-linear-gradient(0deg, rgba(232,236,226,.035) 0 1px, transparent 1px 92px),
-    repeating-linear-gradient(90deg, rgba(232,236,226,.035) 0 1px, transparent 1px 92px);
-  -webkit-mask-image:radial-gradient(120% 120% at 50% 50%, #000 55%, transparent 92%);
-          mask-image:radial-gradient(120% 120% at 50% 50%, #000 55%, transparent 92%);
+.mloader__photo{
+  position:absolute; inset:0; z-index:0; background-size:cover; background-position:center;
+  pointer-events:none;
 }
 .mloader__trail{ position:absolute; inset:0; width:100%; height:100%; z-index:2; transition:opacity .8s ease; }
 .mloader__trail.fade{ opacity:0; }

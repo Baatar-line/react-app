@@ -13,9 +13,13 @@ export default function SuggestPage() {
     <section data-screen-label="Санал болгох" style={{ ...css('min-height:100vh;box-sizing:border-box'), padding: V.isMobile ? '96px 18px 40px' : '110px 48px 60px' }}>
       <div style={css('margin-bottom:40px')}>
         <h2 style={css('margin:0 0 14px;font-size:18px;font-weight:800;letter-spacing:-0.02em;color:#f2ede3')}>{V.L.topRowTitle}</h2>
-        <div className="bb-hscroll" style={css('display:flex;gap:16px;overflow-x:auto;padding-bottom:6px')}>
+        {/* overflow-x:auto here forces overflow-y to compute as 'auto' too (CSS
+            spec — you can't leave one axis 'visible' once the other isn't),
+            so a card's hover lift (translateY(-8px) below) got clipped by the
+            row's own top edge with zero padding-top to absorb it. */}
+        <div className="bb-hscroll" style={css('display:flex;gap:16px;overflow-x:auto;padding-top:12px;padding-bottom:6px')}>
           {V.topItems.filter(Boolean).map((it: any, i: number) => (
-            <Hover key={i} onClick={it.onClick} s="flex:0 0 220px;position:relative;aspect-ratio:4/5;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:transform .3s cubic-bezier(.22,.8,.3,1)" h="transform:translateY(-4px)">
+            <Hover key={i} onClick={it.onClick} s="flex:0 0 220px;position:relative;aspect-ratio:4/5;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.1);cursor:pointer;transition:transform .3s cubic-bezier(.22,.8,.3,1)" h="transform:translateY(-8px)">
               <div style={{ position: 'absolute', inset: 0, backgroundImage: it.thumb, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
               <div style={css('position:absolute;inset:0;background:linear-gradient(180deg, rgba(0,0,0,.1) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,.92) 100%)')}></div>
               <span style={css('position:absolute;top:10px;left:10px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:4px 10px;border-radius:999px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.2);color:var(--accent,#E8B84B)')}>{it.kind}</span>
@@ -50,23 +54,6 @@ export default function SuggestPage() {
               <button onClick={s.toggle} style={{ ...css('cursor:pointer;font-family:inherit;align-self:flex-start;margin-top:4px;font-size:12.5px;font-weight:700;padding:9px 22px;border-radius:999px;transition:all .25s'), border: `1px solid ${s.saveBorder}`, background: s.saveBg, color: s.saveColor }}>{s.saveLabel}</button>
             </div>
           </Hover>
-        ))}
-      </div>
-
-      {/* ── QUICK PICKS — a few isometric 3D-style icons for the vibes this
-          page is themed around; the illustrations are original SVG, not
-          the reference photo pack, and don't wire to a route yet. ── */}
-      <div style={css('display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px;margin-bottom:16px')}>
-        {[
-          { kind: 'chess' as const, label: 'Шатар / Board game' },
-          { kind: 'gaming' as const, label: 'PC gaming' },
-          { kind: 'controller' as const, label: 'Тоглоом' },
-          { kind: 'movie' as const, label: 'Кино vзэх' },
-        ].map((q, i) => (
-          <div key={i} style={css('display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px 10px;border-radius:16px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);text-align:center')}>
-            <Isometric3DIcon kind={q.kind} size={48} />
-            <span style={css('font-size:11.5px;font-weight:700;color:rgba(242,237,227,.75)')}>{q.label}</span>
-          </div>
         ))}
       </div>
 

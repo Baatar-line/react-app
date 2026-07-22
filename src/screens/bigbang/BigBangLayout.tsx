@@ -10,7 +10,6 @@ import React from 'react';
 import { Link, Outlet, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { Target, Users, Zap, Globe } from 'lucide-react';
 import { css, Hover } from './ui';
-import LanyardBadge from './LanyardBadge';
 import {
   U, ratingOf, STR, CATS, PINS, TEAM, EVENTS, SUGGESTS, TRAVEL_APPS, sitesFor, FEATURED_EVENT, AIMAGS, AIMAG_MN_SCRIPT,
   GEO_MN, LABEL_OFF, AIMAG_BG, PIN_OFFS, FCRIT, ACCESS_NAMES,
@@ -763,7 +762,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       aimagBgOpacity: (aimagImg && this._lastAimagBg === aimagImg) ? 1 : 0,
       pickerSvg: this.buildPickerSvg(accent, lang, aimag === 'Бүгд' ? null : aimag, this.state.heroHover, false, this.state.bigText),
       pickerWrapRef: this.handlePickerWrapRef,
-      heroAimagLabel: aimag === 'Бүгд' ? L.locSub : aimagName(aimag, lang),
+      heroAimagLabel: aimag === 'Бүгд' ? '' : aimagName(aimag, lang),
       // Traditional (vertical) Mongolian script for the selected aimag — see
       // AIMAG_MN_SCRIPT in data.ts for the accuracy caveat on this transliteration.
       heroAimagVert: aimag !== 'Бүгд' && lang === 'mn' ? AIMAG_MN_SCRIPT[aimag] || '' : '',
@@ -842,11 +841,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
             <button onClick={V.goHome} style={css('all:unset;cursor:pointer;display:flex;align-items:center;position:relative;z-index:2')}>
               <span style={{ ...css("font-family:'Playfair Display',serif;font-style:italic;font-weight:700;letter-spacing:-0.01em;color:#f2ede3"), fontSize: V.isMobile ? 19 : 23 }}>Big Bang</span>
             </button>
-            {V.isHome && !V.isMobile && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                {['A', 'B', 'N', 'M', 'J'].map((ch, i) => <LanyardBadge key={i} letter={ch} />)}
-              </div>
-            )}
           </div>
 
           {V.isMobile ? (

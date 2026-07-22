@@ -22,6 +22,7 @@ export interface CreateFormData {
   sub?: string;
   access?: boolean;
   phone?: string;
+  social?: string;
   openTime?: string;
   closeTime?: string;
   icon?: string;
@@ -56,6 +57,7 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
   const [desc, setDesc] = useState('');
   const [aimag, setAimag] = useState('Улаанбаатар');
   const [phone, setPhone] = useState('');
+  const [social, setSocial] = useState('');
   const [catSlug, setCatSlug] = useState(CATS[0].slug);
   const [sub, setSub] = useState(CATS[0].subs[0]);
   const [openTime, setOpenTime] = useState('');
@@ -70,6 +72,9 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [err, setErr] = useState(false);
+  const [w3w, setW3w] = useState('');
+  const [w3wLoading, setW3wLoading] = useState(false);
+  const [w3wErr, setW3wErr] = useState('');
 
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -86,6 +91,46 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
     }).addTo(mapRef.current);
   }, []);
 
+  // Alternative to clicking the map: paste a what3words address (or full
+  // what3words.com URL) and resolve it to coordinates via the backend proxy
+  // (keeps the API key server-side — see app/api/what3words/route.ts).
+  const lookupW3w = useCallback(async () => {
+    if (!w3w.trim()) return;
+    setW3wLoading(true);
+    setW3wErr('');
+    try {
+      // Plain fetch (not apiGet) so a non-2xx response's { error: "..." } body
+      // — e.g. the "add W3W_API_KEY to .env.local" message — reaches the user
+      // instead of collapsing into a generic "failed: 500".
+      const res = await fetch(`/api/what3words?words=${encodeURIComponent(w3w.trim())}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || 'Хайлт амжилтгүй боллоо');
+      setLat(body.lat); setLng(body.lng);
+      placeMarker(body.lat, body.lng);
+      if (mapRef.current) mapRef.current.setView([body.lat, body.lng], 17);
+    } catch (e) {
+      setW3wErr(e instanceof Error ? e.message : 'Хайлт амжилтгүй боллоо');
+    } finally {
+      setW3wLoading(false);
+    }
+  }, [w3w, placeMarker]);
+
+  // The other direction: clicking the map (like on Google Maps) also fills in
+  // the what3words address for that exact spot, so the two stay in sync
+  // whichever way a location gets picked.
+  const reverseW3w = useCallback(async (lt: number, lg: number) => {
+    setW3wErr('');
+    try {
+      const res = await fetch(`/api/what3words?lat=${lt}&lng=${lg}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || 'Хайлт амжилтгүй боллоо');
+      setW3w(body.words);
+    } catch {
+      // Silent — the pin + lat/lng are already set from the click itself;
+      // only the convenience what3words label failed to fill in.
+    }
+  }, []);
+
   const attachMap = useCallback((node: HTMLDivElement | null) => {
     if (!node) {
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; markerRef.current = null; }
@@ -97,13 +142,20 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
       if (!window.L) { setTimeout(init, 150); return; }
       const m = window.L.map(node, { attributionControl: false });
       m.setView([47.918, 106.917], 6);
-      window.L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 19 }).addTo(m);
-      m.on('click', (ev: any) => { setLat(ev.latlng.lat); setLng(ev.latlng.lng); placeMarker(ev.latlng.lat, ev.latlng.lng); });
+      // lyrs=y — Google's "hybrid" tiles (satellite photo + roads/place labels),
+      // same look as the satellite mode toggle on maps.google.com. Was lyrs=m
+      // (flat roadmap).
+      window.L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 19 }).addTo(m);
+      m.on('click', (ev: any) => {
+        setLat(ev.latlng.lat); setLng(ev.latlng.lng);
+        placeMarker(ev.latlng.lat, ev.latlng.lng);
+        reverseW3w(ev.latlng.lat, ev.latlng.lng);
+      });
       mapRef.current = m;
       setTimeout(() => m.invalidateSize(), 150);
     };
     init();
-  }, [placeMarker]);
+  }, [placeMarker, reverseW3w]);
 
   const onImgFile = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const f = ev.target.files && ev.target.files[0];
@@ -122,7 +174,7 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
     const data: CreateFormData = { kind, name: name.trim(), desc: desc.trim(), aimag, images, lat, lng };
     if (kind === 'place') {
       data.catName = curCat.name; data.sub = sub; data.access = access && crit.every(Boolean);
-      data.phone = phone.trim(); data.openTime = openTime; data.closeTime = closeTime;
+      data.phone = phone.trim(); data.social = social.trim(); data.openTime = openTime; data.closeTime = closeTime;
     } else if (kind === 'scenic') {
       data.icon = icon;
     } else {
@@ -152,6 +204,10 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
               <label style={css('display:flex;flex-direction:column;gap:6px')}>
                 <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Утасны дугаар</span>
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="99112233" inputMode="numeric" style={{ ...css('font-family:inherit;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: inputFont }} />
+              </label>
+              <label style={css('display:flex;flex-direction:column;gap:6px')}>
+                <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Instagram / Facebook</span>
+                <input value={social} onChange={(e) => setSocial(e.target.value)} placeholder="Ж: instagram.com/skylounge21" style={{ ...css('font-family:inherit;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: inputFont }} />
               </label>
               <div style={{ ...css('display:grid;gap:12px'), gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
                 <label style={css('display:flex;flex-direction:column;gap:6px')}>
@@ -222,9 +278,22 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
 
           <div style={css('display:flex;flex-direction:column;gap:6px')}>
             <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Байршил (заавал биш)</span>
+            <div style={css('display:flex;gap:8px')}>
+              <input
+                value={w3w}
+                onChange={(e) => { setW3w(e.target.value); setW3wErr(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupW3w(); } }}
+                placeholder="what3words: ///hydration.pounces.loose"
+                style={{ ...css('flex:1;min-width:0;font-family:inherit;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: inputFont }}
+              />
+              <Hover as="button" onClick={lookupW3w} s={`cursor:pointer;font-family:inherit;flex-shrink:0;padding:0 18px;border-radius:10px;border:1px solid rgba(242,237,227,.22);background:rgba(255,255,255,.04);color:rgba(242,237,227,.9);font-weight:700;font-size:${inputFont};transition:all .2s`} h="border-color:var(--accent,#E8B84B);color:var(--accent,#E8B84B)">
+                {w3wLoading ? '...' : 'Олох'}
+              </Hover>
+            </div>
+            {w3wErr && <div style={css('font-size:11.5px;color:#f08a8a')}>{w3wErr}</div>}
             <div style={css('position:relative;height:200px;border-radius:12px;overflow:hidden;border:1px solid rgba(242,237,227,.14);background:#1a2534')}>
               <div ref={attachMap} style={css('position:absolute;inset:0;cursor:crosshair')}></div>
-              <div style={css('position:absolute;left:10px;bottom:8px;z-index:500;font-size:10.5px;font-weight:700;color:#fff;background:rgba(10,12,16,.72);padding:4px 10px;border-radius:999px;pointer-events:none')}>{lat != null ? 'Байршил тэмдэглэгдлээ ✓' : 'Газрын зураг дээр дарж пин тэмдэглэнэ үү'}</div>
+              <div style={css('position:absolute;left:10px;bottom:8px;z-index:500;font-size:10.5px;font-weight:700;color:#fff;background:rgba(10,12,16,.72);padding:4px 10px;border-radius:999px;pointer-events:none')}>{lat != null ? `Байршил тэмдэглэгдлээ ✓${w3w ? ' · ///' + w3w : ''}` : 'Газрын зураг дээр дарж, эсвэл what3words хаягаар байршил тэмдэглэнэ үү'}</div>
             </div>
           </div>
 

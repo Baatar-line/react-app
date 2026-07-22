@@ -5,8 +5,8 @@
 // Reuses the same brand data/helpers as BigBang (categories, aimags, accessibility
 // criteria, image URL builder) instead of redefining them, and shares the
 // place/scenic/event creation modal with HostProfile via shared/CreateForm.
-import React, { useEffect, useState } from 'react';
-import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, Film, type LucideIcon } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, Film, Search, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
 import { css, Hover, useIsMobile } from '@/components/bigbang/ui';
 import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, U, imgUrl, isVideoUrl } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
@@ -53,6 +53,23 @@ const NAV: { key: Tab; icon: LucideIcon; label: string }[] = [
   { key: 'bg', icon: ImageIcon, label: 'Фон зураг' },
   { key: 'ads', icon: Megaphone, label: 'Зар сурталчилгаа' },
 ];
+// Grouped + collapsible sidebar (was one flat list) — each group gets a small
+// uppercase label, same "Navigate / More" pattern as the reference dashboard.
+const NAV_GROUPS: { label: string; keys: Tab[] }[] = [
+  { label: 'Удирдах самбар', keys: ['dash'] },
+  { label: 'Агуулга', keys: ['places', 'scenic', 'events', 'suggests'] },
+  { label: 'Тохиргоо', keys: ['bg', 'ads'] },
+];
+// What ⌘K search filters per tab — a name/title getter for that tab's list(s)
+// plus the placeholder copy shown in the search box.
+const SEARCH_PLACEHOLDER: Partial<Record<Tab, string>> = {
+  places: 'Газар хайх...',
+  scenic: 'Үзэсгэлэнт газар хайх...',
+  events: 'Эвент хайх...',
+  suggests: 'Дэд карт хайх...',
+  bg: 'Фон хайх...',
+  ads: 'Зар хайх...',
+};
 
 const CAT_BG_DEFS: [string, string][] = CATS.map((c) => [c.name, c.hero]);
 const ALL_AIMAGS = AIMAGS.map((a) => a[0]);
@@ -62,6 +79,23 @@ const thumb = (img: string) => 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)),
 export default function AdminPanel() {
   const isMobile = useIsMobile();
   const [tab, setTab] = useState<Tab>('dash');
+  const [sbCollapsed, setSbCollapsed] = useState(false);
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const matches = (name: string) => !query.trim() || name.toLowerCase().includes(query.trim().toLowerCase());
+
+  // ⌘K / Ctrl+K jumps to the search box, same shortcut as the reference dashboard.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // Search is per-tab (it's filtering that tab's own list, not a cross-app
+  // index), so switching tabs clears whatever was typed for the last one.
+  useEffect(() => { setQuery(''); }, [tab]);
+
   const [placeDecisions, setPlaceDecisions] = useState<Record<number, 'ok' | 'no'>>({});
   const [eventDecisions, setEventDecisions] = useState<Record<number, 'ok' | 'no'>>({});
   const [ads, setAds] = useState<Ad[]>(INITIAL_ADS);
@@ -93,7 +127,7 @@ export default function AdminPanel() {
   const [sgImg, setSgImg] = useState('');
   const [sgErr, setSgErr] = useState(false);
 
-  const [bgSub, setBgSub] = useState<'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest'>('cat');
+  const [bgSub, setBgSub] = useState<'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader'>('cat');
   // Seeded with the same local defaults as before so the tab isn't empty while the
   // backend fetch below is in flight; the effect then attaches real ids + latest
   // saved images so edits actually PATCH/PUT the right row and survive a refresh.
@@ -110,6 +144,8 @@ export default function AdminPanel() {
   // background photo per static SUGGESTS slug, stored as a slug→url JSON map on
   // the settings row since that list isn't a db table of its own.
   const [suggestBg, setSuggestBg] = useState<BgItem[]>(() => SUGGESTS.map((s) => ({ slug: s.slug, name: s.title, type: 'image' as const, src: U(s.img, 900) })));
+  // Full-bleed photo behind the Marauder's-map loading screen shown on first load.
+  const [loaderBg, setLoaderBg] = useState<BgItem[]>(() => [{ name: 'Ачаалж буй дэлгэцийн фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1800) }]);
   const [bgSyncError, setBgSyncError] = useState('');
   const [bgUploading, setBgUploading] = useState(false);
 
@@ -120,7 +156,7 @@ export default function AdminPanel() {
         const [cats, aimags, settings] = await Promise.all([
           apiGet<{ id: number; name: string; image: string | null }[]>('/categories'),
           apiGet<{ id: number; name: string; backgroundImage: string | null }[]>('/aimags'),
-          apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null }>('/settings'),
+          apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; loaderBackgroundImage: string | null }>('/settings'),
         ]);
         if (cancelled) return;
         setCatBg((prev) => prev.map((it) => {
@@ -152,6 +188,9 @@ export default function AdminPanel() {
             return { ...it, src: saved, type: isVideoUrl(saved) ? 'video' : 'image' };
           }));
         }
+        if (settings.loaderBackgroundImage) {
+          setLoaderBg((prev) => [{ ...prev[0], src: settings.loaderBackgroundImage as string, type: isVideoUrl(settings.loaderBackgroundImage as string) ? 'video' : 'image' }]);
+        }
       } catch {
         if (!cancelled) setBgSyncError('Backend-тэй холбогдож чадсангүй — локал жишээ өгөгдөл харагдаж байна.');
       }
@@ -160,7 +199,7 @@ export default function AdminPanel() {
   }, []);
 
   const [bgEditOpen, setBgEditOpen] = useState(false);
-  const [bgEditKind, setBgEditKind] = useState<'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest'>('cat');
+  const [bgEditKind, setBgEditKind] = useState<'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader'>('cat');
   const [bgEditIdx, setBgEditIdx] = useState(-1);
   const [bgDraftType, setBgDraftType] = useState<'image' | 'video'>('image');
   const [bgDraftSrc, setBgDraftSrc] = useState('');
@@ -188,11 +227,11 @@ export default function AdminPanel() {
     setSharedFormOpen(false);
   };
 
-  const bgArrFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest') => (kind === 'aimag' ? aimagBg : kind === 'about' ? aboutBg : kind === 'home' ? homeBg : kind === 'flag' ? flagBg : kind === 'suggest' ? suggestBg : catBg);
-  const bgSetterFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest') => (kind === 'aimag' ? setAimagBg : kind === 'about' ? setAboutBg : kind === 'home' ? setHomeBg : kind === 'flag' ? setFlagBg : kind === 'suggest' ? setSuggestBg : setCatBg);
-  const bgLabelFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest') => (kind === 'aimag' ? 'Аймгийн фон' : kind === 'about' ? 'Тухай хуудасны фон' : kind === 'home' ? 'Нүүр хуудасны фон' : kind === 'flag' ? 'Монгол улсын дэлбээ' : kind === 'suggest' ? 'Санал болгохын фон' : 'Ангиллын фон');
+  const bgArrFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader') => (kind === 'aimag' ? aimagBg : kind === 'about' ? aboutBg : kind === 'home' ? homeBg : kind === 'flag' ? flagBg : kind === 'suggest' ? suggestBg : kind === 'loader' ? loaderBg : catBg);
+  const bgSetterFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader') => (kind === 'aimag' ? setAimagBg : kind === 'about' ? setAboutBg : kind === 'home' ? setHomeBg : kind === 'flag' ? setFlagBg : kind === 'suggest' ? setSuggestBg : kind === 'loader' ? setLoaderBg : setCatBg);
+  const bgLabelFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader') => (kind === 'aimag' ? 'Аймгийн фон' : kind === 'about' ? 'Тухай хуудасны фон' : kind === 'home' ? 'Нүүр хуудасны фон' : kind === 'flag' ? 'Монгол улсын дэлбээ' : kind === 'suggest' ? 'Санал болгохын фон' : kind === 'loader' ? 'Ачаалж буй дэлгэцийн фон' : 'Ангиллын фон');
 
-  const openBgEdit = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest', idx: number) => {
+  const openBgEdit = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader', idx: number) => {
     const cur = bgArrFor(kind)[idx];
     setBgEditKind(kind); setBgEditIdx(idx); setBgDraftType(cur.type); setBgDraftSrc(cur.src); setBgEditOpen(true);
   };
@@ -205,6 +244,7 @@ export default function AdminPanel() {
       else if (bgEditKind === 'about') await apiPut('/settings', { aboutBackgroundImage: bgDraftSrc });
       else if (bgEditKind === 'home') await apiPut('/settings', { homeBackgroundImage: bgDraftSrc });
       else if (bgEditKind === 'flag') await apiPut('/settings', { mongoliaFlagImage: bgDraftSrc });
+      else if (bgEditKind === 'loader') await apiPut('/settings', { loaderBackgroundImage: bgDraftSrc });
       else if (bgEditKind === 'suggest' && item.slug) {
         const map: Record<string, string> = {};
         suggestBg.forEach((it) => { if (it.slug) map[it.slug] = it.src; });
@@ -284,41 +324,89 @@ export default function AdminPanel() {
     <div style={{ ...css(isMobile ? 'display:flex;flex-direction:column;min-height:100vh;color:#f2ede3' : 'display:flex;height:100vh;overflow:hidden;color:#f2ede3'), background: '#0b0a08', fontFamily: "'Manrope', sans-serif" }}>
       <aside style={isMobile
         ? css('width:100%;flex-shrink:0;display:flex;align-items:center;gap:6px;padding:10px 12px;box-sizing:border-box;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.08);overflow-x:auto')
-        : css('width:240px;flex-shrink:0;display:flex;flex-direction:column;gap:6px;padding:26px 16px;box-sizing:border-box;background:rgba(255,255,255,.03);border-right:1px solid rgba(255,255,255,.08)')
+        : { ...css('flex-shrink:0;display:flex;flex-direction:column;box-sizing:border-box;background:rgba(255,255,255,.03);border-right:1px solid rgba(255,255,255,.08);transition:width .2s ease'), width: sbCollapsed ? 76 : 240, padding: sbCollapsed ? '26px 12px' : '26px 16px' }
       }>
-        <div style={css(`display:flex;align-items:center;gap:10px;flex-shrink:0;padding:${isMobile ? '0 10px 0 0' : '0 10px 22px'}`)}>
-          <div style={css('width:32px;height:32px;border-radius:9px;background:var(--accent,#E8B84B);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#132a1f')}>b</div>
-          {!isMobile && (
-            <div>
+        <div style={css(`display:flex;align-items:center;gap:8px;flex-shrink:0;padding:${isMobile ? '0 10px 0 0' : sbCollapsed ? '0 0 22px' : '0 4px 22px'};justify-content:${!isMobile && sbCollapsed ? 'center' : 'flex-start'}`)}>
+          <div style={css('width:32px;height:32px;border-radius:9px;background:var(--accent,#E8B84B);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#132a1f;flex-shrink:0')}>b</div>
+          {!isMobile && !sbCollapsed && (
+            <div style={css('flex:1;min-width:0')}>
               <div style={css('font-size:14.5px;font-weight:800;letter-spacing:-0.02em')}>big bang</div>
               <div style={css('font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:rgba(242,237,227,.45)')}>admin panel</div>
             </div>
           )}
-        </div>
-        {NAV.map((n) => {
-          const on = tab === n.key;
-          const badge = n.key === 'places' ? pendingPlaces : n.key === 'events' ? pendingEvents : 0;
-          return (
-            <Hover key={n.key} as="button" onClick={() => setTab(n.key)} s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:${isMobile ? '7' : '11'}px;font-size:${isMobile ? '12' : '13'}px;font-weight:700;text-align:left;white-space:nowrap;flex-shrink:0;padding:${isMobile ? '9px 12px' : '11px 14px'};border-radius:11px;border:none;background:${on ? 'var(--accent,#E8B84B)' : 'transparent'};color:${on ? '#132a1f' : 'rgba(242,237,227,.8)'};transition:all .2s`} h={on ? undefined : 'background:rgba(255,255,255,.07)'}>
-              <n.icon size={16} />
-              <span>{n.label}</span>
-              {badge > 0 && <span style={{ ...css('margin-left:auto;font-size:10.5px;font-weight:800;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:999px'), background: on ? 'rgba(0,0,0,.25)' : 'rgba(232, 184, 75,.2)', color: on ? '#132a1f' : 'var(--accent,#E8B84B)' }}>{badge}</span>}
+          {!isMobile && (
+            <Hover as="button" onClick={() => setSbCollapsed((v) => !v)} title={sbCollapsed ? 'Цэсийг дэлгэх' : 'Цэсийг хумих'} s="cursor:pointer;font-family:inherit;flex-shrink:0;width:26px;height:26px;border-radius:8px;border:none;background:transparent;color:rgba(242,237,227,.5);display:flex;align-items:center;justify-content:center;transition:all .2s" h="background:rgba(255,255,255,.08);color:rgba(242,237,227,.9)">
+              {sbCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
             </Hover>
-          );
-        })}
-        {!isMobile && (
-          <div style={css('margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 10px;border-top:1px solid rgba(255,255,255,.08)')}>
-            <div style={css('width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#E8B84B,#b57f42);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#132a1f')}>А</div>
-            <div>
-              <div style={css('font-size:12px;font-weight:700')}>Админ</div>
-              <div style={css('font-size:10.5px;color:rgba(242,237,227,.45)')}>admin@bigbang.mn</div>
+          )}
+        </div>
+
+        {isMobile ? (
+          NAV.map((n) => {
+            const on = tab === n.key;
+            const badge = n.key === 'places' ? pendingPlaces : n.key === 'events' ? pendingEvents : 0;
+            return (
+              <Hover key={n.key} as="button" onClick={() => setTab(n.key)} s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;text-align:left;white-space:nowrap;flex-shrink:0;padding:9px 12px;border-radius:11px;border:none;background:${on ? 'var(--accent,#E8B84B)' : 'transparent'};color:${on ? '#132a1f' : 'rgba(242,237,227,.8)'};transition:all .2s`} h={on ? undefined : 'background:rgba(255,255,255,.07)'}>
+                <n.icon size={16} />
+                <span>{n.label}</span>
+                {badge > 0 && <span style={{ ...css('margin-left:auto;font-size:10.5px;font-weight:800;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:999px'), background: on ? 'rgba(0,0,0,.25)' : 'rgba(232, 184, 75,.2)', color: on ? '#132a1f' : 'var(--accent,#E8B84B)' }}>{badge}</span>}
+              </Hover>
+            );
+          })
+        ) : (
+          NAV_GROUPS.map((g) => (
+            <div key={g.label} style={css('display:flex;flex-direction:column;gap:2px;margin-bottom:10px')}>
+              {!sbCollapsed && <div style={css('font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:rgba(242,237,227,.35);padding:8px 10px 6px')}>{g.label}</div>}
+              {g.keys.map((k) => {
+                const n = NAV.find((x) => x.key === k)!;
+                const on = tab === n.key;
+                const badge = n.key === 'places' ? pendingPlaces : n.key === 'events' ? pendingEvents : 0;
+                return (
+                  <Hover key={n.key} as="button" onClick={() => setTab(n.key)} title={sbCollapsed ? n.label : undefined}
+                    s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:11px;justify-content:${sbCollapsed ? 'center' : 'flex-start'};font-size:13px;font-weight:700;text-align:left;white-space:nowrap;padding:${sbCollapsed ? '11px' : '11px 14px'};border-radius:11px;border:none;background:${on ? 'var(--accent,#E8B84B)' : 'transparent'};color:${on ? '#132a1f' : 'rgba(242,237,227,.8)'};transition:all .2s;position:relative`}
+                    h={on ? undefined : 'background:rgba(255,255,255,.07)'}>
+                    <n.icon size={16} />
+                    {!sbCollapsed && <span>{n.label}</span>}
+                    {badge > 0 && (sbCollapsed
+                      ? <span style={{ position: 'absolute', top: 6, right: 6, width: 7, height: 7, borderRadius: '50%', background: on ? '#132a1f' : 'var(--accent,#E8B84B)' }} />
+                      : <span style={{ ...css('margin-left:auto;font-size:10.5px;font-weight:800;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:999px'), background: on ? 'rgba(0,0,0,.25)' : 'rgba(232, 184, 75,.2)', color: on ? '#132a1f' : 'var(--accent,#E8B84B)' }}>{badge}</span>)}
+                  </Hover>
+                );
+              })}
             </div>
+          ))
+        )}
+
+        {!isMobile && (
+          <div style={css(`margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 10px;border-top:1px solid rgba(255,255,255,.08);justify-content:${sbCollapsed ? 'center' : 'flex-start'}`)}>
+            <div style={css('width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#E8B84B,#b57f42);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#132a1f;flex-shrink:0')}>А</div>
+            {!sbCollapsed && (
+              <div>
+                <div style={css('font-size:12px;font-weight:700')}>Админ</div>
+                <div style={css('font-size:10.5px;color:rgba(242,237,227,.45)')}>admin@bigbang.mn</div>
+              </div>
+            )}
           </div>
         )}
       </aside>
 
       <main style={css(`flex:1;overflow:auto;box-sizing:border-box;padding:${isMobile ? '16px 16px 40px' : '32px 36px 60px'}`)}>
-        <div style={css('display:flex;align-items:center;justify-content:flex-end;gap:16px;margin-bottom:16px')}>
+        <div style={css('display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap')}>
+          {tab !== 'dash' ? (
+            <div style={{ ...css('position:relative;flex:1;min-width:200px;max-width:340px'), }}>
+              <Search size={14} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'rgba(242,237,227,.4)', pointerEvents: 'none' }} />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={SEARCH_PLACEHOLDER[tab] || 'Хайх...'}
+                style={{ ...css('width:100%;box-sizing:border-box;font-family:inherit;color:#f2ede3;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:9px 13px 9px 36px;outline:none'), fontSize: isMobile ? '16px' : '12.5px' }}
+              />
+              {!isMobile && (
+                <span style={css('position:absolute;right:10px;top:50%;transform:translateY(-50%);font-family:ui-monospace,Menlo,monospace;font-size:10px;font-weight:700;color:rgba(242,237,227,.35);border:1px solid rgba(255,255,255,.16);border-radius:5px;padding:2px 6px;pointer-events:none')}>⌘K</span>
+              )}
+            </div>
+          ) : <div />}
           {tab === 'ads' && <Hover as="button" onClick={openAdForm} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)"><span style={css('font-size:15px;line-height:1')}>+</span>Зар нэмэх</Hover>}
           {tab === 'places' && <Hover as="button" onClick={() => openSharedForm('place')} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)"><span style={css('font-size:15px;line-height:1')}>+</span>Газар нэмэх</Hover>}
           {tab === 'scenic' && <Hover as="button" onClick={() => openSharedForm('scenic')} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)"><span style={css('font-size:15px;line-height:1')}>+</span>Үзэсгэлэнт газар үүсгэх</Hover>}
@@ -341,22 +429,22 @@ export default function AdminPanel() {
               <div style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.03);overflow:hidden')}>
                 <div style={css('padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);font-size:13.5px;font-weight:800')}>Сүүлд ирсэн хүсэлтүүд</div>
                 {recentReqs.map((r, i) => (
-                  <div key={i} style={css('display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid rgba(255,255,255,.05);font-size:12.5px')}>
+                  <Hover key={i} as="div" s="display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid rgba(255,255,255,.05);font-size:12.5px" h="background:rgba(255,255,255,.04)">
                     <span style={{ ...css('width:6px;height:6px;border-radius:50%;flex-shrink:0'), background: r.dot }}></span>
                     <span style={css('font-weight:700')}>{r.name}</span>
                     <span style={css('color:rgba(242,237,227,.45)')}>{r.kind}</span>
                     <span style={css('margin-left:auto;color:rgba(242,237,227,.4);font-size:11.5px')}>{r.when}</span>
-                  </div>
+                  </Hover>
                 ))}
               </div>
               <div style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.03);overflow:hidden')}>
                 <div style={css('padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);font-size:13.5px;font-weight:800')}>Идэвхтэй зарууд</div>
                 {activeAds.map((a, i) => (
-                  <div key={i} style={css('display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid rgba(255,255,255,.05);font-size:12.5px')}>
+                  <Hover key={i} as="div" s="display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid rgba(255,255,255,.05);font-size:12.5px" h="background:rgba(255,255,255,.04)">
                     <div style={{ ...css('width:44px;height:30px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: thumb(a.img) }}></div>
                     <span style={css('font-weight:700')}>{a.title}</span>
                     <span style={css('margin-left:auto;color:var(--accent,#E8B84B);font-weight:800;font-size:11.5px')}>{a.views.toLocaleString()} үзэлт</span>
-                  </div>
+                  </Hover>
                 ))}
               </div>
             </div>
@@ -369,7 +457,7 @@ export default function AdminPanel() {
               <div style={css('margin-bottom:22px')}>
                 <div style={rowLabel}>Админаас нэмсэн газрууд</div>
                 <div style={css('display:flex;flex-direction:column;gap:12px')}>
-                  {createdPlaces.map((p, i) => (
+                  {createdPlaces.filter((p) => matches(p.name)).map((p, i) => (
                     <div key={i} style={css('display:flex;gap:16px;align-items:center;border:1px solid rgba(232, 184, 75,.28);border-radius:16px;padding:14px;background:rgba(232, 184, 75,.05)')}>
                       <div style={{ ...css('width:120px;height:74px;border-radius:11px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: thumb(p.img) }}></div>
                       <div style={css('flex:1;min-width:0')}>
@@ -388,10 +476,10 @@ export default function AdminPanel() {
             )}
             <div style={rowLabel}>Host-уудын илгээсэн хүсэлт</div>
             <div style={css('display:flex;flex-direction:column;gap:14px')}>
-              {PLACE_REQS.map((p, i) => {
+              {PLACE_REQS.map((p, i) => ({ p, i })).filter(({ p }) => matches(p.name)).map(({ p, i }) => {
                 const dec = placeDecisions[i];
                 return (
-                  <div key={i} style={css('display:flex;gap:16px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:14px;background:rgba(255,255,255,.03)')}>
+                  <Hover key={i} as="div" s="display:flex;gap:16px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:14px;background:rgba(255,255,255,.03);transition:border-color .2s" h="border-color:rgba(242,237,227,.28)">
                     <div style={{ ...css('width:120px;height:84px;border-radius:11px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: thumb(p.img) }}></div>
                     <div style={css('flex:1;min-width:0')}>
                       <div style={css('display:flex;align-items:center;gap:10px')}>
@@ -408,7 +496,7 @@ export default function AdminPanel() {
                       </div>
                     )}
                     {dec && <span style={{ ...css('flex-shrink:0;font-size:12px;font-weight:800;padding:7px 16px;border-radius:999px'), background: dec === 'ok' ? 'rgba(168,213,162,.15)' : 'rgba(240,138,138,.14)', color: dec === 'ok' ? '#a8d5a2' : '#f08a8a' }}>{dec === 'ok' ? 'Батлагдсан ✓' : 'Татгалзсан'}</span>}
-                  </div>
+                  </Hover>
                 );
               })}
             </div>
@@ -417,7 +505,7 @@ export default function AdminPanel() {
 
         {tab === 'scenic' && (
           <div style={css('display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px')}>
-            {scenicList.map((s, i) => (
+            {scenicList.filter((s) => matches(s.name)).map((s, i) => (
               <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)')}>
                 <div style={{ ...css('position:relative;aspect-ratio:16/9;background-size:cover;background-position:center'), backgroundImage: thumb(s.img) }}>
                   <span style={css('position:absolute;left:10px;top:10px;font-size:18px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.24)')}>{s.icon}</span>
@@ -438,7 +526,7 @@ export default function AdminPanel() {
               <div style={css('margin-bottom:22px')}>
                 <div style={rowLabel}>Админаас үүсгэсэн эвентүүд</div>
                 <div style={css('display:flex;flex-direction:column;gap:12px')}>
-                  {adminEvents.map((ev, i) => (
+                  {adminEvents.filter((ev) => matches(ev.name)).map((ev, i) => (
                     <div key={i} style={css('display:flex;gap:16px;align-items:center;border:1px solid rgba(232, 184, 75,.28);border-radius:16px;padding:14px;background:rgba(232, 184, 75,.05)')}>
                       <div style={{ ...css('width:96px;height:64px;border-radius:11px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: thumb(ev.img) }}></div>
                       <div style={css('width:56px;flex-shrink:0;text-align:center;padding:8px 0;border-radius:11px;background:rgba(232, 184, 75,.14);border:1px solid rgba(232, 184, 75,.35)')}>
@@ -460,10 +548,10 @@ export default function AdminPanel() {
             )}
             <div style={rowLabel}>Host-уудын илгээсэн хүсэлт</div>
             <div style={css('display:flex;flex-direction:column;gap:14px')}>
-              {EVENT_REQS.map((ev, i) => {
+              {EVENT_REQS.map((ev, i) => ({ ev, i })).filter(({ ev }) => matches(ev.name)).map(({ ev, i }) => {
                 const dec = eventDecisions[i];
                 return (
-                  <div key={i} style={css('display:flex;gap:16px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:14px;background:rgba(255,255,255,.03)')}>
+                  <Hover key={i} as="div" s="display:flex;gap:16px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:14px;background:rgba(255,255,255,.03);transition:border-color .2s" h="border-color:rgba(242,237,227,.28)">
                     <div style={css('width:56px;flex-shrink:0;text-align:center;padding:8px 0;border-radius:11px;background:rgba(232, 184, 75,.12);border:1px solid rgba(232, 184, 75,.3)')}>
                       <div style={css('font-size:20px;font-weight:800;color:var(--accent,#E8B84B);line-height:1')}>{ev.day}</div>
                       <div style={css('font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(242,237,227,.6);margin-top:3px')}>{ev.mon}</div>
@@ -482,7 +570,7 @@ export default function AdminPanel() {
                       </div>
                     )}
                     {dec && <span style={{ ...css('flex-shrink:0;font-size:12px;font-weight:800;padding:7px 16px;border-radius:999px'), background: dec === 'ok' ? 'rgba(168,213,162,.15)' : 'rgba(240,138,138,.14)', color: dec === 'ok' ? '#a8d5a2' : '#f08a8a' }}>{dec === 'ok' ? 'Зөвшөөрсөн ✓' : 'Татгалзсан'}</span>}
-                  </div>
+                  </Hover>
                 );
               })}
             </div>
@@ -503,7 +591,7 @@ export default function AdminPanel() {
               })}
             </div>
             <div style={css('display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px')}>
-              {(suggestCollections[suggestActiveSlug] || []).map((it, i) => (
+              {(suggestCollections[suggestActiveSlug] || []).filter((it) => matches(it.name)).map((it, i) => (
                 <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)')}>
                   <div style={{ ...css('position:relative;aspect-ratio:16/10;background-size:cover;background-position:center'), backgroundImage: thumb(it.img) }}></div>
                   <div style={css('padding:13px 15px 15px')}>
@@ -525,15 +613,16 @@ export default function AdminPanel() {
               <button onClick={() => setBgSub('home')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'home' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'home' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'home' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Нүүр хуудасны фон · {homeBg.length}</button>
               <button onClick={() => setBgSub('flag')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'flag' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'flag' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'flag' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Монголын дэлбээ (Глобус) · {flagBg.length}</button>
               <button onClick={() => setBgSub('suggest')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'suggest' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'suggest' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'suggest' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Санал болгохын фон · {suggestBg.length}</button>
+              <button onClick={() => setBgSub('loader')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'loader' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'loader' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'loader' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Ачаалж буй дэлгэцийн фон · {loaderBg.length}</button>
             </div>
             <div style={css('font-size:12px;color:rgba(242,237,227,.5);margin-bottom:16px;max-width:640px;line-height:1.5')}>
-              {bgSub === 'cat' ? 'Хэрэглэгч ангилал сонгоход арын фонд харагдах зураг. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'aimag' ? '21 аймаг + Нийслэлийн арын фон. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'home' ? 'Ямар ч ангилал, аймаг сонгоогүй үед нүүр хуудсанд анхнаас нь харагдах фон зураг.' : bgSub === 'flag' ? '"Дэлхийн архив" 3D глобус дээр Монголыг сонгоход харагдах жинхэнэ дэлбээний зураг (зөвхөн зураг, видео биш) — оруулаагүй бол автоматаар зурсан Соёмбо харагдана.' : bgSub === 'suggest' ? 'Нүүр хуудасны "Санал болгох" том картуудын арын дэвсгэр зураг/бичлэг.' : '"Бидний тухай" хуудасны үндсэн дэвсгэр зураг.'}
+              {bgSub === 'cat' ? 'Хэрэглэгч ангилал сонгоход арын фонд харагдах зураг. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'aimag' ? '21 аймаг + Нийслэлийн арын фон. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'home' ? 'Ямар ч ангилал, аймаг сонгоогүй үед нүүр хуудсанд анхнаас нь харагдах фон зураг.' : bgSub === 'flag' ? '"Дэлхийн архив" 3D глобус дээр Монголыг сонгоход харагдах жинхэнэ дэлбээний зураг (зөвхөн зураг, видео биш) — оруулаагүй бол автоматаар зурсан Соёмбо харагдана.' : bgSub === 'suggest' ? 'Нүүр хуудасны "Санал болгох" том картуудын арын дэвсгэр зураг/бичлэг.' : bgSub === 'loader' ? 'Апп анх ачаалж байх үеийн Marauder\'s Map дэлгэцийн арын дэвсгэр зураг — оруулаагүй бол өнөөгийн бараан градиент харагдана.' : '"Бидний тухай" хуудасны үндсэн дэвсгэр зураг.'}
             </div>
             {bgSyncError && (
               <div style={css('font-size:11.5px;color:#f08a8a;margin-bottom:16px;padding:10px 14px;border-radius:10px;border:1px dashed rgba(240,138,138,.4);background:rgba(240,138,138,.06);max-width:640px')}>{bgSyncError}</div>
             )}
             <div style={css('display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px')}>
-              {bgArrFor(bgSub).map((it, i) => (
+              {bgArrFor(bgSub).map((it, i) => ({ it, i })).filter(({ it }) => matches(it.name)).map(({ it, i }) => (
                 <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)')}>
                   <div style={css('position:relative;aspect-ratio:16/10;overflow:hidden;background:#0b0a08')}>
                     {it.type === 'video' ? (
@@ -555,7 +644,7 @@ export default function AdminPanel() {
 
         {tab === 'ads' && (
           <div style={css('display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px')}>
-            {ads.map((a, i) => (
+            {ads.map((a, i) => ({ a, i })).filter(({ a }) => matches(a.title)).map(({ a, i }) => (
               <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)')}>
                 <div style={{ ...css('position:relative;aspect-ratio:16/8;background-size:cover;background-position:center'), backgroundImage: thumb(a.img) }}>
                   <span style={{ ...css('position:absolute;left:10px;top:10px;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:999px'), background: a.active ? 'rgba(168,213,162,.85)' : 'rgba(120,120,120,.8)', color: a.active ? '#132a1f' : '#fff' }}>{a.active ? 'Идэвхтэй' : 'Идэвхгүй'}</span>

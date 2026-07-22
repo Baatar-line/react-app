@@ -65,13 +65,6 @@ export default function Home() {
       {!V.isMobile && (
         <>
           <div style={css('position:absolute;left:30%;right:30px;top:100px;bottom:150px;z-index:6;display:flex;flex-direction:column;gap:10px')}>
-            <div style={css('display:flex;align-items:baseline;gap:12px;justify-content:flex-end')}>
-              <span style={css('font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:rgba(242,237,227,.4)')}>{V.L.locTitle}</span>
-              <span style={css('font-size:12.5px;font-weight:700;color:var(--accent,#E8B84B)')}>{V.heroAimagLabel}</span>
-              {V.heroAimagVert && (
-                <span style={{ writingMode: 'vertical-lr', fontFamily: "'Mongolian Baiti','Menksoft Tigst',sans-serif", fontSize: 15, color: 'rgba(242,237,227,.55)', height: 18 } as any} title="Уламжлалт бичиг — AI орчуулга, шалгагдаагvй">{V.heroAimagVert}</span>
-              )}
-            </div>
             <div ref={V.pickerWrapRef} style={css('position:relative;flex:1;min-height:0')}>
               {V.pickerSvg}
               {V.heroVertLabel && V.heroVertPos && (

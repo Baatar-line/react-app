@@ -45,7 +45,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
   const cordRef = useRef<SVGPathElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const cardW = large ? 128 : 29;
+  const cardW = large ? 104 : 29;
 
   useEffect(() => {
     const anchor = anchorRef.current;
@@ -56,7 +56,10 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
 
     const ringOffsetX = large ? cardW / 2 : 14; // ring sits centered over the anchor slot either way
     // The card's own footprint (see the `large` JSX below — must match).
-    const cardHeight = large ? 172 : 37;
+    const cardHeight = large ? 140 : 37;
+    // Large (About-page) cards hang from a noticeably longer cord than the
+    // tiny nav badge — same segment count, just stretched rest-length.
+    const segLen = large ? SEG_LEN * 2.2 : SEG_LEN;
     // Nudge halo wraps the whole card body, not just its pivot point at the
     // top — with a fixed small radius the ~170px-tall About-page cards only
     // reacted when the cursor passed within a few px of their very top edge,
@@ -92,7 +95,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
       if (dragging) return;
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
-        p.x = anchorX; p.y = anchorY + i * SEG_LEN;
+        p.x = anchorX; p.y = anchorY + i * segLen;
         p.ox = p.x; p.oy = p.y;
       }
       spin = 0; spinVel = 0;
@@ -102,7 +105,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
 
     const pts: Pt[] = [];
     for (let i = 0; i < SEGMENTS; i++) {
-      const y = anchorY + i * SEG_LEN;
+      const y = anchorY + i * segLen;
       pts.push({ x: anchorX, y, ox: anchorX, oy: y });
     }
 
@@ -199,7 +202,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
           const a = pts[i], b = pts[i + 1];
           const dx = b.x - a.x, dy = b.y - a.y;
           const dist = Math.hypot(dx, dy) || 0.0001;
-          const diff = (dist - SEG_LEN) / dist;
+          const diff = (dist - segLen) / dist;
           const bPinned = i + 1 === last && dragTarget;
           if (i === 0 && bPinned) continue;
           if (i === 0) { b.x -= dx * diff; b.y -= dy * diff; }
@@ -258,7 +261,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
         spin = 0; spinVel = 0;
         for (let i = 1; i < pts.length; i++) {
           const p = pts[i];
-          p.x = anchorX; p.y = anchorY + i * SEG_LEN;
+          p.x = anchorX; p.y = anchorY + i * segLen;
           p.ox = p.x; p.oy = p.y;
         }
         render();
@@ -356,7 +359,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
 
   const anchorW = large ? cardW : 28;
   const ringLeft = large ? cardW / 2 - 4 : 10; // centers the 8px ring on the anchor slot
-  const cardH = large ? 172 : 37;
+  const cardH = large ? 140 : 37;
 
   return (
     <div ref={anchorRef} style={{ position: 'relative', width: anchorW, height: 1, flex: 'none', zIndex: 1, pointerEvents: 'none' }}>
@@ -384,22 +387,22 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
             border: '1px solid rgba(255,255,255,.22)',
             boxShadow: '0 14px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.16)',
             display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
-            padding: '18px 10px 16px', gap: 10,
+            padding: '14px 8px 12px', gap: 8,
           } as React.CSSProperties}>
             <div style={{ width: '62%', height: 2, borderRadius: 1, background: 'var(--accent,#E8B84B)', opacity: .85 }} />
             <div style={{
-              width: 56, height: 56, borderRadius: '50%', background: color || 'var(--accent,#E8B84B)',
+              width: 46, height: 46, borderRadius: '50%', background: color || 'var(--accent,#E8B84B)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 19, fontWeight: 800, color: '#14100b', marginTop: 4,
+              fontSize: 16, fontWeight: 800, color: '#14100b', marginTop: 3,
               boxShadow: '0 0 0 3px rgba(255,255,255,.09), 0 4px 10px rgba(0,0,0,.4)',
             }}>{letter}</div>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{name}</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,.65)', marginTop: 4 }}>{role}</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{name}</div>
+              <div style={{ fontSize: 9, color: 'rgba(255,255,255,.65)', marginTop: 3 }}>{role}</div>
             </div>
             <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
-              <span style={{ width: 16, height: 1.6, borderRadius: 1, background: 'rgba(255,255,255,.28)' }} />
-              <span style={{ width: 11, height: 1.6, borderRadius: 1, background: 'rgba(255,255,255,.16)' }} />
+              <span style={{ width: 13, height: 1.6, borderRadius: 1, background: 'rgba(255,255,255,.28)' }} />
+              <span style={{ width: 9, height: 1.6, borderRadius: 1, background: 'rgba(255,255,255,.16)' }} />
             </div>
           </div>
         ) : (
