@@ -6,7 +6,6 @@ import React, { useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Accessibility, Heart, MapPin, Phone } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { css, Hover } from '@/components/bigbang/ui';
 import { CATS, U, ratingOf, isAccessible, aimagName, mapsUrlFor, FCRIT } from '@/components/bigbang/data';
 
 export default function PlaceDetail() {
@@ -50,67 +49,74 @@ export default function PlaceDetail() {
   ];
 
   return (
-    <section data-screen-label="Газрын дэлгэрэнгүй" style={{ ...css('min-height:100vh;box-sizing:border-box'), padding: V.isMobile ? '88px 18px 40px' : '96px 48px 60px' }}>
-      <Hover as="button" onClick={() => router.push('/category/' + cat.slug)} s="all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:rgba(242,237,227,.6);margin-bottom:26px;transition:color .25s" h="color:var(--accent,#E8B84B)">{L.back}</Hover>
-      <div style={css(V.isTablet ? 'display:flex;flex-direction:column;gap:28px' : 'display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:48px;align-items:start')}>
-        <div style={css(`${V.isTablet ? 'position:static' : 'position:sticky;top:96px'};display:flex;flex-direction:column;gap:10px`)}>
-          <div style={css('position:relative;aspect-ratio:4/3;max-height:420px;border-radius:22px;overflow:hidden;border:1px solid rgba(255,255,255,.1)')}>
-            <div style={{ position: 'absolute', inset: 0, backgroundImage: mainImg, backgroundSize: 'cover', backgroundPosition: 'center', transition: 'background-image .3s ease' }}></div>
+    <section data-screen-label="Газрын дэлгэрэнгүй" className="box-border min-h-screen" style={{ padding: V.isMobile ? '88px 18px 40px' : '96px 48px 60px' }}>
+      <button onClick={() => router.push('/category/' + cat.slug)} className="mb-[26px] inline-flex cursor-pointer items-center gap-2 border-0 bg-transparent text-[13px] font-semibold text-[rgba(242,237,227,.6)] transition-colors duration-[250ms] hover:text-[var(--accent,#E8B84B)]">{L.back}</button>
+      <div className={V.isTablet ? 'flex flex-col gap-7' : 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] items-start gap-12'}>
+        <div className={(V.isTablet ? 'static' : 'sticky top-24') + ' flex flex-col gap-2.5'}>
+          <div className="relative aspect-[4/3] max-h-[420px] overflow-hidden rounded-[22px] border border-[rgba(255,255,255,.1)]">
+            <div className="absolute inset-0 bg-cover bg-center transition-[background-image] duration-300 ease-in-out" style={{ backgroundImage: mainImg }}></div>
           </div>
-          <div style={css('display:flex;gap:10px')}>
+          <div className="flex gap-2.5">
             {gallery.map((id: string, k: number) => (
-              <Hover as="button" key={k} onClick={() => setPdImgIdx(k)} s={`cursor:pointer;flex:1;aspect-ratio:4/3;max-height:96px;padding:0;border-radius:12px;overflow:hidden;border:1.5px solid ${k === sel ? accent : 'rgba(255,255,255,.14)'};background:url("${U(id, 300)}");background-size:cover;background-position:center;opacity:${k === sel ? 1 : 0.6};transition:all .2s`} h="opacity:1"></Hover>
+              <button
+                key={k}
+                onClick={() => setPdImgIdx(k)}
+                className={`aspect-[4/3] max-h-24 flex-1 cursor-pointer overflow-hidden rounded-xl p-0 transition-all duration-200 hover:opacity-100 ${k === sel ? 'opacity-100' : 'opacity-60'}`}
+                style={{ border: `1.5px solid ${k === sel ? accent : 'rgba(255,255,255,.14)'}`, background: `url("${U(id, 300)}")`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+              ></button>
             ))}
           </div>
         </div>
         <div>
-          <h1 style={css('margin:0;font-size:clamp(32px,3.4vw,50px);font-weight:800;letter-spacing:-0.03em;line-height:1.08;color:#f2ede3')}>{it.name}</h1>
-          <div style={css('display:flex;flex-wrap:wrap;gap:8px;margin-top:18px')}>
-            <span style={css('font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;border:1px solid rgba(242,237,227,.2);color:rgba(242,237,227,.8)')}>{it.sub}</span>
-            <span style={css('font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;border:1px solid rgba(242,237,227,.2);color:rgba(242,237,227,.8)')}>{catName}</span>
-            <span style={css('font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;border:1px solid rgba(242,237,227,.2);color:rgba(242,237,227,.8)')}>{aimagName(aimag, lang)}</span>
-            <span style={{ ...css('align-items:center;gap:6px;font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;background:rgba(120,200,170,.16);border:1px solid rgba(120,200,170,.5);color:#8fd6c6'), display: access ? 'inline-flex' : 'none' }}><Accessibility size={13} /> {L.pdAccess}</span>
+          <h1 className="m-0 text-[clamp(32px,3.4vw,50px)] font-extrabold leading-[1.08] tracking-[-0.03em] text-cream">{it.name}</h1>
+          <div className="mt-[18px] flex flex-wrap gap-2">
+            <span className="rounded-full border border-[rgba(242,237,227,.2)] py-1.5 px-3.5 text-xs font-bold text-[rgba(242,237,227,.8)]">{it.sub}</span>
+            <span className="rounded-full border border-[rgba(242,237,227,.2)] py-1.5 px-3.5 text-xs font-bold text-[rgba(242,237,227,.8)]">{catName}</span>
+            <span className="rounded-full border border-[rgba(242,237,227,.2)] py-1.5 px-3.5 text-xs font-bold text-[rgba(242,237,227,.8)]">{aimagName(aimag, lang)}</span>
+            <span className={access
+              ? 'inline-flex items-center gap-1.5 rounded-full border border-[rgba(120,200,170,.5)] bg-[rgba(120,200,170,.16)] py-1.5 px-3.5 text-xs font-bold text-[#8fd6c6]'
+              : 'hidden items-center gap-1.5 rounded-full border border-[rgba(120,200,170,.5)] bg-[rgba(120,200,170,.16)] py-1.5 px-3.5 text-xs font-bold text-[#8fd6c6]'}><Accessibility size={13} /> {L.pdAccess}</span>
           </div>
-          <div style={css('display:flex;gap:26px;margin-top:24px;flex-wrap:wrap')}>
-            <div style={css('display:flex;align-items:center;gap:11px')}>
-              <span style={css('width:44px;height:44px;border-radius:50%;border:1px solid rgba(232, 184, 75,.4);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--accent,#E8B84B)')}>★</span>
-              <span style={css('display:flex;flex-direction:column')}><span style={css('font-size:15px;font-weight:800;color:#f2ede3')}>{rating}</span><span style={css('font-size:11px;color:rgba(242,237,227,.5)')}>{L.pdRating}</span></span>
+          <div className="mt-6 flex flex-wrap gap-[26px]">
+            <div className="flex items-center gap-[11px]">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[rgba(232,184,75,.4)] text-base text-[var(--accent,#E8B84B)]">★</span>
+              <span className="flex flex-col"><span className="text-[15px] font-extrabold text-cream">{rating}</span><span className="text-[11px] text-[rgba(242,237,227,.5)]">{L.pdRating}</span></span>
             </div>
-            <div style={css('display:flex;align-items:center;gap:11px')}>
-              <span style={css('width:44px;height:44px;border-radius:50%;border:1px solid rgba(232, 184, 75,.4);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--accent,#E8B84B)')}>◷</span>
-              <span style={css('display:flex;flex-direction:column')}><span style={css('font-size:15px;font-weight:800;color:#f2ede3')}>{hours}</span><span style={css('font-size:11px;color:rgba(242,237,227,.5)')}>{L.pdHours}</span></span>
+            <div className="flex items-center gap-[11px]">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[rgba(232,184,75,.4)] text-base text-[var(--accent,#E8B84B)]">◷</span>
+              <span className="flex flex-col"><span className="text-[15px] font-extrabold text-cream">{hours}</span><span className="text-[11px] text-[rgba(242,237,227,.5)]">{L.pdHours}</span></span>
             </div>
-            <div style={css('display:flex;align-items:center;gap:11px')}>
-              <span style={css('width:44px;height:44px;border-radius:50%;border:1px solid rgba(232, 184, 75,.4);display:flex;align-items:center;justify-content:center;color:var(--accent,#E8B84B)')}><Phone size={17} /></span>
-              <span style={css('display:flex;flex-direction:column')}><span style={css('font-size:15px;font-weight:800;color:#f2ede3')}>{phone}</span><span style={css('font-size:11px;color:rgba(242,237,227,.5)')}>{L.pdPhone}</span></span>
+            <div className="flex items-center gap-[11px]">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[rgba(232,184,75,.4)] text-[var(--accent,#E8B84B)]"><Phone size={17} /></span>
+              <span className="flex flex-col"><span className="text-[15px] font-extrabold text-cream">{phone}</span><span className="text-[11px] text-[rgba(242,237,227,.5)]">{L.pdPhone}</span></span>
             </div>
           </div>
-          <div style={css('height:1px;background:rgba(255,255,255,.1);margin:30px 0')}></div>
-          <h2 style={css('margin:0 0 14px;font-size:22px;font-weight:800;letter-spacing:-0.02em;color:#f2ede3;display:inline-block;border-bottom:2px solid var(--accent,#E8B84B);padding-bottom:6px')}>{L.pdAbout}</h2>
-          <p style={css('margin:8px 0 0;font-size:15px;line-height:1.7;color:rgba(242,237,227,.72);max-width:560px')}>{desc}</p>
-          <h2 style={css('margin:34px 0 16px;font-size:22px;font-weight:800;letter-spacing:-0.02em;color:#f2ede3;display:inline-block;border-bottom:2px solid var(--accent,#E8B84B);padding-bottom:6px')}>{L.pdInfo}</h2>
-          <div style={css('display:flex;flex-direction:column;gap:11px;max-width:560px')}>
+          <div className="my-[30px] h-px bg-[rgba(255,255,255,.1)]"></div>
+          <h2 className="m-0 mb-3.5 inline-block border-b-2 border-[var(--accent,#E8B84B)] pb-1.5 text-[22px] font-extrabold tracking-[-0.02em] text-cream">{L.pdAbout}</h2>
+          <p className="mt-2 max-w-[560px] text-[15px] leading-[1.7] text-[rgba(242,237,227,.72)]">{desc}</p>
+          <h2 className="mt-[34px] mb-4 inline-block border-b-2 border-[var(--accent,#E8B84B)] pb-1.5 text-[22px] font-extrabold tracking-[-0.02em] text-cream">{L.pdInfo}</h2>
+          <div className="flex max-w-[560px] flex-col gap-[11px]">
             {info.map((row, i2) => (
-              <div key={i2} style={css('display:flex;align-items:baseline;gap:12px')}>
-                <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent,#E8B84B);flex:none;transform:translateY(-2px)')}></span>
-                <span style={css('font-size:13.5px;color:rgba(242,237,227,.5);min-width:130px')}>{row.label}</span>
-                <span style={css('font-size:14px;font-weight:600;color:#f2ede3')}>{row.value}</span>
+              <div key={i2} className="flex items-baseline gap-3">
+                <span className="h-1.5 w-1.5 flex-none -translate-y-0.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
+                <span className="min-w-[130px] text-[13.5px] text-[rgba(242,237,227,.5)]">{row.label}</span>
+                <span className="text-sm font-semibold text-cream">{row.value}</span>
               </div>
             ))}
           </div>
           {access && (
-            <div style={css('margin-top:26px;padding:20px 22px;border-radius:16px;border:1px solid rgba(120,200,170,.35);background:rgba(120,200,170,.06);max-width:560px')}>
-              <div style={css('display:flex;align-items:center;gap:9px;font-size:14px;font-weight:800;color:#8fd6c6;margin-bottom:12px')}><Accessibility size={16} /> {L.pdA11yTitle}</div>
-              <div style={css('display:flex;flex-direction:column;gap:8px')}>
+            <div className="mt-[26px] max-w-[560px] rounded-2xl border border-[rgba(120,200,170,.35)] bg-[rgba(120,200,170,.06)] py-5 px-[22px]">
+              <div className="mb-3 flex items-center gap-[9px] text-sm font-extrabold text-[#8fd6c6]"><Accessibility size={16} /> {L.pdA11yTitle}</div>
+              <div className="flex flex-col gap-2">
                 {FCRIT.map((c, i3) => (
-                  <div key={i3} style={css('display:flex;align-items:center;gap:10px;font-size:13px;color:rgba(242,237,227,.8)')}><span style={css('color:#8fd6c6;font-weight:800')}>✓</span>{c}</div>
+                  <div key={i3} className="flex items-center gap-2.5 text-[13px] text-[rgba(242,237,227,.8)]"><span className="font-extrabold text-[#8fd6c6]">✓</span>{c}</div>
                 ))}
               </div>
             </div>
           )}
-          <div style={css('display:flex;gap:12px;margin-top:30px;flex-wrap:wrap')}>
-            <Hover as="a" href={mapsUrlFor({ name: it.name, aimag })} target="_blank" rel="noopener" s="text-decoration:none;display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;padding:12px 22px;border-radius:999px;background:rgba(66,133,244,.14);border:1px solid rgba(66,133,244,.4);color:#8ab4f8;transition:all .2s" h="background:rgba(66,133,244,.22)"><MapPin size={14} />{L.openMaps}</Hover>
-            <button onClick={V.toggleFav(favKey)} style={{ ...css('cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;padding:12px 22px;border-radius:999px;transition:all .25s'), border: `1px solid ${favOn ? accent : 'rgba(242,237,227,.28)'}`, background: favOn ? accent : 'transparent', color: favOn ? '#132a1f' : 'rgba(242,237,227,.8)' }}><Heart size={15} fill={favOn ? 'currentColor' : 'none'} /> {favOn ? L.savedLabel : L.save}</button>
+          <div className="mt-[30px] flex flex-wrap gap-3">
+            <a href={mapsUrlFor({ name: it.name, aimag })} target="_blank" rel="noopener" className="inline-flex items-center gap-2 rounded-full border border-[rgba(66,133,244,.4)] bg-[rgba(66,133,244,.14)] py-3 px-[22px] text-[13px] font-bold text-[#8ab4f8] no-underline transition-all duration-[200ms] hover:bg-[rgba(66,133,244,.22)]"><MapPin size={14} />{L.openMaps}</a>
+            <button onClick={V.toggleFav(favKey)} className="inline-flex cursor-pointer items-center gap-2 rounded-full py-3 px-[22px] text-[13px] font-bold transition-all duration-[250ms]" style={{ border: `1px solid ${favOn ? accent : 'rgba(242,237,227,.28)'}`, background: favOn ? accent : 'transparent', color: favOn ? '#132a1f' : 'rgba(242,237,227,.8)' }}><Heart size={15} fill={favOn ? 'currentColor' : 'none'} /> {favOn ? L.savedLabel : L.save}</button>
           </div>
         </div>
       </div>

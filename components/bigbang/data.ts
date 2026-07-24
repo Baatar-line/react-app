@@ -576,6 +576,20 @@ export function lonLatToXY(lng: number, lat: number): [number, number] {
   return [((lng - 87.73) / (119.93 - 87.73)) * 1000, ((top - my(lat)) / (top - bot)) * 483];
 }
 
+// Inverse of lonLatToXY — recovers real-world [lat, lng] from a point in the
+// mn-aimags.json projected coordinate space (that geometry is itself a Mercator
+// projection of the real aimag borders — see lonLatToXY — so this lets the
+// real map reuse the exact same borders/anchors the old SVG map drew, instead
+// of a second, hand-guessed set of coordinates).
+export function xyToLonLat(x: number, y: number): [number, number] {
+  const my = (l: number) => Math.log(Math.tan(Math.PI / 4 + (l * Math.PI) / 360));
+  const myInv = (v: number) => (Math.atan(Math.exp(v)) - Math.PI / 4) * (360 / Math.PI);
+  const top = my(52.16), bot = my(41.56);
+  const lng = 87.73 + (x / 1000) * (119.93 - 87.73);
+  const lat = myInv(top - (y / 483) * (top - bot));
+  return [lat, lng];
+}
+
 export function embedUrlFor(p: { name: string; aimag: string; lat?: number; lng?: number }) {
   const q = p.lat != null ? p.lat.toFixed(5) + ',' + p.lng!.toFixed(5) : encodeURIComponent(p.name + ', ' + p.aimag + ', Mongolia');
   return 'https://maps.google.com/maps?q=' + q + '&z=13&t=k&hl=mn&output=embed';

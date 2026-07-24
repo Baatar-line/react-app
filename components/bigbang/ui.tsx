@@ -1,15 +1,13 @@
 'use client';
 
 // Small runtime helpers used by the Big Bang port.
-// `css` parses an inline CSS declaration string into a React style object,
-// so the ported JSX can keep the original style strings almost verbatim.
-// `Hover` reproduces the DC `style-hover` / `style-focus` / `style-active` behaviour.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
-// Same "no @media queries, branch on JS state" pattern BigBang.tsx uses for its
-// own inline styles — shared here so the other screens (which render inline
-// style strings via `css`, not Tailwind) can collapse fixed/multi-column
-// layouts on small screens without duplicating a resize listener each.
+// Styling across the app is Tailwind utility classes now — no @media queries
+// available for inline `style` values (genuinely dynamic/per-instance colors,
+// positions, backgrounds still use `style` alongside `className`), so this
+// hook covers the few cases that need a JS-computed breakpoint instead
+// (a boolean baked into two different literal class strings, picked by index.tsx).
 export function useIsMobile(breakpoint = 640): boolean {
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < breakpoint : false));
   useEffect(() => {
@@ -19,78 +17,6 @@ export function useIsMobile(breakpoint = 640): boolean {
     return () => window.removeEventListener('resize', onResize);
   }, [breakpoint]);
   return isMobile;
-}
-
-export function css(decl?: string): React.CSSProperties {
-  const out: Record<string, string | number> = {};
-  if (!decl) return out;
-  for (const part of decl.split(';')) {
-    const idx = part.indexOf(':');
-    if (idx === -1) continue;
-    const rawProp = part.slice(0, idx).trim();
-    const value = part.slice(idx + 1).trim();
-    if (!rawProp || value === '') continue;
-    // -webkit-foo -> WebkitFoo ; -ms-foo -> msFoo ; foo-bar -> fooBar
-    const prop = rawProp
-      .replace(/^-ms-/, 'ms-')
-      .replace(/^-(webkit|moz|o)-/, (_, p) => `${p[0].toUpperCase()}${p.slice(1)}-`)
-      .replace(/^-/, '')
-      .replace(/-([a-zA-Z])/g, (_, c) => c.toUpperCase());
-    if (prop === 'border') {
-      // Always split the shorthand into its longhand parts. `Hover` (below)
-      // concatenates a base `s` string with a `border:` decl and a `h`/`f`/`a`
-      // string that overrides just `border-color:` — parsed as two separate
-      // keys, that leaves `border` and `borderColor` both set while hovered
-      // but only `border` once it's not, which is exactly the shorthand vs.
-      // longhand conflict React's setValueForStyles warns about on removal.
-      // Longhand-only keeps the key set identical across every state.
-      const m = value.match(/^(\S+)\s+(\S+)\s+(.+)$/);
-      if (m) {
-        out.borderWidth = m[1]; out.borderStyle = m[2]; out.borderColor = m[3];
-        continue;
-      }
-    }
-    out[prop] = value;
-  }
-  return out as React.CSSProperties;
-}
-
-type HoverProps = {
-  as?: keyof JSX.IntrinsicElements;
-  s: string;           // base style string
-  h?: string;          // hover style string (merged on hover)
-  f?: string;          // focus style string
-  a?: string;          // active style string
-  children?: React.ReactNode;
-} & Omit<React.HTMLAttributes<HTMLElement>, 'style'> & Record<string, unknown>;
-
-export function Hover({ as = 'div', s, h, f, a, children, ...rest }: HoverProps) {
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const [active, setActive] = useState(false);
-
-  const style = useMemo(() => {
-    let str = s;
-    if (hovered && h) str += ';' + h;
-    if (focused && f) str += ';' + f;
-    if (active && a) str += ';' + a;
-    return css(str);
-  }, [s, h, f, a, hovered, focused, active]);
-
-  const handlers: Record<string, unknown> = {
-    onMouseEnter: (e: React.MouseEvent) => { setHovered(true); (rest.onMouseEnter as ((e: React.MouseEvent) => void) | undefined)?.(e); },
-    onMouseLeave: (e: React.MouseEvent) => { setHovered(false); setActive(false); (rest.onMouseLeave as ((e: React.MouseEvent) => void) | undefined)?.(e); },
-  };
-  if (f) {
-    handlers.onFocus = (e: React.FocusEvent) => { setFocused(true); (rest.onFocus as ((e: React.FocusEvent) => void) | undefined)?.(e); };
-    handlers.onBlur = (e: React.FocusEvent) => { setFocused(false); (rest.onBlur as ((e: React.FocusEvent) => void) | undefined)?.(e); };
-  }
-  if (a) {
-    handlers.onMouseDown = (e: React.MouseEvent) => { setActive(true); (rest.onMouseDown as ((e: React.MouseEvent) => void) | undefined)?.(e); };
-    handlers.onMouseUp = (e: React.MouseEvent) => { setActive(false); (rest.onMouseUp as ((e: React.MouseEvent) => void) | undefined)?.(e); };
-  }
-
-  return React.createElement(as, { ...rest, ...handlers, style }, children);
 }
 
 // Small isometric "3D-ish" icons (layered flat-shaded faces + outline strokes,

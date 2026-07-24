@@ -6,18 +6,17 @@
 // settings, background-photo overrides, the globe engine, the add-place/scenic/event forms).
 // Each actual "page" (Home, Category, Place, Maps, Globe, Event, Suggest, About, Profile) is
 // its own routed component under app/(bigbang)/, rendered as `children` below and reading this
-// layout's computed values via useContext(BigBangContext). Dynamic per-element styling is kept
-// as inline style strings via css() — see ./ui.
+// layout's computed values via useContext(BigBangContext). Styling is Tailwind utility classes;
+// genuinely per-instance/runtime values (computed colors, positions, backgrounds) stay inline.
 import React from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { Target, Users, Zap, Globe } from 'lucide-react';
-import { css, Hover } from './ui';
 import CreateForm, { CreateFormData } from '../CreateForm';
 import {
   U, ratingOf, STR, CATS, PINS, TEAM, EVENTS, SUGGESTS, TRAVEL_APPS, sitesFor, FEATURED_EVENT, AIMAGS, AIMAG_MN_SCRIPT,
   GEO_MN, LABEL_OFF, AIMAG_BG, PIN_OFFS, FCRIT, ACCESS_NAMES,
-  catBgOf, thumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, lonLatToXY, embedUrlFor, mapsUrlFor,
+  catBgOf, thumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, lonLatToXY, xyToLonLat, embedUrlFor, mapsUrlFor,
 } from './data';
 import { apiGet } from '../../lib/api';
 
@@ -68,6 +67,16 @@ export default class BigBangLayout extends React.Component<Props, any> {
   _globeEl: any = null;
   _globeTimer: any = null;
   _globeResize: any = null;
+  _mainMap: any = null;
+  _aimagPolyLayer: any = null;
+  _aimagLabelLayer: any = null;
+  _pinLayer: any = null;
+  _aimagLayers: any = {};
+  _aimagBuilt = false;
+  _fullBounds: any = null;
+  _wasZoomed = false;
+  _lastFlownAimag: any = null;
+  _enclaveHost: any = {};
   _pickerWrapEl: any = null;
   _mnVertResize: any = null;
   _vwResize: any = null;
@@ -89,6 +98,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // placeholder while the network round-trip to fetch it is still in flight.
     aboutBgOverride: cachedBg('bb_about_bg'), homeBgOverride: cachedBg('bb_home_bg'),
     mongoliaFlagOverride: cachedBg('bb_mn_flag'),
+    // Background photo/video behind the "Аяллын апп" card on the Suggest page.
+    travelAppsBgOverride: cachedBg('bb_travelapps_bg'),
     // Per-category (keyed by slug) and per-aimag (keyed by name) background photos
     // saved via Admin Panel → Фон зураг, so the live site shows them too.
     catBgOverride: cachedMap('bb_cat_bg'), aimagBgOverride: cachedMap('bb_aimag_bg'),
@@ -105,7 +116,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   };
 
   componentDidMount() {
-    fetch('/assets/mn-aimags.json').then((r) => r.json()).then((g) => { this.geo = g; this.forceUpdate(); }).catch(() => {});
+    fetch('/assets/mn-aimags.json').then((r) => r.json()).then((g) => { this.geo = g; this.forceUpdate(); this.syncMainMap(); }).catch(() => {});
     this.fetchSettings();
     this.fetchContentBgs();
     // Admin Panel runs in a separate tab, so a tab already sitting open on this page
@@ -124,6 +135,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   componentDidUpdate(_prevProps: Props, prevState: any) {
     if (prevState.aimag !== this.state.aimag) this.updateHeroVertPos();
+    if (this._mainMap && (
+      prevState.pinMode !== this.state.pinMode || prevState.mapAimag !== this.state.mapAimag ||
+      prevState.hoverAimag !== this.state.hoverAimag || prevState.pin !== this.state.pin ||
+      prevState.lang !== this.state.lang || prevState.bigText !== this.state.bigText ||
+      prevState.userPins !== this.state.userPins
+    )) this.syncMainMap();
   }
 
   // Measures the invisible marker circle both builders drop at the aimag's
@@ -156,6 +173,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   componentWillUnmount() {
     this.unmountGlobe();
+    this.unmountMainMap();
     window.removeEventListener('focus', this.fetchSettings);
     window.removeEventListener('focus', this.fetchContentBgs);
     if (this._mnVertResize) window.removeEventListener('resize', this._mnVertResize);
@@ -165,7 +183,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Admin Panel can update these via the "Фон зураг" tab — if the backend isn't
   // running or hasn't been set up yet, this silently keeps the built-in placeholder.
   fetchSettings = () => {
-    apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null }>('/settings')
+    apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; travelAppsBackgroundImage: string | null }>('/settings')
       .then((s) => {
         if (s.aboutBackgroundImage) this.setState({ aboutBgOverride: s.aboutBackgroundImage });
         if (s.homeBackgroundImage) this.setState({ homeBgOverride: s.homeBackgroundImage });
@@ -174,11 +192,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
           if (this.globeEngine) this.globeEngine.setMongoliaFlag(s.mongoliaFlagImage);
         }
         if (s.suggestBackgroundImages) this.setState({ suggestBgOverride: s.suggestBackgroundImages });
+        if (s.travelAppsBackgroundImage) this.setState({ travelAppsBgOverride: s.travelAppsBackgroundImage });
         try {
           if (s.aboutBackgroundImage) localStorage.setItem('bb_about_bg', s.aboutBackgroundImage);
           if (s.homeBackgroundImage) localStorage.setItem('bb_home_bg', s.homeBackgroundImage);
           if (s.mongoliaFlagImage) localStorage.setItem('bb_mn_flag', s.mongoliaFlagImage);
           if (s.suggestBackgroundImages) localStorage.setItem('bb_suggest_bg', JSON.stringify(s.suggestBackgroundImages));
+          if (s.travelAppsBackgroundImage) localStorage.setItem('bb_travelapps_bg', s.travelAppsBackgroundImage);
         } catch (err) { /* ignore */ }
       })
       .catch(() => {});
@@ -203,20 +223,49 @@ export default class BigBangLayout extends React.Component<Props, any> {
   };
 
   // ── geometry ──
+  // Parses a shape's `d` (a series of `M x,y L x,y ... Z` subpaths, in the
+  // mn-aimags.json projected coordinate space) into plain point-ring arrays,
+  // caching the result on the shape object. Used both for the point-in-polygon
+  // test below and to draw the real aimag borders on the Leaflet map (see
+  // syncMainMap), so the two stay pixel-for-pixel consistent with each other.
+  polysOf(sh: any): number[][][] {
+    if (!sh._polys) sh._polys = sh.d.split('M').filter((s: string) => s.trim()).map((seg: string) =>
+      seg.replace(/Z/g, '').split('L').map((pt: string) => pt.trim().split(/[ ,]+/).map(Number)).filter((p: number[]) => p.length === 2 && !isNaN(p[0])));
+    return sh._polys;
+  }
+
+  pointInShape(sh: any, x: number, y: number): boolean {
+    if (x < sh.bx || x > sh.bx + sh.bw || y < sh.by || y > sh.by + sh.bh) return false;
+    let inside = false;
+    for (const poly of this.polysOf(sh)) {
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+        if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  // Single-ring point test (no even-odd hole subtraction against a shape's
+  // *other* rings, unlike pointInShape). Some aimags (see mn-aimags.json's
+  // Töv/Selenge entries) are drawn as their outer boundary with a hole cut
+  // out for a smaller aimag fully inside them — pointInShape correctly says
+  // "outside" for a point in that hole, which is right for hit-testing but
+  // wrong for figuring out which aimag geometrically *hosts* the small one
+  // (see syncMainMap's enclave-host detection).
+  pointInRing(ring: number[][], x: number, y: number): boolean {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+
   xyToAimag(x: number, y: number) {
     const geo = this.geo; if (!geo) return null;
     for (const sh of geo.shapes) {
-      if (x < sh.bx || x > sh.bx + sh.bw || y < sh.by || y > sh.by + sh.bh) continue;
-      if (!sh._polys) sh._polys = sh.d.split('M').filter((s: string) => s.trim()).map((seg: string) =>
-        seg.replace(/Z/g, '').split('L').map((pt) => pt.trim().split(/[ ,]+/).map(Number)).filter((p) => p.length === 2 && !isNaN(p[0])));
-      let inside = false;
-      for (const poly of sh._polys) {
-        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-          const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-          if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
-        }
-      }
-      if (inside) return GEO_MN[sh.name] || sh.name;
+      if (this.pointInShape(sh, x, y)) return GEO_MN[sh.name] || sh.name;
     }
     return null;
   }
@@ -295,6 +344,181 @@ export default class BigBangLayout extends React.Component<Props, any> {
     if (this._globeTimer) { clearTimeout(this._globeTimer); this._globeTimer = null; }
     if (this._globeResize) { window.removeEventListener('resize', this._globeResize); this._globeResize = null; }
     if (this.globeEngine) { try { this.globeEngine.dispose(); } catch (err) { /* ignore */ } this.globeEngine = null; }
+  }
+
+  // ── real map (/maps) ──
+  // Replaces the old hand-drawn SVG outline with an actual Leaflet map on the
+  // same Google raster tiles the location-picker mini-map already used
+  // (pickMapRef, above) — so the "map" is a real, pannable/zoomable Google
+  // map instead of static art. Aimag borders and pin positions are derived
+  // from the exact same mn-aimags.json geometry the SVG used to draw, just
+  // run through xyToLonLat (the inverse of lonLatToXY) so they land on real
+  // coordinates instead of SVG pixels — nothing here is a second, separately
+  // guessed set of coordinates.
+  mainMapRef = (node: any) => {
+    if (!node) { this.unmountMainMap(); return; }
+    if (this._mainMap) return;
+    const init = () => {
+      if (!node.isConnected) return;
+      if (!window.L) { setTimeout(init, 150); return; }
+      const m = window.L.map(node, { attributionControl: false, zoomControl: !this.state.isMobile });
+      m.setView([46.8, 103.8], 5);
+      // Plain satellite tiles (no baked-in place-name labels) — `lyrs=y` (hybrid)
+      // draws Google's own city/country labels straight into the raster image,
+      // which collided with our own aimag-name/pin labels drawn on top.
+      window.L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 19 }).addTo(m);
+      this._aimagPolyLayer = window.L.layerGroup().addTo(m);
+      this._aimagLabelLayer = window.L.layerGroup().addTo(m);
+      this._pinLayer = window.L.layerGroup().addTo(m);
+      this._aimagLayers = {};
+      this._aimagBuilt = false;
+      this._mainMap = m;
+      setTimeout(() => m.invalidateSize(), 120);
+      this.syncMainMap();
+    };
+    init();
+  };
+
+  unmountMainMap() {
+    if (this._mainMap) { try { this._mainMap.remove(); } catch (err) { /* ignore */ } }
+    this._mainMap = null; this._aimagPolyLayer = null; this._aimagLabelLayer = null; this._pinLayer = null;
+    this._aimagLayers = {}; this._aimagBuilt = false; this._fullBounds = null; this._wasZoomed = false; this._lastFlownAimag = null; this._enclaveHost = {};
+  }
+
+  // (Re)builds the aimag border layer once geo is available, then restyles
+  // it + the pin markers to match current state. Called after mount, after
+  // the mn-aimags.json fetch resolves, and from componentDidUpdate whenever
+  // a field that affects what the map shows changes (see componentDidUpdate).
+  syncMainMap() {
+    const m = this._mainMap;
+    const geo = this.geo;
+    if (!m || !geo || !window.L) return;
+    const { lang, mapAimag, hoverAimag, pin, bigText } = this.state;
+    const accent = this.props.accent ?? '#E8B84B';
+    const mnOf = (n: string) => GEO_MN[n] || n;
+    const pins = this.mapPins();
+    const countByAimag: Record<string, number> = {};
+    pins.forEach((p) => { countByAimag[p.aimag] = (countByAimag[p.aimag] || 0) + 1; });
+
+    if (!this._aimagBuilt) {
+      this._aimagBuilt = true;
+      const allCorners: [number, number][] = [];
+      geo.shapes.forEach((sh: any) => {
+        const id = mnOf(sh.name);
+        const rings = this.polysOf(sh).map((ring) => ring.map(([x, y]) => xyToLonLat(x, y) as [number, number]));
+        const layers = rings.map((ring) => window.L.polygon(ring, {
+          color: 'rgba(255,255,255,.55)', weight: 1.1, fillColor: 'rgba(255,255,255,0.02)', fillOpacity: 1,
+        })
+          .on('mouseover', () => this.setState({ hoverAimag: id }))
+          .on('mouseout', () => this.setState({ hoverAimag: null }))
+          .on('click', () => this.setState({ mapAimag: id, pin: -1 }))
+          .addTo(this._aimagPolyLayer));
+        const [clat, clng] = xyToLonLat(sh.lx ?? sh.cx, sh.ly ?? sh.cy);
+        const label = window.L.marker([clat, clng], { icon: window.L.divIcon({ className: '', html: '', iconSize: [1, 1] }), interactive: false, opacity: 1 }).addTo(this._aimagLabelLayer);
+        this._aimagLayers[id] = { layers, label, sh };
+        allCorners.push(xyToLonLat(sh.bx, sh.by) as [number, number], xyToLonLat(sh.bx + sh.bw, sh.by + sh.bh) as [number, number]);
+      });
+      this._fullBounds = allCorners;
+
+      // Улаанбаатар/Дархан-Уул/Орхон/Говьсүмбэр sit fully enclosed inside a
+      // larger neighbor. SVG hit-testing goes by DOM order, not area, so
+      // whichever polygon the source GeoJSON happened to list last was
+      // swallowing clicks/hover meant for the small aimag underneath —
+      // bring the enclosed ones to front so they always win.
+      const ENCLAVE_AIMAGS = ['Orhon', 'Darhan-Uul', 'Gowisümber', 'Ulaanbaatar'];
+      geo.shapes.forEach((sh: any) => {
+        if (!ENCLAVE_AIMAGS.includes(sh.name)) return;
+        const entry = this._aimagLayers[mnOf(sh.name)];
+        if (entry) entry.layers.forEach((ly: any) => ly.bringToFront());
+      });
+
+      // Told/Сэлэнгэ's own `d` isn't just their outer boundary — it also has
+      // a second subpath tracing Улаанбаатар/Дархан-Уул's own outline as a
+      // literal hole (that's *why* their gold fill stopped exactly at the
+      // small aimag's edge even before any of the above). Detect that here
+      // (find each shape's *other* subpaths and check which neighbor's
+      // centroid falls inside one) so the styling pass below can make the
+      // enclave inherit its host's fill instead of standing out as a second,
+      // separately-selected patch when only the host is selected/hovered.
+      geo.shapes.forEach((hostSh: any) => {
+        const rings = this.polysOf(hostSh);
+        if (rings.length < 2) return;
+        const outer = rings.reduce((best: number[][], r: number[][]) => (r.length > best.length ? r : best));
+        rings.forEach((ring: number[][]) => {
+          if (ring === outer) return;
+          const enclaveSh = geo.shapes.find((o: any) => o !== hostSh && this.pointInRing(ring, o.cx, o.cy));
+          if (enclaveSh) this._enclaveHost[mnOf(enclaveSh.name)] = mnOf(hostSh.name);
+        });
+      });
+    }
+
+    Object.keys(this._aimagLayers).forEach((id) => {
+      const { layers, label } = this._aimagLayers[id];
+      const isSel = mapAimag === id, isHov = hoverAimag === id;
+      const hostId = this._enclaveHost[id];
+      // A selected aimag is now shown as an outline only (no fill wash) so
+      // the real satellite photo underneath stays fully visible — that also
+      // means an enclave no longer needs to borrow its host's fill to avoid
+      // looking separately selected (there's no fill left to clash with);
+      // it keeps its own normal boundary line instead, same as any other
+      // aimag. Hover still gets a light fill for discoverability, and an
+      // enclave still inherits *that* from its host so the hoverable region
+      // reads as one shape before you commit to a click — but only while
+      // it/its host *isn't* already the selected aimag. Without that guard,
+      // resting the cursor over an already-selected aimag (or the enclave
+      // inside it) re-washed it with the hover tint on top of its own
+      // outline, looking like it got re-selected.
+      const selfOrHostSelected = isSel || (!!hostId && mapAimag === hostId);
+      const hostHov = !isHov && !!hostId && hoverAimag === hostId;
+      const fill = (!selfOrHostSelected && (isHov || hostHov)) ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,0.02)';
+      layers.forEach((ly: any) => ly.setStyle({ fillColor: fill, fillOpacity: 1, color: isSel ? accent : 'rgba(255,255,255,.55)', weight: isSel ? 2.4 : 1.1 }));
+      const count = countByAimag[id] || 0;
+      const showCount = count > 0 && !mapAimag;
+      const visible = mapAimag ? isSel : true;
+      const html = !visible ? '' :
+        '<div style="transform:translate(-50%,-50%);text-align:center;pointer-events:none;font-family:Manrope,sans-serif">' +
+        '<div style="font-size:' + (bigText ? 15 : 12) + 'px;font-weight:700;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.9),0 0 3px rgba(0,0,0,.9)">' + aimagName(id, lang) + '</div>' +
+        (showCount ? '<div style="font-size:' + (bigText ? 12.5 : 10) + 'px;font-weight:800;color:' + accent + ';text-shadow:0 1px 4px rgba(0,0,0,.9)">' + count + ' пин</div>' : '') +
+        '</div>';
+      label.setIcon(window.L.divIcon({ className: '', html, iconSize: [1, 1] }));
+    });
+
+    this._pinLayer.clearLayers();
+    if (mapAimag) {
+      const entry = this._aimagLayers[mapAimag];
+      const sh = entry && entry.sh;
+      const aimagPins = pins.map((p, i) => ({ p, i })).filter((o) => o.p.aimag === mapAimag);
+      aimagPins.forEach((o, j) => {
+        let latlng: [number, number];
+        if (o.p.lat != null) latlng = [o.p.lat, o.p.lng];
+        else {
+          const off = PIN_OFFS[j % PIN_OFFS.length];
+          latlng = xyToLonLat(sh.cx + off[0] * sh.bw * 0.8, sh.cy + off[1] * sh.bh * 0.8);
+        }
+        const on = pin === o.i;
+        const dot = on ? 15 : 11;
+        const html = '<div style="transform:translate(-50%,-100%);text-align:center;cursor:pointer;font-family:Manrope,sans-serif">' +
+          '<div style="width:' + dot + 'px;height:' + dot + 'px;margin:0 auto;border-radius:50%;background:' + (on ? accent : '#f0ebe1') + ';border:1.4px solid rgba(8,10,14,.85);box-shadow:0 0 0 6px rgba(232,184,75,' + (on ? '.3' : '.16') + ')"></div>' +
+          '<div style="margin-top:4px;font-size:' + (bigText ? 13 : 10.5) + 'px;font-weight:700;color:' + (on ? accent : '#fff') + ';text-shadow:0 1px 4px rgba(0,0,0,.9),0 0 3px rgba(0,0,0,.9);white-space:nowrap">' + o.p.name + '</div></div>';
+        window.L.marker(latlng, { icon: window.L.divIcon({ className: '', html, iconSize: [1, 1] }) })
+          .on('click', () => this.setState({ pin: on ? -1 : o.i }))
+          .addTo(this._pinLayer);
+      });
+      // Only fly the view when the *selection itself* changes — syncMainMap
+      // also re-runs on every hover/pin-click while an aimag stays selected,
+      // and re-flying then would snap the map back under the user's hands
+      // every time they'd tried to pan/zoom freely after selecting.
+      if (sh && this._lastFlownAimag !== mapAimag) {
+        const bounds = this.polysOf(sh).flat().map(([x, y]: number[]) => xyToLonLat(x, y));
+        m.flyToBounds(bounds, { padding: [70, 70], maxZoom: 9, duration: 0.9 });
+        this._lastFlownAimag = mapAimag;
+      }
+      this._wasZoomed = true;
+    } else if (this._wasZoomed) {
+      if (this._fullBounds) m.flyToBounds(this._fullBounds, { padding: [40, 40], duration: 0.9 });
+      this._wasZoomed = false;
+      this._lastFlownAimag = null;
+    }
   }
 
   allPins() { return PINS.concat(this.state.userPins || []); }
@@ -381,94 +605,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
       }, aimagName(id, lang)));
     });
     return e('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet', style: { width: '100%', height: '100%', display: 'block', overflow: 'visible' } }, kids);
-  }
-
-  buildMapSvg(accent: string, lang: any, sel: any, hover: any, pin: any, bigText?: any) {
-    const geo = this.geo;
-    const W = geo.W, H = geo.H;
-    const labelFs = bigText ? 15 : 10.5;
-    const countFs = bigText ? 12.5 : 9;
-    const pinLabelFs = bigText ? 14 : 10;
-    const mnOf = (n: string) => GEO_MN[n] || n;
-    // mapPins() rebuilds its list from CATS/EVENTS each call — compute it once
-    // per render instead of once per aimag shape (21x) as this used to.
-    const pins = this.mapPins();
-    const countByAimag: Record<string, number> = {};
-    pins.forEach((p) => { countByAimag[p.aimag] = (countByAimag[p.aimag] || 0) + 1; });
-    const selShape = sel ? geo.shapes.find((sh: any) => mnOf(sh.name) === sel) : null;
-    let s = 1, tx = 0, ty = 0;
-    if (selShape) {
-      s = Math.max(1, Math.min(0.8 * W / selShape.bw, 0.8 * H / selShape.bh, 9));
-      tx = W * 0.38 - s * selShape.cx;
-      ty = H / 2 - s * selShape.cy;
-    }
-    const kids: any[] = [];
-    kids.push(e('defs', { key: 'defs' }, e('clipPath', { id: 'mnClipAll' }, geo.shapes.map((sh: any, i: number) => e('path', { key: i, d: sh.d })))));
-    kids.push(e('rect', { key: 'tint', x: -100, y: -100, width: W + 200, height: H + 200, fill: 'rgba(255,255,255,.08)', clipPath: 'url(#mnClipAll)' }));
-    geo.shapes.forEach((sh: any) => {
-      const id = mnOf(sh.name);
-      const isSel = sel === id, isHov = hover === id;
-      kids.push(e('path', {
-        key: 'p-' + sh.name, d: sh.d, 'data-aimag': id,
-        fill: isSel ? 'rgba(232, 184, 75,.16)' : (isHov ? 'rgba(255,255,255,.13)' : 'rgba(255,255,255,0.001)'),
-        stroke: isSel ? accent : 'rgba(255,255,255,.55)',
-        strokeWidth: isSel ? 2 : 1.1, vectorEffect: 'non-scaling-stroke',
-        style: { cursor: 'pointer', transition: 'fill .25s' },
-        onMouseEnter: () => this.setState({ hoverAimag: id }),
-        onMouseLeave: () => this.setState({ hoverAimag: null }),
-        onClick: () => this.setState({ mapAimag: id, pin: -1 }),
-      }));
-    });
-    geo.shapes.forEach((sh: any) => {
-      const id = mnOf(sh.name);
-      const isSel = sel === id;
-      const count = countByAimag[id] || 0;
-      const off = LABEL_OFF[sh.name] || [0, 0];
-      const op = selShape ? (isSel ? 1 : 0) : 1;
-      const nameStr = aimagName(id, lang);
-      const hasCount = count > 0 && !selShape;
-      kids.push(e('g', {
-        key: 'l-' + sh.name,
-        style: {
-          transform: 'translate(' + ((sh.lx || sh.cx) + off[0]) + 'px,' + ((sh.ly || sh.cy) + off[1]) + 'px) scale(' + (1 / s) + ')',
-          transition: 'transform .9s cubic-bezier(.22,.8,.3,1), opacity .5s', opacity: op, pointerEvents: 'none',
-        },
-      },
-        e('text', { textAnchor: 'middle', fontSize: labelFs, fontWeight: 700, fill: 'rgba(255,255,255,.94)', stroke: 'rgba(6,9,14,.65)', strokeWidth: 2.5, style: { paintOrder: 'stroke' }, fontFamily: "'Manrope',sans-serif" }, nameStr),
-        hasCount ? e('text', { y: 13, textAnchor: 'middle', fontSize: countFs, fontWeight: 800, fill: accent, stroke: 'rgba(6,9,14,.7)', strokeWidth: 2, style: { paintOrder: 'stroke' }, fontFamily: "'Manrope',sans-serif" }, count + ' пин') : null,
-      ));
-    });
-    if (selShape) {
-      const aimagPins = pins.map((p, i) => ({ p, i })).filter((o) => o.p.aimag === sel);
-      aimagPins.forEach((o, j) => {
-        const off = PIN_OFFS[j % PIN_OFFS.length];
-        const exact = o.p.px != null;
-        const px = exact ? o.p.px : selShape.cx + off[0] * selShape.bw * 0.8;
-        const py = exact ? o.p.py : selShape.cy + off[1] * selShape.bh * 0.8;
-        const on = pin === o.i;
-        kids.push(e('g', {
-          key: 'pin-' + o.i,
-          style: { transform: 'translate(' + px + 'px,' + py + 'px) scale(' + (1 / s) + ')', transition: 'transform .9s cubic-bezier(.22,.8,.3,1)', cursor: 'pointer' },
-          onClick: () => this.setState({ pin: on ? -1 : o.i }),
-        },
-          e('circle', { r: 10, fill: accent, opacity: on ? 0.3 : 0.16 }),
-          e('circle', { r: 4.5, fill: on ? accent : '#f0ebe1', stroke: 'rgba(8,10,14,.85)', strokeWidth: 1.4 }),
-          e('text', { y: 20, textAnchor: 'middle', fontSize: pinLabelFs, fontWeight: 700, fill: on ? accent : 'rgba(240,243,248,.92)', stroke: 'rgba(6,9,14,.75)', strokeWidth: 2.5, style: { paintOrder: 'stroke', pointerEvents: 'none' }, fontFamily: "'Manrope',sans-serif" }, o.p.name),
-        ));
-      });
-    }
-    if (hover && !selShape) {
-      const hv = geo.shapes.find((sh: any) => mnOf(sh.name) === hover);
-      if (hv) {
-        const hc = countByAimag[hover] || 0;
-        const ttStr = aimagName(hover, lang) + ' · ' + hc + ' пин';
-        kids.push(e('g', { key: 'tt', style: { transform: 'translate(' + hv.cx + 'px,' + (hv.by - 8) + 'px) scale(' + (1 / s) + ')', pointerEvents: 'none' } },
-          e('text', { textAnchor: 'middle', fontSize: 13, fontWeight: 800, fill: '#ffffff', stroke: 'rgba(6,9,14,.8)', strokeWidth: 3, style: { paintOrder: 'stroke' }, fontFamily: "'Manrope',sans-serif" }, ttStr),
-        ));
-      }
-    }
-    return e('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet', style: { width: '100%', height: '100%', display: 'block', overflow: 'visible' } },
-      e('g', { style: { transform: 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')', transformOrigin: '0 0', transition: 'transform .9s cubic-bezier(.22,.8,.3,1)' } }, kids));
   }
 
   // Navigates to a category grid or a place detail page — routes now carry the
@@ -585,8 +721,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
     const go = (r: string) => { navigate(ROUTE_PATH[r] || '/'); this.setState({ locOpen: false, active: -1 }); try { window.scrollTo(0, 0); } catch (err) { /* ignore */ } };
 
-    const hoverAimag = this.state.hoverAimag;
-    const mapSvg = this.geo ? this.buildMapSvg(accent, lang, mapAimag, hoverAimag, pin, this.state.bigText) : null;
     const pinBgImg = mapAimag ? (this.state.aimagBgOverride[mapAimag] || AIMAG_BG[mapAimag] || '1470071459604-3b5ec3a7fe05') : null;
     if (pinBgImg && this.bgReady(pinBgImg, 1800)) this._lastPinBg = pinBgImg;
     this._bg = this._bg || { a: null, b: null, slot: 'a', shown: null };
@@ -711,7 +845,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     return {
       accent, driftAnim, L, lang, aimag, favs, toggleFav, spNeeds: st.spNeeds,
       catBgOverride: st.catBgOverride, suggestBgOverride: st.suggestBgOverride,
-      isHome: route === 'home',
+      isHome: route === 'home', isMapsPage: route === 'pin',
       openPin: () => go('pin'), openEvent: () => go('event'), openSuggest: () => go('suggest'),
       openGlobe: () => go('globe'), globeMountRef: this.handleGlobeRef,
       travelMapRef: (el: any) => { if (el && window.renderTravelMap) window.renderTravelMap(el); },
@@ -789,7 +923,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         return { label: m[1], color: on ? '#132a1f' : 'rgba(255,255,255,.85)', pick: () => this.setState({ pinMode: m[0], pin: -1 }) };
       }),
       pinPillShift: 'calc(' + Math.max(0, ['scenic', 'places', 'events'].indexOf(this.state.pinMode || 'scenic')) + ' * 100%)',
-      mapSvg, pinSel, closePin: () => this.setState({ pin: -1 }),
+      mainMapRef: this.mainMapRef, pinSel, closePin: () => this.setState({ pin: -1 }),
       isMobile, isTablet,
       mobileMenuOpen: this.state.mobileMenuOpen,
       toggleMobileMenu: () => this.setState((s: any) => ({ mobileMenuOpen: !s.mobileMenuOpen })),
@@ -802,7 +936,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       mapZoomed: !!mapAimag, resetMap: () => this.setState({ mapAimag: null, pin: -1, hoverAimag: null }),
       aimagPanelShow: !!(mapAimag && !selP && !this.state.showAddForm),
       panelName: mapAimag ? aimagName(mapAimag, lang) : '',
-      panelCount: mapAimag ? this.allPins().filter((p) => p.aimag === mapAimag).length : 0,
+      panelCount: mapAimag ? this.mapPins().filter((p) => p.aimag === mapAimag).length : 0,
       showAddForm: st.showAddForm, openAddForm, closeAddForm: () => this.setState({ showAddForm: false }),
       stop: (ev: any) => ev.stopPropagation(),
       roleOpts, catOpts, subOpts, aimagFormOpts,
@@ -832,6 +966,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
         }),
       suggests, navCats, bgLayers, previewCards, topItems: topItems2,
       travelApps: TRAVEL_APPS.map((a) => ({ ...a, purpose: lang === 'en' ? a.en : a.mn })),
+      travelAppsHasBg: !!this.state.travelAppsBgOverride,
+      travelAppsBg: this.state.travelAppsBgOverride ? 'url("' + imgUrl(this.state.travelAppsBgOverride, 1800) + '")' : 'none',
+      travelAppsBgIsVideo: isVideoUrl(this.state.travelAppsBgOverride || ''),
+      travelAppsBgRawUrl: this.state.travelAppsBgOverride || '',
       clearActive: () => this.setState({ active: -1 }),
       goHome: () => { navigate('/'); this.setState({ active: -1, locOpen: false }); },
       locOpen, toggleLoc: () => this.setState({ locOpen: !locOpen }), closeLoc: () => this.setState({ locOpen: false }),
@@ -847,78 +985,113 @@ export default class BigBangLayout extends React.Component<Props, any> {
   render() {
     const V: any = this.renderVals();
     const rootStyle: React.CSSProperties = {
-      ...css("min-height:100vh;background:#0b0a08;color:#f2ede3;font-family:'Manrope',system-ui,sans-serif"),
       ['--accent' as any]: V.accent, ['--drift' as any]: V.driftAnim,
     };
     return (
-      <div className={V.a11yClass} style={rootStyle}>
+      <div className={`min-h-screen bg-ink font-sans text-cream ${V.a11yClass}`} style={rootStyle}>
         {/* ══════════ NAV ══════════ */}
-        <nav style={css(`position:fixed;top:0;left:0;right:0;z-index:60;display:flex;align-items:center;justify-content:space-between;padding:${V.isMobile ? '14px 16px' : '18px 48px'};background:linear-gradient(180deg, rgba(8,7,6,.8) 0%, rgba(8,7,6,0) 100%)`)}>
-          <div className="bb-logo-group" style={{ flex: 'none', position: 'relative', display: 'flex', alignItems: 'center', gap: 18 }}>
-            <button onClick={V.goHome} style={css('all:unset;cursor:pointer;display:flex;align-items:center;position:relative;z-index:2')}>
-              <span style={{ ...css("font-family:'Playfair Display',serif;font-style:italic;font-weight:700;letter-spacing:-0.01em;color:#f2ede3"), fontSize: V.isMobile ? 19 : 23 }}>Big Bang</span>
+        <nav
+          className="fixed inset-x-0 top-0 z-[60] flex items-center justify-between bg-[linear-gradient(180deg,rgba(8,7,6,.8)_0%,rgba(8,7,6,0)_100%)]"
+          style={{ padding: V.isMobile ? '14px 16px' : '18px 48px' }}
+        >
+          <div className="bb-logo-group relative flex flex-none items-center gap-[18px]">
+            <button onClick={V.goHome} className="relative z-[2] flex cursor-pointer items-center border-0 bg-transparent p-0 font-inherit text-inherit">
+              <span className="font-display font-bold italic tracking-[-0.01em] text-cream" style={{ fontSize: V.isMobile ? 19 : 23 }}>Big Bang</span>
             </button>
+
+            {/* Maps-only controls (globe launcher, scenic/places/events pin
+                toggle, aimag-zoom reset) — used to float over the map itself,
+                moved into the nav, right after the logo, so they read as page
+                controls, not map UI. */}
+            {V.isMapsPage && !V.isMobile && (
+              <div className="flex items-center gap-2.5">
+                <button onClick={V.openGlobe} title={V.L.globe} className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border-none text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5" style={{ background: V.accent }}><Globe size={15} /></button>
+                <div className="relative inline-grid grid-cols-3 rounded-full border border-[rgba(255,255,255,.16)] bg-[rgba(255,255,255,.06)] p-[3px]">
+                  <div className="absolute top-[3px] bottom-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-full transition-transform duration-300 ease-[cubic-bezier(.34,1.4,.5,1)]" style={{ background: V.accent, transform: `translateX(${V.pinPillShift})` }}></div>
+                  {V.pinModeOpts.map((m: any, i: number) => (
+                    <button key={i} onClick={m.pick} className="relative z-[2] cursor-pointer whitespace-nowrap border-none bg-transparent px-3.5 py-[5px] font-[inherit] text-[11.5px] font-bold transition-colors duration-250" style={{ color: m.color }}>{m.label}</button>
+                  ))}
+                </div>
+                {V.mapZoomed && (
+                  <button onClick={V.resetMap} className="cursor-pointer whitespace-nowrap rounded-full border border-[rgba(242,237,227,.3)] bg-[rgba(255,255,255,.05)] px-3.5 py-1.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.85)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">← {V.L.resetMap}</button>
+                )}
+              </div>
+            )}
           </div>
 
           {V.isMobile ? (
             <>
-              <Hover as="button" onClick={V.toggleMobileMenu} s="cursor:pointer;font-family:inherit;width:38px;height:38px;flex:none;border-radius:10px;border:1px solid rgba(242,237,227,.25);background:rgba(255,255,255,.06);color:#f2ede3;display:flex;align-items:center;justify-content:center;font-size:17px" h="border-color:var(--accent,#E8B84B)">{V.mobileMenuOpen ? '×' : '☰'}</Hover>
+              <button onClick={V.toggleMobileMenu} className="flex h-[38px] w-[38px] flex-none cursor-pointer items-center justify-center rounded-[10px] border border-[rgba(242,237,227,.25)] bg-[rgba(255,255,255,.06)] font-[inherit] text-[17px] text-cream transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">{V.mobileMenuOpen ? '×' : '☰'}</button>
               {V.mobileMenuOpen && (
                 <>
-                  <div onClick={V.closeMobileMenu} style={css('position:fixed;inset:0;z-index:40;cursor:default;background:rgba(0,0,0,.4)')}></div>
-                  <div style={css('position:fixed;left:12px;right:12px;top:66px;z-index:41;background:rgba(13,20,15,.97);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:14px;box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;gap:4px;max-height:80vh;overflow:auto')}>
-                    <Hover as="button" onClick={V.toggleLoc} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:rgba(242,237,227,.9);background:rgba(255,255,255,.05);border:1px solid rgba(242,237,227,.16);border-radius:11px;padding:11px 13px;text-align:left" h="border-color:var(--accent,#E8B84B)">
-                      <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent,#E8B84B)')}></span>
-                      <span style={css('flex:1')}>{V.aimagLabel}</span>
-                      <span style={css('font-size:10.5px;font-weight:800;color:var(--accent,#E8B84B)')}>{V.aimagCount}</span>
-                    </Hover>
+                  <div onClick={V.closeMobileMenu} className="fixed inset-0 z-40 cursor-default bg-[rgba(0,0,0,.4)]"></div>
+                  <div className="fixed top-[66px] right-3 left-3 z-[41] flex max-h-[80vh] flex-col gap-1 overflow-auto rounded-2xl border border-[rgba(255,255,255,.14)] bg-[rgba(13,20,15,.97)] p-3.5 shadow-[0_24px_60px_rgba(0,0,0,.55)] backdrop-blur-[18px]">
+                    <button onClick={V.toggleLoc} className="flex cursor-pointer items-center gap-2 rounded-[11px] border border-[rgba(242,237,227,.16)] bg-[rgba(255,255,255,.05)] px-[13px] py-[11px] text-left font-[inherit] text-[13px] font-semibold text-[rgba(242,237,227,.9)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
+                      <span className="flex-1">{V.aimagLabel}</span>
+                      <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
+                    </button>
                     {V.locOpen && (
-                      <div style={css('display:flex;flex-wrap:wrap;gap:6px;padding:10px 2px')}>
+                      <div className="flex flex-wrap gap-1.5 px-0.5 py-2.5">
                         {V.aimagOpts.map((a: any, i: number) => (
-                          <Hover as="button" key={i} onClick={a.pick} s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid ${a.border};background:${a.bg};color:${a.color}`} h="border-color:rgba(242,237,227,.6)">
+                          <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-colors duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
                             <span>{a.label}</span>
                             <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
-                          </Hover>
+                          </button>
                         ))}
+                      </div>
+                    )}
+                    {V.isMapsPage && (
+                      <div className="flex flex-wrap items-center gap-2 pt-2 pr-0.5 pb-1 pl-0.5">
+                        <button onClick={V.openGlobe} title={V.L.globe} className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border-none text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5" style={{ background: V.accent }}><Globe size={15} /></button>
+                        <div className="relative flex-1 inline-grid grid-cols-3 rounded-full border border-[rgba(255,255,255,.16)] bg-[rgba(255,255,255,.06)] p-[3px]">
+                          <div className="absolute top-[3px] bottom-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-full transition-transform duration-300 ease-[cubic-bezier(.34,1.4,.5,1)]" style={{ background: V.accent, transform: `translateX(${V.pinPillShift})` }}></div>
+                          {V.pinModeOpts.map((m: any, i: number) => (
+                            <button key={i} onClick={m.pick} className="relative z-[2] cursor-pointer whitespace-nowrap border-none bg-transparent px-2 py-[5px] font-[inherit] text-[11px] font-bold transition-colors duration-250" style={{ color: m.color }}>{m.label}</button>
+                          ))}
+                        </div>
+                        {V.mapZoomed && (
+                          <button onClick={V.resetMap} className="cursor-pointer whitespace-nowrap rounded-full border border-[rgba(242,237,227,.3)] bg-[rgba(255,255,255,.05)] px-3.5 py-1.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.85)] hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">← {V.L.resetMap}</button>
+                        )}
                       </div>
                     )}
                     {[
                       [V.L.home, V.goHome], [V.L.pin, V.openPin], [V.L.event, V.openEvent],
                       [V.L.suggest, V.openSuggest], [V.L.about, V.openAbout],
                     ].map(([label, fn]: any, i: number) => (
-                      <Hover key={i} as="button" onClick={() => { fn(); V.closeMobileMenu(); }} s="all:unset;cursor:pointer;font-size:14px;font-weight:600;color:rgba(242,237,227,.85);padding:11px 13px;border-radius:11px" h="background:rgba(255,255,255,.06);color:#f2ede3">{label}</Hover>
+                      <button key={i} onClick={() => { fn(); V.closeMobileMenu(); }} className="cursor-pointer rounded-[11px] border-0 bg-transparent px-[13px] py-[11px] text-left font-[inherit] text-sm font-semibold text-[rgba(242,237,227,.85)] hover:bg-[rgba(255,255,255,.06)] hover:text-cream">{label}</button>
                     ))}
-                    <div style={css('display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px 4px;border-top:1px solid rgba(255,255,255,.1);margin-top:6px')}>
-                      <div style={css('display:flex;border:1px solid rgba(242,237,227,.25);border-radius:999px;overflow:hidden')}>
-                        <button onClick={V.setMn} style={{ ...css('cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;padding:6px 11px;border:none'), background: V.mnBg, color: V.mnColor }}>MN</button>
-                        <button onClick={V.setEn} style={{ ...css('cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;padding:6px 11px;border:none'), background: V.enBg, color: V.enColor }}>EN</button>
+                    <div className="mt-1.5 flex items-center justify-between gap-2.5 border-t border-[rgba(255,255,255,.1)] pt-2.5 pr-[13px] pb-1 pl-[13px]">
+                      <div className="flex overflow-hidden rounded-full border border-[rgba(242,237,227,.25)]">
+                        <button onClick={V.setMn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold" style={{ background: V.mnBg, color: V.mnColor }}>MN</button>
+                        <button onClick={V.setEn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold" style={{ background: V.enBg, color: V.enColor }}>EN</button>
                       </div>
-                      <Link href="/login" onClick={V.closeMobileMenu} style={css('cursor:pointer;text-decoration:none;font-family:inherit;font-size:12.5px;font-weight:600;color:#f2ede3;background:transparent;border:1px solid rgba(242,237,227,.28);border-radius:999px;padding:7px 15px')}>{V.L.signin}</Link>
-                      <Hover as="button" onClick={() => { V.openProfile(); V.closeMobileMenu(); }} title={V.L.profile} s={`cursor:pointer;font-family:inherit;width:34px;height:34px;flex:none;border-radius:50%;border:1px solid ${V.profileBorder};background:${V.profileBg};color:${V.profileColor};font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center`} h="border-color:var(--accent,#E8B84B)">Б</Hover>
+                      <Link href="/login" onClick={V.closeMobileMenu} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-[15px] py-1.5 font-[inherit] text-[12.5px] font-semibold text-cream no-underline">{V.L.signin}</Link>
+                      <button onClick={() => { V.openProfile(); V.closeMobileMenu(); }} title={V.L.profile} className="flex h-[34px] w-[34px] flex-none cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
                     </div>
                   </div>
                 </>
               )}
             </>
           ) : (
-            <div style={css('display:flex;align-items:center;gap:16px;min-width:0')}>
-              <div style={css('position:relative')}>
-                <Hover as="button" onClick={V.toggleLoc} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:rgba(242,237,227,.85);background:rgba(255,255,255,.06);border:1px solid rgba(242,237,227,.18);border-radius:999px;padding:6px 12px;transition:all .25s" h="border-color:var(--accent,#E8B84B)">
-                  <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent,#E8B84B)')}></span>
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="relative">
+                <button onClick={V.toggleLoc} className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.06)] px-3 py-1.5 font-[inherit] text-xs font-semibold text-[rgba(242,237,227,.85)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
                   <span>{V.aimagLabel}</span>
-                  <span style={css('font-size:10.5px;font-weight:800;color:var(--accent,#E8B84B)')}>{V.aimagCount}</span>
-                  <span style={css('font-size:9px;opacity:.6')}>▾</span>
-                </Hover>
+                  <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
+                  <span className="text-[9px] opacity-60">▾</span>
+                </button>
                 {V.locOpen && (
                   <>
-                    <div onClick={V.closeLoc} style={css('position:fixed;inset:0;z-index:40;cursor:default')}></div>
-                    <div style={css('position:fixed;left:50%;transform:translateX(-50%);top:76px;width:560px;max-height:70vh;overflow:auto;background:rgba(255,255,255,.09);backdrop-filter:blur(22px) saturate(1.2);-webkit-backdrop-filter:blur(22px) saturate(1.2);border:1px solid rgba(255,255,255,.35);border-radius:14px;padding:14px 16px 16px;box-shadow:0 24px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.25);z-index:41')}>
-                      <div style={css('display:flex;flex-wrap:wrap;gap:6px')}>
+                    <div onClick={V.closeLoc} className="fixed inset-0 z-40 cursor-default"></div>
+                    <div className="fixed top-[76px] left-1/2 z-[41] max-h-[70vh] w-[560px] -translate-x-1/2 overflow-auto rounded-[14px] border border-[rgba(255,255,255,.35)] bg-[rgba(255,255,255,.09)] p-4 pt-3.5 shadow-[0_24px_60px_rgba(0,0,0,.45),inset_0_1px_0_rgba(255,255,255,.25)] backdrop-blur-[22px] backdrop-saturate-[1.2]">
+                      <div className="flex flex-wrap gap-1.5">
                         {V.aimagOpts.map((a: any, i: number) => (
-                          <Hover as="button" key={i} onClick={a.pick} s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid ${a.border};background:${a.bg};color:${a.color};transition:all .2s`} h="border-color:rgba(242,237,227,.6)">
+                          <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-all duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
                             <span>{a.label}</span>
                             <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
-                          </Hover>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -928,24 +1101,24 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
               {!V.isTablet && (
                 <>
-                  <Hover as="button" onClick={V.goHome} s="all:unset;cursor:pointer;font-size:13px;font-weight:600;color:rgba(242,237,227,.75)" h="color:#f2ede3">{V.L.home}</Hover>
-                  <Hover as="button" onClick={V.openPin} s={`all:unset;cursor:pointer;font-size:13px;font-weight:600;color:${V.pinNavColor}`} h="color:#f2ede3">{V.L.pin}</Hover>
-                  <Hover as="button" onClick={V.openEvent} s={`all:unset;cursor:pointer;font-size:13px;font-weight:600;color:${V.eventNavColor}`} h="color:#f2ede3">{V.L.event}</Hover>
-                  <Hover as="button" onClick={V.openSuggest} s={`all:unset;cursor:pointer;font-size:13px;font-weight:600;color:${V.suggestNavColor}`} h="color:#f2ede3">{V.L.suggest}</Hover>
-                  <Hover as="button" onClick={V.openAbout} s={`all:unset;cursor:pointer;font-size:13px;font-weight:600;color:${V.aboutNavColor}`} h="color:#f2ede3">{V.L.about}</Hover>
+                  <button onClick={V.goHome} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold text-[rgba(242,237,227,.75)] hover:text-cream">{V.L.home}</button>
+                  <button onClick={V.openPin} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold hover:text-cream" style={{ color: V.pinNavColor }}>{V.L.pin}</button>
+                  <button onClick={V.openEvent} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold hover:text-cream" style={{ color: V.eventNavColor }}>{V.L.event}</button>
+                  <button onClick={V.openSuggest} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold hover:text-cream" style={{ color: V.suggestNavColor }}>{V.L.suggest}</button>
+                  <button onClick={V.openAbout} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold hover:text-cream" style={{ color: V.aboutNavColor }}>{V.L.about}</button>
                 </>
               )}
 
-              <div style={css('display:flex;border:1px solid rgba(242,237,227,.25);border-radius:999px;overflow:hidden')}>
-                <button onClick={V.setMn} style={{ ...css('cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;padding:6px 11px;border:none;transition:all .25s'), background: V.mnBg, color: V.mnColor }}>MN</button>
-                <button onClick={V.setEn} style={{ ...css('cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;padding:6px 11px;border:none;transition:all .25s'), background: V.enBg, color: V.enColor }}>EN</button>
+              <div className="flex overflow-hidden rounded-full border border-[rgba(242,237,227,.25)]">
+                <button onClick={V.setMn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold transition-all duration-250" style={{ background: V.mnBg, color: V.mnColor }}>MN</button>
+                <button onClick={V.setEn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold transition-all duration-250" style={{ background: V.enBg, color: V.enColor }}>EN</button>
               </div>
 
               {!V.isTablet && (
-                <Link href="/login" style={css('cursor:pointer;text-decoration:none;font-family:inherit;font-size:13px;font-weight:600;color:#f2ede3;background:transparent;border:1px solid rgba(242,237,227,.28);border-radius:999px;padding:6px 16px;transition:all .25s')}>{V.L.signin}</Link>
+                <Link href="/login" className="cursor-pointer rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-4 py-1.5 font-[inherit] text-[13px] font-semibold text-cream no-underline transition-all duration-250">{V.L.signin}</Link>
               )}
 
-              <Hover as="button" onClick={V.openProfile} title={V.L.profile} s={`cursor:pointer;font-family:inherit;width:34px;height:34px;border-radius:50%;border:1px solid ${V.profileBorder};background:${V.profileBg};color:${V.profileColor};font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;transition:all .2s`} h="border-color:var(--accent,#E8B84B)">Б</Hover>
+              <button onClick={V.openProfile} title={V.L.profile} className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-all duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
             </div>
           )}
         </nav>

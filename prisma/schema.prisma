@@ -177,6 +177,9 @@ model SiteSettings {
   // Full-bleed photo behind the Marauder's-map loading screen (MarauderLoader) —
   // falls back to the plain dark gradient in the component's own CSS when unset.
   loaderBackgroundImage String?
+  // Background photo/video behind the "Аяллын апп" (travel apps) card on the
+  // Suggest page — falls back to the plain dark gradient there when unset.
+  travelAppsBackgroundImage String?
   updatedAt            DateTime @updatedAt
 
   @@map("site_settings")

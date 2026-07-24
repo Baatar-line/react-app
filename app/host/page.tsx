@@ -12,7 +12,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Hash, Phone, Mail, Clock, Search, User, MapPin, Mountain, CalendarDays, MessageSquare, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
-import { css, Hover, useIsMobile } from '@/components/bigbang/ui';
+import { useIsMobile } from '@/components/bigbang/ui';
 import { imgUrl, PLACEHOLDER_IMG } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
 
@@ -54,7 +54,6 @@ const NAV: { key: View; icon: LucideIcon; label: string }[] = [
 
 export default function HostProfile() {
   const isMobile = useIsMobile();
-  const inputFont = isMobile ? '16px' : '12.5px';
   const [view, setView] = useState<View>('profile');
   const [sbCollapsed, setSbCollapsed] = useState(false);
   const [added, setAdded] = useState<Record<ContentTab, ContentItem[]>>({ places: [], scenic: [], events: [] });
@@ -140,24 +139,28 @@ export default function HostProfile() {
     // scrolling page with a horizontal icon bar up top, same as Admin's mobile
     // treatment — a fixed-height flex shell fights the on-screen keyboard and
     // safe-area insets on small screens.
-    <div style={{ ...css(isMobile ? 'display:flex;flex-direction:column;min-height:100vh;color:#f2ede3' : 'display:flex;height:100vh;overflow:hidden;color:#f2ede3'), background: '#0b0a08', fontFamily: "'Manrope', sans-serif" }}>
-      <aside style={isMobile
-        ? css('width:100%;flex-shrink:0;display:flex;align-items:center;gap:6px;padding:10px 12px;box-sizing:border-box;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.08);overflow-x:auto')
-        : { ...css('flex-shrink:0;display:flex;flex-direction:column;box-sizing:border-box;background:rgba(255,255,255,.03);border-right:1px solid rgba(255,255,255,.08);transition:width .2s ease'), width: sbCollapsed ? 76 : 240, padding: sbCollapsed ? '26px 12px' : '26px 16px' }
+    <div className={`${isMobile ? 'flex flex-col min-h-screen' : 'flex h-screen overflow-hidden'} text-cream bg-ink font-sans`}>
+      <aside className={isMobile
+        ? 'w-full flex-shrink-0 flex items-center gap-1.5 py-[10px] px-3 box-border bg-[rgba(255,255,255,.03)] border-b border-[rgba(255,255,255,.08)] overflow-x-auto'
+        : `flex-shrink-0 flex flex-col box-border bg-[rgba(255,255,255,.03)] border-r border-[rgba(255,255,255,.08)] transition-[width] duration-200 ease-in-out ${sbCollapsed ? 'w-[76px] py-[26px] px-3' : 'w-[240px] py-[26px] px-4'}`
       }>
-        <div style={css(`display:flex;align-items:center;gap:8px;flex-shrink:0;padding:${isMobile ? '0 10px 0 0' : sbCollapsed ? '0 0 22px' : '0 4px 22px'};justify-content:${!isMobile && sbCollapsed ? 'center' : 'flex-start'}`)}>
-          <div style={css('width:30px;height:30px;border-radius:9px;background:var(--accent,#E8B84B);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#132a1f;flex-shrink:0')}>b</div>
+        <div className={`flex items-center gap-2 flex-shrink-0 ${isMobile ? 'pr-[10px] justify-start' : sbCollapsed ? 'pb-[22px] justify-center' : 'px-1 pb-[22px] justify-start'}`}>
+          <div className="w-[30px] h-[30px] rounded-[9px] bg-[var(--accent,#E8B84B)] flex items-center justify-center font-extrabold text-sm text-[#132a1f] flex-shrink-0">b</div>
           {!isMobile && !sbCollapsed && (
-            <div style={css('flex:1;min-width:0')}>
-              <div style={css('font-size:14.5px;font-weight:800;letter-spacing:-0.02em')}>big bang</div>
-              <div style={css('font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:rgba(242,237,227,.45)')}>host</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[14.5px] font-extrabold tracking-[-0.02em]">big bang</div>
+              <div className="font-mono text-[9.5px] tracking-[.18em] uppercase text-[rgba(242,237,227,.45)]">host</div>
             </div>
           )}
-          {isMobile && <span style={css('font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:rgba(242,237,227,.45)')}>host</span>}
+          {isMobile && <span className="font-mono text-[9.5px] tracking-[.18em] uppercase text-[rgba(242,237,227,.45)]">host</span>}
           {!isMobile && (
-            <Hover as="button" onClick={() => setSbCollapsed((v) => !v)} title={sbCollapsed ? 'Цэсийг дэлгэх' : 'Цэсийг хумих'} s="cursor:pointer;font-family:inherit;flex-shrink:0;width:26px;height:26px;border-radius:8px;border:none;background:transparent;color:rgba(242,237,227,.5);display:flex;align-items:center;justify-content:center;transition:all .2s" h="background:rgba(255,255,255,.08);color:rgba(242,237,227,.9)">
+            <button
+              onClick={() => setSbCollapsed((v) => !v)}
+              title={sbCollapsed ? 'Цэсийг дэлгэх' : 'Цэсийг хумих'}
+              className="cursor-pointer font-[inherit] flex-shrink-0 w-[26px] h-[26px] rounded-lg border-none bg-transparent text-[rgba(242,237,227,.5)] flex items-center justify-center transition-all duration-200 ease-in-out hover:bg-[rgba(255,255,255,.08)] hover:text-[rgba(242,237,227,.9)]"
+            >
               {sbCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-            </Hover>
+            </button>
           )}
         </div>
 
@@ -165,84 +168,92 @@ export default function HostProfile() {
           const on = view === n.key;
           const badge = badgeFor(n.key);
           return (
-            <Hover key={n.key} as="button" onClick={() => setView(n.key)} title={!isMobile && sbCollapsed ? n.label : undefined}
-              s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:${isMobile ? '7' : '11'}px;justify-content:${!isMobile && sbCollapsed ? 'center' : 'flex-start'};font-size:${isMobile ? '12' : '13'}px;font-weight:700;text-align:left;white-space:nowrap;flex-shrink:0;padding:${isMobile ? '9px 12px' : sbCollapsed ? '11px' : '11px 14px'};border-radius:11px;border:none;background:${on ? 'var(--accent,#E8B84B)' : 'transparent'};color:${on ? '#132a1f' : 'rgba(242,237,227,.8)'};transition:all .2s;position:relative`}
-              h={on ? undefined : 'background:rgba(255,255,255,.07)'}>
+            <button
+              key={n.key}
+              onClick={() => setView(n.key)}
+              title={!isMobile && sbCollapsed ? n.label : undefined}
+              className={`cursor-pointer font-[inherit] flex items-center font-bold text-left whitespace-nowrap flex-shrink-0 rounded-[11px] border-none transition-all duration-200 ease-in-out relative ${isMobile ? 'gap-[7px] text-xs py-[9px] px-3' : `gap-[11px] text-[13px] ${sbCollapsed ? 'p-[11px]' : 'py-[11px] px-[14px]'}`} ${!isMobile && sbCollapsed ? 'justify-center' : 'justify-start'} ${on ? 'bg-[var(--accent,#E8B84B)] text-[#132a1f]' : 'bg-transparent text-[rgba(242,237,227,.8)] hover:bg-[rgba(255,255,255,.07)]'}`}
+            >
               <n.icon size={16} />
               {(isMobile || !sbCollapsed) && <span>{n.label}</span>}
               {badge > 0 && (!isMobile && sbCollapsed
-                ? <span style={{ position: 'absolute', top: 6, right: 6, width: 7, height: 7, borderRadius: '50%', background: on ? '#132a1f' : 'var(--accent,#E8B84B)' }} />
-                : <span style={{ ...css('margin-left:auto;font-size:10.5px;font-weight:800;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:999px'), background: on ? 'rgba(0,0,0,.25)' : 'rgba(232, 184, 75,.2)', color: on ? '#132a1f' : 'var(--accent,#E8B84B)' }}>{badge}</span>)}
-            </Hover>
+                ? <span className={`absolute top-1.5 right-1.5 w-[7px] h-[7px] rounded-full ${on ? 'bg-[#132a1f]' : 'bg-[var(--accent,#E8B84B)]'}`} />
+                : <span className={`ml-auto text-[10.5px] font-extrabold min-w-[20px] h-5 flex items-center justify-center rounded-full ${on ? 'bg-[rgba(0,0,0,.25)] text-[#132a1f]' : 'bg-[rgba(232,184,75,.2)] text-[var(--accent,#E8B84B)]'}`}>{badge}</span>)}
+            </button>
           );
         })}
 
-        <Hover as={Link as any} href="/" title={!isMobile && sbCollapsed ? 'Гарах' : undefined}
-          s={`text-decoration:none;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:${!isMobile && sbCollapsed ? 'center' : 'flex-start'};gap:${isMobile ? '7' : '10'}px;font-size:${isMobile ? '12' : '12'}px;font-weight:700;white-space:nowrap;flex-shrink:0;padding:${isMobile ? '9px 12px' : '10px'};border-radius:11px;border:1px solid rgba(242,237,227,.2);background:transparent;color:rgba(242,237,227,.75);transition:all .2s${isMobile ? '' : ';margin-top:auto'}`}
-          h="border-color:var(--accent,#E8B84B);color:var(--accent,#E8B84B)">
+        <Link
+          href="/"
+          title={!isMobile && sbCollapsed ? 'Гарах' : undefined}
+          className={`no-underline cursor-pointer font-[inherit] flex items-center text-xs font-bold whitespace-nowrap flex-shrink-0 rounded-[11px] border border-[rgba(242,237,227,.2)] bg-transparent text-[rgba(242,237,227,.75)] transition-all duration-200 ease-in-out hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)] ${!isMobile && sbCollapsed ? 'justify-center' : 'justify-start'} ${isMobile ? 'gap-[7px] py-[9px] px-3' : 'gap-2.5 p-2.5 mt-auto'}`}
+        >
           {!isMobile && sbCollapsed ? 'Г' : 'Гарах'}
-        </Hover>
+        </Link>
       </aside>
 
-      <main style={{ ...css('box-sizing:border-box'), flex: 1, overflowY: isMobile ? undefined : 'auto', padding: isMobile ? '20px 16px 40px' : '32px 40px 60px' }}>
-        <div style={css('max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:18px')}>
+      <main className={`flex-1 box-border ${isMobile ? 'pt-5 px-4 pb-10' : 'overflow-y-auto pt-8 px-10 pb-[60px]'}`}>
+        <div className="max-w-[760px] mx-auto flex flex-col gap-[18px]">
 
           {view === 'profile' && (
             <>
-              <div style={css('position:relative;border:1px solid rgba(255,255,255,.12);border-radius:20px;overflow:hidden;background:rgba(255,255,255,.03)')}>
-                <div style={{ ...css('height:110px;background-size:cover;background-position:center'), backgroundImage: `linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.55)), url("${PLACEHOLDER_IMG}")` }}></div>
-                <div style={css('padding:0 22px 22px')}>
-                  <div style={css('width:76px;height:76px;border-radius:50%;background:linear-gradient(135deg,#E8B84B,#b57f42);border:3px solid #171410;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;color:#132a1f;margin-top:-38px')}>Б</div>
-                  <div style={css('display:flex;align-items:center;gap:9px;margin-top:12px')}>
-                    <span style={css('font-size:19px;font-weight:800;letter-spacing:-0.02em')}>Болд-Эрдэнэ</span>
-                    <span style={css('font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:rgba(168,213,162,.15);border:1px solid rgba(168,213,162,.45);color:#a8d5a2')}>Баталгаажсан</span>
+              <div className="relative border border-[rgba(255,255,255,.12)] rounded-[20px] overflow-hidden bg-[rgba(255,255,255,.03)]">
+                <div className="h-[110px] bg-cover bg-center" style={{ backgroundImage: `linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.55)), url("${PLACEHOLDER_IMG}")` }}></div>
+                <div className="px-[22px] pb-[22px]">
+                  <div className="w-[76px] h-[76px] rounded-full bg-[linear-gradient(135deg,#E8B84B,#b57f42)] border-[3px] border-[#171410] flex items-center justify-center text-[26px] font-extrabold text-[#132a1f] -mt-[38px]">Б</div>
+                  <div className="flex items-center gap-[9px] mt-3">
+                    <span className="text-[19px] font-extrabold tracking-[-0.02em]">Болд-Эрдэнэ</span>
+                    <span className="text-[9.5px] font-extrabold tracking-[.08em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(168,213,162,.15)] border border-[rgba(168,213,162,.45)] text-[#a8d5a2]">Баталгаажсан</span>
                   </div>
-                  <div style={css('font-size:12px;color:rgba(242,237,227,.55);margin-top:3px')}>Sky Lounge 21 · Улаанбаатар</div>
+                  <div className="text-xs text-[rgba(242,237,227,.55)] mt-[3px]">Sky Lounge 21 · Улаанбаатар</div>
 
-                  <div style={css('display:flex;flex-direction:column;gap:1px;margin-top:18px;border:1px solid rgba(255,255,255,.09);border-radius:13px;overflow:hidden')}>
+                  <div className="flex flex-col gap-px mt-[18px] border border-[rgba(255,255,255,.09)] rounded-[13px] overflow-hidden">
                     {infoRows.map((r, i) => (
-                      <div key={i} style={css('display:flex;align-items:center;gap:12px;padding:11px 15px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.05)')}>
-                        <span style={css('display:flex;align-items:center;justify-content:center;width:20px')}><r.icon size={14} /></span>
-                        <span style={css('flex:1')}>
-                          <span style={css('display:block;font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(242,237,227,.45)')}>{r.label}</span>
-                          <span style={{ ...css('display:block;font-size:13px;font-weight:700;margin-top:2px'), fontFamily: r.mono }}>{r.value}</span>
+                      <div key={i} className="flex items-center gap-3 py-[11px] px-[15px] bg-[rgba(255,255,255,.03)] border-b border-[rgba(255,255,255,.05)]">
+                        <span className="flex items-center justify-center w-5"><r.icon size={14} /></span>
+                        <span className="flex-1">
+                          <span className="block text-[10px] font-bold tracking-[.07em] uppercase text-[rgba(242,237,227,.45)]">{r.label}</span>
+                          <span className="block text-[13px] font-bold mt-0.5" style={{ fontFamily: r.mono }}>{r.value}</span>
                         </span>
                         {r.copyable && (
-                          <Hover as="button" onClick={copy(r.key, r.val)} s="cursor:pointer;font-family:inherit;font-size:10px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid rgba(242,237,227,.25);background:transparent;color:rgba(242,237,227,.65);transition:all .2s" h="border-color:var(--accent,#E8B84B);color:var(--accent,#E8B84B)">{copied === r.key ? '✓' : 'Хуулах'}</Hover>
+                          <button onClick={copy(r.key, r.val)} className="cursor-pointer font-[inherit] text-[10px] font-bold py-1 px-2.5 rounded-full border border-[rgba(242,237,227,.25)] bg-transparent text-[rgba(242,237,227,.65)] transition-all duration-200 ease-in-out hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">{copied === r.key ? '✓' : 'Хуулах'}</button>
                         )}
                       </div>
                     ))}
                   </div>
 
-                  <Hover as="button" onClick={() => { setEditOpen((v) => !v); setEPhone(phone); setEEmail(email); }} s="cursor:pointer;font-family:inherit;width:100%;box-sizing:border-box;margin-top:14px;font-size:12px;font-weight:700;padding:10px;border-radius:11px;border:1px solid rgba(242,237,227,.3);background:transparent;color:rgba(242,237,227,.85);transition:all .2s" h="border-color:var(--accent,#E8B84B);color:var(--accent,#E8B84B)">Мэдээлэл засах</Hover>
+                  <button
+                    onClick={() => { setEditOpen((v) => !v); setEPhone(phone); setEEmail(email); }}
+                    className="cursor-pointer font-[inherit] w-full box-border mt-[14px] text-xs font-bold p-2.5 rounded-[11px] border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 ease-in-out hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"
+                  >Мэдээлэл засах</button>
                 </div>
               </div>
 
-              <div style={css('display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px')}>
+              <div className="grid grid-cols-3 gap-2.5">
                 {stats.map((s, i) => (
-                  <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:14px;background:rgba(255,255,255,.03);text-align:center')}>
-                    <div style={{ ...css('font-size:21px;font-weight:800;letter-spacing:-0.02em'), color: s.color }}>{s.value}</div>
-                    <div style={css('font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:rgba(242,237,227,.5);margin-top:4px')}>{s.label}</div>
+                  <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-[14px] p-[14px] bg-[rgba(255,255,255,.03)] text-center">
+                    <div className="text-[21px] font-extrabold tracking-[-0.02em]" style={{ color: s.color }}>{s.value}</div>
+                    <div className="text-[10px] font-bold tracking-[.05em] uppercase text-[rgba(242,237,227,.5)] mt-1">{s.label}</div>
                   </div>
                 ))}
               </div>
 
               {editOpen && (
-                <div style={css('border:1px solid rgba(232, 184, 75,.4);border-radius:18px;padding:20px 22px;background:rgba(232, 184, 75,.06)')}>
-                  <div style={css('font-size:14px;font-weight:800;margin-bottom:14px')}>Мэдээлэл засах</div>
-                  <div style={{ ...css('display:grid;gap:12px'), gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
-                    <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                      <span style={css('font-size:11px;font-weight:700;color:rgba(242,237,227,.65)')}>Утасны дугаар</span>
-                      <input value={ePhone} onChange={(e) => setEPhone(e.target.value)} style={{ ...css('font-family:inherit;color:#f2ede3;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:9px 12px;outline:none'), fontSize: inputFont }} />
+                <div className="border border-[rgba(232,184,75,.4)] rounded-[18px] py-5 px-[22px] bg-[rgba(232,184,75,.06)]">
+                  <div className="text-sm font-extrabold mb-[14px]">Мэдээлэл засах</div>
+                  <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[11px] font-bold text-[rgba(242,237,227,.65)]">Утасны дугаар</span>
+                      <input value={ePhone} onChange={(e) => setEPhone(e.target.value)} className={`font-[inherit] text-cream bg-[rgba(0,0,0,.35)] border border-[rgba(255,255,255,.2)] rounded-[10px] py-[9px] px-3 outline-none ${isMobile ? 'text-base' : 'text-[12.5px]'}`} />
                     </label>
-                    <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                      <span style={css('font-size:11px;font-weight:700;color:rgba(242,237,227,.65)')}>Имэйл</span>
-                      <input value={eEmail} onChange={(e) => setEEmail(e.target.value)} style={{ ...css('font-family:inherit;color:#f2ede3;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:9px 12px;outline:none'), fontSize: inputFont }} />
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[11px] font-bold text-[rgba(242,237,227,.65)]">Имэйл</span>
+                      <input value={eEmail} onChange={(e) => setEEmail(e.target.value)} className={`font-[inherit] text-cream bg-[rgba(0,0,0,.35)] border border-[rgba(255,255,255,.2)] rounded-[10px] py-[9px] px-3 outline-none ${isMobile ? 'text-base' : 'text-[12.5px]'}`} />
                     </label>
                   </div>
-                  <div style={css('display:flex;gap:8px;margin-top:14px')}>
-                    <button onClick={() => { setPhone(ePhone || phone); setEmail(eEmail || email); setEditOpen(false); }} style={css('cursor:pointer;font-family:inherit;font-size:12px;font-weight:800;padding:9px 22px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f')}>Хадгалах</button>
-                    <button onClick={() => setEditOpen(false)} style={css('cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;padding:9px 18px;border-radius:999px;border:1px solid rgba(242,237,227,.25);background:transparent;color:rgba(242,237,227,.7)')}>Болих</button>
+                  <div className="flex gap-2 mt-[14px]">
+                    <button onClick={() => { setPhone(ePhone || phone); setEmail(eEmail || email); setEditOpen(false); }} className="cursor-pointer font-[inherit] text-xs font-extrabold py-[9px] px-[22px] rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f]">Хадгалах</button>
+                    <button onClick={() => setEditOpen(false)} className="cursor-pointer font-[inherit] text-xs font-bold py-[9px] px-[18px] rounded-full border border-[rgba(242,237,227,.25)] bg-transparent text-[rgba(242,237,227,.7)]">Болих</button>
                   </div>
                 </div>
               )}
@@ -250,69 +261,79 @@ export default function HostProfile() {
           )}
 
           {(view === 'places' || view === 'scenic' || view === 'events') && (
-            <div style={css('border:1px solid rgba(255,255,255,.12);border-radius:18px;background:rgba(255,255,255,.03);overflow:hidden')}>
-              <div style={css('display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.08);flex-wrap:wrap')}>
-                <div style={css('font-size:15px;font-weight:800')}>{NAV.find((n) => n.key === view)?.label}</div>
-                <Hover as="button" onClick={openAdd} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:6px 14px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-1px)"><span style={css('font-size:13px;line-height:1')}>+</span>{addLabel}</Hover>
+            <div className="border border-[rgba(255,255,255,.12)] rounded-[18px] bg-[rgba(255,255,255,.03)] overflow-hidden">
+              <div className="flex items-center justify-between gap-3 py-[14px] px-5 border-b border-[rgba(255,255,255,.08)] flex-wrap">
+                <div className="text-[15px] font-extrabold">{NAV.find((n) => n.key === view)?.label}</div>
+                <button onClick={openAdd} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11px] font-bold py-[6px] px-[14px] rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 ease-in-out hover:-translate-y-px"><span className="text-[13px] leading-none">+</span>{addLabel}</button>
               </div>
 
-              <div style={css('padding:12px 20px;border-bottom:1px solid rgba(255,255,255,.06)')}>
-                <div style={css('position:relative;max-width:280px')}>
-                  <Search size={13} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(242,237,227,.4)', pointerEvents: 'none' }} />
+              <div className="py-3 px-5 border-b border-[rgba(255,255,255,.06)]">
+                <div className="relative max-w-[280px]">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[rgba(242,237,227,.4)] pointer-events-none" />
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Хайх..."
-                    style={{ ...css('width:100%;box-sizing:border-box;font-family:inherit;color:#f2ede3;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:7px 12px 7px 32px;outline:none'), fontSize: inputFont }}
+                    className={`w-full box-border font-[inherit] text-cream bg-[rgba(255,255,255,.04)] border border-[rgba(255,255,255,.14)] rounded-full py-[7px] pr-3 pl-8 outline-none ${isMobile ? 'text-base' : 'text-[12.5px]'}`}
                   />
                 </div>
               </div>
 
               {places.length === 0 && (
-                <div style={css('padding:22px 20px;font-size:12px;color:rgba(242,237,227,.45);text-align:center')}>Илэрц олдсонгүй</div>
+                <div className="py-[22px] px-5 text-xs text-[rgba(242,237,227,.45)] text-center">Илэрц олдсонгүй</div>
               )}
               {places.map((p, i) => (
-                <Hover key={i} as="div" s="display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,.05)" h="background:rgba(255,255,255,.04)">
-                  <div style={{ ...css('width:64px;height:46px;border-radius:9px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: p.thumbBg }}></div>
-                  <div style={css('flex:1;min-width:0')}>
-                    <div style={css('font-size:13px;font-weight:700')}>{p.name}</div>
-                    <div style={css('font-size:11px;color:rgba(242,237,227,.5);margin-top:2px')}>{p.meta}</div>
+                <div key={i} className="flex items-center gap-[14px] py-3 px-5 border-b border-[rgba(255,255,255,.05)] hover:bg-[rgba(255,255,255,.04)]">
+                  <div className="w-16 h-[46px] rounded-[9px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: p.thumbBg }}></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold">{p.name}</div>
+                    <div className="text-[11px] text-[rgba(242,237,227,.5)] mt-0.5">{p.meta}</div>
                   </div>
-                  <span style={{ ...css('font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:4px 11px;border-radius:999px;flex-shrink:0'), background: p.stBg, color: p.stColor }}>{p.status}</span>
-                </Hover>
+                  <span className="text-[10px] font-extrabold tracking-[.05em] uppercase py-1 px-[11px] rounded-full flex-shrink-0" style={{ background: p.stBg, color: p.stColor }}>{p.status}</span>
+                </div>
               ))}
             </div>
           )}
 
           {view === 'feedback' && (
-            <div style={css('border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:20px 22px;background:rgba(255,255,255,.03)')}>
-              <div style={css('font-size:14px;font-weight:800')}>Админд санал хүсэлт илгээх</div>
-              <div style={css('font-size:11.5px;color:rgba(242,237,227,.5);margin:4px 0 14px')}>Асуудал, гомдол, шинэ санал — бид 24 цагийн дотор хариулна.</div>
+            <div className="border border-[rgba(255,255,255,.12)] rounded-[18px] py-5 px-[22px] bg-[rgba(255,255,255,.03)]">
+              <div className="text-sm font-extrabold">Админд санал хүсэлт илгээх</div>
+              <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-1 mb-[14px]">Асуудал, гомдол, шинэ санал — бид 24 цагийн дотор хариулна.</div>
 
-              <div style={css('display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap')}>
+              <div className="flex gap-1.5 mb-3 flex-wrap">
                 {TOPICS.map((t) => {
                   const on = fbTopic === t;
                   return (
-                    <button key={t} onClick={() => setFbTopic(t)} style={{ ...css('cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;padding:6px 14px;border-radius:999px;transition:all .2s'), border: `1px solid ${on ? 'var(--accent,#E8B84B)' : 'rgba(255,255,255,.25)'}`, background: on ? 'rgba(232, 184, 75,.18)' : 'transparent', color: on ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.7)' }}>{t}</button>
+                    <button
+                      key={t}
+                      onClick={() => setFbTopic(t)}
+                      className={`cursor-pointer font-[inherit] text-[11px] font-bold py-1.5 px-[14px] rounded-full transition-all duration-200 ease-in-out border ${on ? 'border-[var(--accent,#E8B84B)] bg-[rgba(232,184,75,.18)] text-[var(--accent,#E8B84B)]' : 'border-[rgba(255,255,255,.25)] bg-transparent text-[rgba(242,237,227,.7)]'}`}
+                    >{t}</button>
                   );
                 })}
               </div>
 
-              <textarea value={fbText} onChange={(e) => { setFbText(e.target.value); setFbSent(false); }} rows={4} placeholder="Санал хүсэлтээ энд бичнэ үү..." style={{ ...css('width:100%;box-sizing:border-box;font-family:inherit;line-height:1.55;color:#f2ede3;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:12px 14px;outline:none;resize:vertical'), fontSize: inputFont }}></textarea>
+              <textarea
+                value={fbText}
+                onChange={(e) => { setFbText(e.target.value); setFbSent(false); }}
+                rows={4}
+                placeholder="Санал хүсэлтээ энд бичнэ үү..."
+                className={`w-full box-border font-[inherit] leading-[1.55] text-cream bg-[rgba(0,0,0,.35)] border border-[rgba(255,255,255,.2)] rounded-xl py-3 px-[14px] outline-none resize-y ${isMobile ? 'text-base' : 'text-[12.5px]'}`}
+              ></textarea>
 
-              <div style={css('display:flex;align-items:center;gap:12px;margin-top:12px')}>
-                <Hover as="button" onClick={sendFb} s="cursor:pointer;font-family:inherit;font-size:12px;font-weight:800;padding:10px 26px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)">Илгээх →</Hover>
-                {fbSent && <span style={css('font-size:12px;font-weight:700;color:#a8d5a2')}>✓ Илгээгдлээ — админ удахгүй хариулна</span>}
+              <div className="flex items-center gap-3 mt-3">
+                <button onClick={sendFb} className="cursor-pointer font-[inherit] text-xs font-extrabold py-2.5 px-[26px] rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 ease-in-out hover:-translate-y-0.5">Илгээх →</button>
+                {fbSent && <span className="text-xs font-bold text-[#a8d5a2]">✓ Илгээгдлээ — админ удахгүй хариулна</span>}
               </div>
 
               {history.length > 0 && (
-                <div style={css('margin-top:18px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px;display:flex;flex-direction:column;gap:8px')}>
-                  <div style={css('font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(242,237,227,.45)')}>Илгээсэн хүсэлтүүд</div>
+                <div className="mt-[18px] border-t border-[rgba(255,255,255,.08)] pt-[14px] flex flex-col gap-2">
+                  <div className="text-[10.5px] font-bold tracking-[.08em] uppercase text-[rgba(242,237,227,.45)]">Илгээсэн хүсэлтүүд</div>
                   {history.map((h, i) => (
-                    <div key={i} style={css('display:flex;align-items:center;gap:10px;font-size:12px;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.04)')}>
-                      <span style={css('font-size:10px;font-weight:800;padding:2px 9px;border-radius:999px;background:rgba(232, 184, 75,.15);color:var(--accent,#E8B84B);flex-shrink:0')}>{h.topic}</span>
-                      <span style={css('flex:1;color:rgba(242,237,227,.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{h.text}</span>
-                      <span style={{ ...css('font-size:10.5px;font-weight:700;flex-shrink:0'), color: h.stColor }}>{h.status}</span>
+                    <div key={i} className="flex items-center gap-2.5 text-xs py-2 px-3 rounded-[10px] bg-[rgba(255,255,255,.04)]">
+                      <span className="text-[10px] font-extrabold py-0.5 px-[9px] rounded-full bg-[rgba(232,184,75,.15)] text-[var(--accent,#E8B84B)] flex-shrink-0">{h.topic}</span>
+                      <span className="flex-1 text-[rgba(242,237,227,.75)] whitespace-nowrap overflow-hidden text-ellipsis">{h.text}</span>
+                      <span className="text-[10.5px] font-bold flex-shrink-0" style={{ color: h.stColor }}>{h.status}</span>
                     </div>
                   ))}
                 </div>
