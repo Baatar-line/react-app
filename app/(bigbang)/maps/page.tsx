@@ -2,17 +2,37 @@
 
 // Big Bang — Maps (/maps): aimag pin map, add-place form, pin detail panel.
 import { useContext } from 'react';
-import { Accessibility, Heart, MapPin } from 'lucide-react';
+import { Accessibility, Globe, Heart, MapPin } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
+import { BgMedia } from '@/components/bigbang/ui';
 
 export default function MapsPage() {
   const V: any = useContext(BigBangContext);
   return (
     <section data-screen-label="Пин — газрын зураг" className="relative h-screen overflow-hidden bg-ink">
+      {/* Selecting an aimag before its photo has preloaded left this stretch
+          flat black (neither crossfade slot below has anything to show yet) —
+          a skeleton fills that gap instead. */}
+      {V.pinBgLoading && <div className="absolute inset-0 bb-skeleton" />}
       <div style={{ position: 'absolute', inset: 0, backgroundImage: V.pinBgA, backgroundSize: 'cover', backgroundPosition: 'center', opacity: V.pinBgAOpacity, transition: 'opacity .55s ease' }}></div>
       <div style={{ position: 'absolute', inset: 0, backgroundImage: V.pinBgB, backgroundSize: 'cover', backgroundPosition: 'center', opacity: V.pinBgBOpacity, transition: 'opacity .55s ease' }}></div>
-      <div className="absolute inset-0 box-border pt-24 px-1 pb-[60px]">
-        <div ref={V.mainMapRef} className="absolute inset-x-1 top-24 bottom-[60px] overflow-hidden rounded-[18px] bg-[#1a2534]"></div>
+      <div className={`absolute inset-0 box-border px-4 pb-4 ${V.isMobile ? 'pt-[66px]' : 'pt-[72px]'}`}>
+        <div ref={V.mainMapRef} className={`absolute inset-x-4 bottom-4 isolate overflow-hidden rounded-[18px] bg-[#1a2534] ${V.isMobile ? 'top-[66px]' : 'top-[72px]'}`}></div>
+
+        {!V.isMobile && (
+          <div className="absolute right-8 top-[88px] z-20 flex items-center gap-2.5">
+            {V.mapZoomed && (
+              <button onClick={V.resetMap} className="cursor-pointer whitespace-nowrap rounded-full border border-[rgba(242,237,227,.3)] bg-[rgba(20,20,20,.72)] px-3.5 py-1.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.85)] shadow-[0_4px_14px_rgba(0,0,0,.35)] backdrop-blur-[8px] transition-all duration-250 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">← {V.L.resetMap}</button>
+            )}
+            <button onClick={V.openGlobe} title={V.L.globe} className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border-none text-[#132a1f] shadow-[0_4px_14px_rgba(0,0,0,.35)] transition-transform duration-200 hover:-translate-y-0.5" style={{ background: V.accent }}><Globe size={15} /></button>
+            <div className="relative inline-grid grid-cols-3 rounded-full border border-[rgba(255,255,255,.16)] bg-[rgba(20,20,20,.72)] p-[3px] shadow-[0_4px_14px_rgba(0,0,0,.35)] backdrop-blur-[8px]">
+              <div className="absolute top-[3px] bottom-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-full transition-transform duration-300 ease-[cubic-bezier(.34,1.4,.5,1)]" style={{ background: V.accent, transform: `translateX(${V.pinPillShift})` }}></div>
+              {V.pinModeOpts.map((m: any, i: number) => (
+                <button key={i} onClick={m.pick} className="relative z-[2] cursor-pointer whitespace-nowrap border-none bg-transparent px-3.5 py-[5px] font-[inherit] text-[11.5px] font-bold transition-colors duration-250" style={{ color: m.color }}>{m.label}</button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {!V.isMobile && (
@@ -150,21 +170,9 @@ export default function MapsPage() {
         </div>
       )}
 
-      {V.mapViewUrl && (
-        <div onClick={V.closeMapView} className="animate-bbFadeUp absolute inset-0 z-50 box-border flex items-center justify-center bg-[rgba(6,8,12,.7)] p-10 backdrop-blur-[6px]">
-          <div onClick={V.stop} className="relative w-[960px] max-w-full h-[min(620px,84vh)] overflow-hidden rounded-[18px] border border-[rgba(255,255,255,.12)] bg-[#14120f] shadow-[0_30px_80px_rgba(0,0,0,.6)]">
-            <div className="absolute inset-x-0 top-0 z-[2] flex h-[52px] items-center justify-between gap-3 border-b border-[rgba(255,255,255,.08)] bg-[rgba(18,16,13,.92)] py-0 pr-3 pl-[18px]">
-              <div className="flex items-center gap-2 text-sm font-extrabold text-cream"><MapPin size={15} />{V.mapViewName}</div>
-              <button onClick={V.closeMapView} className="h-8 w-8 cursor-pointer rounded-full border border-[rgba(242,237,227,.2)] bg-transparent font-[inherit] text-lg leading-none text-[rgba(242,237,227,.75)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">×</button>
-            </div>
-            <iframe title="map" src={V.mapViewUrl} className="absolute inset-x-0 bottom-0 top-[52px] w-full h-[calc(100%-52px)] border-none" loading="lazy" referrerPolicy="no-referrer-when-downgrade"></iframe>
-          </div>
-        </div>
-      )}
-
       {V.pinSel && (
         <div className="absolute right-12 bottom-11 z-20 w-80 rounded-2xl border border-[rgba(255,255,255,.1)] bg-[rgba(18,16,13,.88)] p-3 backdrop-blur-[18px] [animation:bbCardIn_.45s_cubic-bezier(.22,.8,.3,1)_both]">
-          <div className="h-[150px] rounded-[11px] bg-cover bg-center" style={{ backgroundImage: V.pinSel.thumb }}></div>
+          <BgMedia bg={V.pinSel.thumb} className="relative h-[150px] rounded-[11px]" imgClassName="bg-cover bg-center" />
           <div className="flex flex-col gap-1.5 px-1 pt-3 pb-1">
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-[rgba(255,255,255,.08)] px-[9px] py-[3px] text-[10.5px] font-bold tracking-[.06em] text-[rgba(242,237,227,.8)]">{V.pinSel.type}</span>
@@ -176,9 +184,9 @@ export default function MapsPage() {
             <div className="text-base font-extrabold text-cream">{V.pinSel.name}</div>
             <div className="text-[12.5px] leading-[1.5] text-[rgba(242,237,227,.6)]">{V.pinSel.desc}</div>
             {V.pinSel.hours && <div className="flex items-center gap-1.5 text-[11.5px] text-[rgba(242,237,227,.5)]"><span className="text-[var(--accent,#E8B84B)]">◷</span>{V.pinSel.hours}</div>}
-            <button onClick={V.openMapView} className="mt-0.5 box-border flex w-full cursor-pointer items-center gap-2 rounded-[11px] border border-[rgba(66,133,244,.4)] bg-[rgba(66,133,244,.14)] px-3.5 py-2.5 font-[inherit] text-xs font-bold text-[#8ab4f8] transition-all duration-200 hover:bg-[rgba(66,133,244,.22)]">
+            <a href={V.pinSel.mapUrl} target="_blank" rel="noopener" className="mt-0.5 box-border flex w-full cursor-pointer items-center gap-2 rounded-[11px] border border-[rgba(66,133,244,.4)] bg-[rgba(66,133,244,.14)] px-3.5 py-2.5 font-[inherit] text-xs font-bold text-[#8ab4f8] no-underline transition-all duration-200 hover:bg-[rgba(66,133,244,.22)]">
               <MapPin size={14} /><span>{V.L.openMaps}</span><span className="ml-auto opacity-70">→</span>
-            </button>
+            </a>
             <div className="mt-1 flex gap-2">
               <button className="cursor-pointer rounded-full border border-[var(--accent,#E8B84B)] bg-[var(--accent,#E8B84B)] px-[18px] py-1.5 font-[inherit] text-xs font-bold text-[#132a1f] transition-all duration-250 hover:opacity-85">{V.L.detail} →</button>
               <button onClick={V.closePin} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-4 py-1.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.75)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">{V.L.close}</button>

@@ -3,15 +3,15 @@
 // Big Bang — Profile (/profile): favorites, accessibility settings, add-content
 // cards, and the user's own submitted scenic spots / events.
 import { useContext } from 'react';
-import { Accessibility, Heart, Eye } from 'lucide-react';
+import { Accessibility, Heart } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { Isometric3DIcon } from '@/components/bigbang/ui';
+import { BgMedia, Isometric3DIcon } from '@/components/bigbang/ui';
 
 // Reusable favorite / place card (Profile page places + scenic).
 function FavCard({ d }: { d: any }) {
   return (
     <div className="relative aspect-[4/5] rounded-[18px] overflow-hidden border border-[rgba(255,255,255,.1)] animate-[bbFadeUp_.5s_cubic-bezier(.22,.8,.3,1)_both] [transition:transform_.35s_cubic-bezier(.22,.8,.3,1),_box-shadow_.35s_ease] hover:translate-y-[-5px] hover:shadow-[0_22px_48px_rgba(0,0,0,.5)]">
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: d.thumb, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
+      <BgMedia bg={d.thumb} className="absolute inset-0" imgClassName="bg-cover bg-center" />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.18)_0%,_rgba(0,0,0,0)_35%,_rgba(0,0,0,.32)_62%,_rgba(0,0,0,.92)_100%)] pointer-events-none"></div>
       <div className="absolute left-3 top-3 flex gap-1.5 pointer-events-none">
         <span className="text-[10px] font-bold tracking-[.08em] uppercase py-1 px-[11px] rounded-full bg-[rgba(255,255,255,.1)] border border-[rgba(255,255,255,.28)] backdrop-blur-[10px] text-[rgba(246,241,231,.95)]">{d.sub}</span>
@@ -70,36 +70,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <div className="mt-[34px]">
-        <div className="text-xs font-extrabold tracking-[.08em] uppercase text-[rgba(242,237,227,.5)] mb-[14px]">{V.L.settings}</div>
-        <div className="flex flex-col gap-3 max-w-[560px]">
-          <button
-            onClick={V.toggleBig}
-            className="cursor-pointer font-[inherit] flex items-center gap-[14px] text-left py-4 px-[18px] rounded-[14px] transition-all duration-[250ms] ease-in-out"
-            style={{ border: `1px solid ${V.bigCardBorder}`, background: V.bigCardBg }}
-          >
-            <Eye size={22} className="text-cream" />
-            <span className="flex-1">
-              <span className="block text-sm font-bold text-cream">{V.L.a11yEyeTitle}</span>
-              <span className="block text-xs text-[rgba(242,237,227,.55)] mt-[3px]">{V.L.a11yEyeSub}</span>
-            </span>
-            <span className="w-[46px] h-[26px] rounded-full relative flex-none transition-[background] duration-[250ms] ease-in-out" style={{ background: V.bigSwBg }}><span className="absolute top-[3px] w-5 h-5 rounded-full bg-white transition-[left] duration-[250ms] ease-in-out" style={{ left: V.bigSwKnob }}></span></span>
-          </button>
-          <button
-            onClick={V.toggleSp}
-            className="cursor-pointer font-[inherit] flex items-center gap-[14px] text-left py-4 px-[18px] rounded-[14px] transition-all duration-[250ms] ease-in-out"
-            style={{ border: `1px solid ${V.spCardBorder}`, background: V.spCardBg }}
-          >
-            <Accessibility size={22} className="text-[#8fd6c6]" />
-            <span className="flex-1">
-              <span className="block text-sm font-bold text-cream">{V.L.a11yWheelTitle}</span>
-              <span className="block text-xs text-[rgba(242,237,227,.55)] mt-[3px]">{V.L.a11yWheelSub}</span>
-            </span>
-            <span className="w-[46px] h-[26px] rounded-full relative flex-none transition-[background] duration-[250ms] ease-in-out" style={{ background: V.spSwBg }}><span className="absolute top-[3px] w-5 h-5 rounded-full bg-white transition-[left] duration-[250ms] ease-in-out" style={{ left: V.spSwKnob }}></span></span>
-          </button>
-        </div>
-      </div>
-
       <div className="mt-[38px]">
         <div className="text-xs font-extrabold tracking-[.08em] uppercase text-[rgba(242,237,227,.5)] mb-[14px]">{V.L.addContent}</div>
         {/* Adding a place is host/admin business content (see HostProfile / AdminPanel) —
@@ -128,7 +98,7 @@ export default function ProfilePage() {
           <div className="grid grid-cols-3 gap-[14px]">
             {V.myScenicItems.map((s: any, i: number) => (
               <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-[14px] overflow-hidden bg-[rgba(255,255,255,.03)]">
-                <div className="aspect-[16/10] bg-cover bg-center" style={{ background: s.thumb }}></div>
+                <BgMedia bg={s.thumb} className="relative aspect-[16/10]" imgClassName="bg-cover bg-center" />
                 <div className="pt-3 px-[14px] pb-[14px]">
                   <div className="text-sm font-extrabold text-cream-2">{s.name}</div>
                   <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{s.aimag} · {s.desc}</div>

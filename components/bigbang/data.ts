@@ -69,10 +69,6 @@ export const GEO_MN: Record<string, string> = {
 
 export const LABEL_OFF: Record<string, [number, number]> = { 'Orhon': [0, -8], 'Gowisümber': [4, 0] };
 
-export const PIN_OFFS: [number, number][] = [
-  [-0.22, -0.1], [0.2, 0.14], [-0.06, 0.24], [0.18, -0.2], [0, -0.26],
-];
-
 export const AIMAG_BG: Record<string, string> = {
   'Улаанбаатар': '1477959858617-67f85cf4f1df', 'Архангай': '1500534314209-a25ddb2bd429',
   'Баян-Өлгий': '1506905925346-21bda4d32df4', 'Баянхонгор': '1469854523086-cc02fe5d8800',
@@ -244,14 +240,14 @@ export function sitesFor(gc: any, lang: string) {
 // instead of the generic lucide `icon`. None are wired up yet since we don't have
 // rights to any official app logos bundled in the repo; drop a URL in here (or an
 // uploaded asset path) per app once one is sourced.
-export interface TravelApp { icon: LucideIcon; name: string; mn: string; en: string; tint: string; ring: string; url: string; logo?: string; }
+export interface TravelApp { slug: string; icon: LucideIcon; name: string; mn: string; en: string; tint: string; ring: string; url: string; logo?: string; }
 export const TRAVEL_APPS: TravelApp[] = [
-  { icon: Map, name: 'Organic Maps', mn: 'Offline газрын зураг & навигаци', en: 'Offline maps & navigation', tint: 'rgba(66,133,244,.22)', ring: 'rgba(120,170,255,.5)', url: 'https://organicmaps.app/' },
-  { icon: Compass, name: 'OsmAnd', mn: 'Offline маршрут & GPS', en: 'Offline routes & GPS', tint: 'rgba(52,168,83,.22)', ring: 'rgba(120,220,150,.5)', url: 'https://osmand.net/' },
-  { icon: Wind, name: 'Windy', mn: 'Салхи & цаг агаарын урьдчилсан мэдээ', en: 'Wind & weather forecast', tint: 'rgba(120,200,220,.22)', ring: 'rgba(150,220,240,.5)', url: 'https://www.windy.com/-Temperature-temp?temp,39.270,87.989,3' },
-  { icon: CloudRain, name: 'Ventusky', mn: 'Хур тунадас & температурын зураг', en: 'Rainfall & temperature maps', tint: 'rgba(180,120,220,.22)', ring: 'rgba(200,150,240,.5)', url: 'https://www.ventusky.com/#p=31;89;2' },
-  { icon: Car, name: 'Avis Mongolia', mn: 'Машин түрээслэх', en: 'Rent a car', tint: 'rgba(224,122,95,.22)', ring: 'rgba(240,150,120,.5)', url: 'https://avis-mongolia.com/car-rental?ssid=nVfrblZ014TB' },
-  { icon: Route, name: 'Drive Mongolia', mn: 'Өөрөө жолоодох & хөтөчтэй аялал', en: 'Self-drive & guided tours', tint: 'rgba(232,183,125,.24)', ring: 'rgba(232,183,125,.6)', url: 'https://www.drivemongolia.com/?utm_source=chatgpt.com' },
+  { slug: 'organic-maps', icon: Map, name: 'Organic Maps', mn: 'Offline газрын зураг & навигаци', en: 'Offline maps & navigation', tint: 'rgba(66,133,244,.22)', ring: 'rgba(120,170,255,.5)', url: 'https://organicmaps.app/' },
+  { slug: 'osmand', icon: Compass, name: 'OsmAnd', mn: 'Offline маршрут & GPS', en: 'Offline routes & GPS', tint: 'rgba(52,168,83,.22)', ring: 'rgba(120,220,150,.5)', url: 'https://osmand.net/' },
+  { slug: 'windy', icon: Wind, name: 'Windy', mn: 'Салхи & цаг агаарын урьдчилсан мэдээ', en: 'Wind & weather forecast', tint: 'rgba(120,200,220,.22)', ring: 'rgba(150,220,240,.5)', url: 'https://www.windy.com/-Temperature-temp?temp,39.270,87.989,3' },
+  { slug: 'ventusky', icon: CloudRain, name: 'Ventusky', mn: 'Хур тунадас & температурын зураг', en: 'Rainfall & temperature maps', tint: 'rgba(180,120,220,.22)', ring: 'rgba(200,150,240,.5)', url: 'https://www.ventusky.com/#p=31;89;2' },
+  { slug: 'avis-mongolia', icon: Car, name: 'Avis Mongolia', mn: 'Машин түрээслэх', en: 'Rent a car', tint: 'rgba(224,122,95,.22)', ring: 'rgba(240,150,120,.5)', url: 'https://avis-mongolia.com/car-rental?ssid=nVfrblZ014TB' },
+  { slug: 'drive-mongolia', icon: Route, name: 'Drive Mongolia', mn: 'Өөрөө жолоодох & хөтөчтэй аялал', en: 'Self-drive & guided tours', tint: 'rgba(232,183,125,.24)', ring: 'rgba(232,183,125,.6)', url: 'https://www.drivemongolia.com/?utm_source=chatgpt.com' },
 ];
 
 export interface CatItem { name: string; meta: string; sub: string; aimag?: string; hours?: string; phone?: string; desc?: string; access?: boolean; }
@@ -478,7 +474,8 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     abResBody: 'Аймаг бүрийн газар, эвент, санал болголтыг нэг дороос — ангилал, рейтинг, дуртай жагсаалттайгаар.', abResBtn: 'Газрууд үзэх',
     pdAccess: 'Хүртээмжтэй', pdRating: 'Үнэлгээ', pdHours: 'Цагийн хуваарь', pdPhone: 'Утас',
     pdAbout: 'Тухай', pdInfo: 'Мэдээлэл', pdA11yTitle: 'Тусгай хэрэгцээт хүнд ээлтэй',
-    pdCat: 'Ангилал', pdSub: 'Дэд ангилал', pdLoc: 'Байршил', pdAccessRow: 'Хүртээмж', pdYes: 'Тийм ✓', pdNo: 'Мэдээлэлгүй' },
+    pdCat: 'Ангилал', pdSub: 'Дэд ангилал', pdLoc: 'Байршил', pdAccessRow: 'Хүртээмж', pdYes: 'Тийм ✓', pdNo: 'Мэдээлэлгүй',
+    pdRateTitle: 'Үнэлгээ өгөх', pdRateThanks: 'Баярлалаа! Таны үнэлгээ', pdRateHint: 'Одоор дарж үнэлнэ үү' },
   en: { home: 'Home', about: 'About', signin: 'Sign in', catLabel: 'Categories',
     hint: 'Hover over a category', places: 'places', all: 'All', back: '← Home', tag: 'a space of date ideas', location: 'Location',
     empty: 'No places in this province yet', reset: 'Show all',
@@ -533,7 +530,8 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     abResBody: 'Places, events and picks from every province in one place — with categories, ratings and a favorites list.', abResBtn: 'Browse places',
     pdAccess: 'Accessible', pdRating: 'Rating', pdHours: 'Opening hours', pdPhone: 'Phone',
     pdAbout: 'About', pdInfo: 'Information', pdA11yTitle: 'Accessible for people with special needs',
-    pdCat: 'Category', pdSub: 'Sub-category', pdLoc: 'Location', pdAccessRow: 'Accessibility', pdYes: 'Yes ✓', pdNo: 'Not specified' },
+    pdCat: 'Category', pdSub: 'Sub-category', pdLoc: 'Location', pdAccessRow: 'Accessibility', pdYes: 'Yes ✓', pdNo: 'Not specified',
+    pdRateTitle: 'Leave a rating', pdRateThanks: 'Thanks! Your rating', pdRateHint: 'Click a star to rate' },
 };
 
 // ── pure helpers ──

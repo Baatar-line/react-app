@@ -15,10 +15,11 @@ import { Target, Users, Zap, Globe } from 'lucide-react';
 import CreateForm, { CreateFormData } from '../CreateForm';
 import {
   U, ratingOf, STR, CATS, PINS, TEAM, EVENTS, SUGGESTS, TRAVEL_APPS, sitesFor, FEATURED_EVENT, AIMAGS, AIMAG_MN_SCRIPT,
-  GEO_MN, LABEL_OFF, AIMAG_BG, PIN_OFFS, FCRIT, ACCESS_NAMES,
-  catBgOf, thumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, lonLatToXY, xyToLonLat, embedUrlFor, mapsUrlFor,
+  GEO_MN, LABEL_OFF, AIMAG_BG, FCRIT, ACCESS_NAMES,
+  catBgOf, thumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, lonLatToXY, xyToLonLat, mapsUrlFor,
 } from './data';
 import { apiGet } from '../../lib/api';
+import { BgMedia } from './ui';
 
 // Replaces react-router's <Outlet context={V}/> + useOutletContext() pair —
 // Next.js layouts render `children`, not an Outlet, so the computed `V`
@@ -28,6 +29,9 @@ export const BigBangContext = React.createContext<any>(null);
 type Props = { accent?: string; motion?: boolean; navigate: (path: string) => void; pathname: string; children: React.ReactNode };
 
 const e = React.createElement;
+
+// Sunflower/phyllotaxis scatter angle — see syncMainMap's pin placement.
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
 // Last background settings fetched from the backend, read synchronously so the very
 // first render already shows the real photo instead of the placeholder for a beat.
@@ -83,7 +87,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   state: any = {
     active: -1, aimag: 'Бүгд', lang: 'mn', locOpen: false,
-    pin: -1, saved: {}, favs: {}, joined: {}, mapAimag: null, hoverAimag: null,
+    pin: -1, saved: {}, favs: {}, joined: {}, myRatings: {}, mapAimag: null, hoverAimag: null,
     spNeeds: false, bigText: false, globeCountry: null, globeHover: null, globeFilter: null,
     globeQuery: '', globeReady: false, myScenic: [], myEvents: [],
     showScenicForm: false,
@@ -92,14 +96,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
     fRole: 'host', fName: '', fCat: '', fSub: '', fAimag: 'Дорнод', fOpen: '', fClose: '',
     fDesc: '', fMapUrl: '', fImg: '', fLat: null, fLng: null, fPhone: '',
     fAccess: false, fCrit: [false, false, false, false, false], fMsg: '', fErr: false,
-    pinMode: 'scenic', mapView: false, heroHover: null,
+    pinMode: 'scenic', heroHover: null,
     // Seeded from the last successful /settings fetch (see fetchSettings below) so a
     // refresh shows the real saved photo immediately instead of flashing the built-in
     // placeholder while the network round-trip to fetch it is still in flight.
     aboutBgOverride: cachedBg('bb_about_bg'), homeBgOverride: cachedBg('bb_home_bg'),
     mongoliaFlagOverride: cachedBg('bb_mn_flag'),
-    // Background photo/video behind the "Аяллын апп" card on the Suggest page.
-    travelAppsBgOverride: cachedBg('bb_travelapps_bg'),
+    // Per-app background photo/video for each "Аяллын апп" tile on the
+    // Suggest page, keyed by TRAVEL_APPS slug.
+    travelAppsBgOverride: cachedMap('bb_travelapps_bg'),
     // Per-category (keyed by slug) and per-aimag (keyed by name) background photos
     // saved via Admin Panel → Фон зураг, so the live site shows them too.
     catBgOverride: cachedMap('bb_cat_bg'), aimagBgOverride: cachedMap('bb_aimag_bg'),
@@ -135,12 +140,20 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   componentDidUpdate(_prevProps: Props, prevState: any) {
     if (prevState.aimag !== this.state.aimag) this.updateHeroVertPos();
-    if (this._mainMap && (
-      prevState.pinMode !== this.state.pinMode || prevState.mapAimag !== this.state.mapAimag ||
-      prevState.hoverAimag !== this.state.hoverAimag || prevState.pin !== this.state.pin ||
-      prevState.lang !== this.state.lang || prevState.bigText !== this.state.bigText ||
-      prevState.userPins !== this.state.userPins
-    )) this.syncMainMap();
+    if (this._mainMap) {
+      // hoverAimag alone only changes a border's fill wash — it fires on
+      // every mouseover/mouseout while the cursor crosses an aimag's outline
+      // (including incidentally while panning/zooming near one), so it must
+      // NOT also tear down and rebuild every pin marker each time. Doing so
+      // used to make the pins visibly flicker/jump during ordinary map use.
+      const pinsChanged =
+        prevState.pinMode !== this.state.pinMode || prevState.mapAimag !== this.state.mapAimag ||
+        prevState.pin !== this.state.pin || prevState.lang !== this.state.lang ||
+        prevState.bigText !== this.state.bigText || prevState.userPins !== this.state.userPins;
+      const hoverChanged = prevState.hoverAimag !== this.state.hoverAimag;
+      if (pinsChanged) this.syncMainMap();
+      else if (hoverChanged) this.syncMainMap(false);
+    }
   }
 
   // Measures the invisible marker circle both builders drop at the aimag's
@@ -183,7 +196,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Admin Panel can update these via the "Фон зураг" tab — if the backend isn't
   // running or hasn't been set up yet, this silently keeps the built-in placeholder.
   fetchSettings = () => {
-    apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; travelAppsBackgroundImage: string | null }>('/settings')
+    apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; travelAppsBackgroundImages: Record<string, string> | null }>('/settings')
       .then((s) => {
         if (s.aboutBackgroundImage) this.setState({ aboutBgOverride: s.aboutBackgroundImage });
         if (s.homeBackgroundImage) this.setState({ homeBgOverride: s.homeBackgroundImage });
@@ -192,13 +205,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
           if (this.globeEngine) this.globeEngine.setMongoliaFlag(s.mongoliaFlagImage);
         }
         if (s.suggestBackgroundImages) this.setState({ suggestBgOverride: s.suggestBackgroundImages });
-        if (s.travelAppsBackgroundImage) this.setState({ travelAppsBgOverride: s.travelAppsBackgroundImage });
+        if (s.travelAppsBackgroundImages) this.setState({ travelAppsBgOverride: s.travelAppsBackgroundImages });
         try {
           if (s.aboutBackgroundImage) localStorage.setItem('bb_about_bg', s.aboutBackgroundImage);
           if (s.homeBackgroundImage) localStorage.setItem('bb_home_bg', s.homeBackgroundImage);
           if (s.mongoliaFlagImage) localStorage.setItem('bb_mn_flag', s.mongoliaFlagImage);
           if (s.suggestBackgroundImages) localStorage.setItem('bb_suggest_bg', JSON.stringify(s.suggestBackgroundImages));
-          if (s.travelAppsBackgroundImage) localStorage.setItem('bb_travelapps_bg', s.travelAppsBackgroundImage);
+          if (s.travelAppsBackgroundImages) localStorage.setItem('bb_travelapps_bg', JSON.stringify(s.travelAppsBackgroundImages));
         } catch (err) { /* ignore */ }
       })
       .catch(() => {});
@@ -270,6 +283,25 @@ export default class BigBangLayout extends React.Component<Props, any> {
     return null;
   }
 
+  // Google's raw `mt{s}.google.com/vt` tile endpoint is undocumented/unofficial
+  // (no API key or referrer check) — some ad blockers/privacy extensions and
+  // networks block it outright, which otherwise leaves the whole map blank
+  // with only our own borders/labels drawn on top. Watch for a burst of
+  // tileerror events and, if the primary source is clearly not coming
+  // through, swap to Esri's World Imagery tiles (a free, no-key satellite
+  // basemap) so the map still shows something.
+  addBasemap(m: any, primaryUrl: string, subdomains: string[]) {
+    const FALLBACK = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+    const layer = window.L.tileLayer(primaryUrl, { subdomains, maxZoom: 19 }).addTo(m);
+    let errors = 0;
+    let swapped = false;
+    layer.on('tileerror', () => {
+      errors++;
+      if (!swapped && errors >= 6) { swapped = true; layer.setUrl(FALLBACK); }
+    });
+    return layer;
+  }
+
   pickMapRef = (node: any) => {
     if (!node) {
       if (this._pickMap) { this._pickMap.remove(); this._pickMap = null; this._pickMarker = null; }
@@ -281,7 +313,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       if (!window.L) { setTimeout(init, 150); return; }
       const m = window.L.map(node, { attributionControl: false });
       m.setView([46.9, 103.8], 5);
-      window.L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 19 }).addTo(m);
+      this.addBasemap(m, 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', ['0', '1', '2', '3']);
       m.on('click', (ev: any) => this.pickLocation(ev.latlng.lat, ev.latlng.lng));
       this._pickMap = m;
       if (this.state.fLat != null) this.placePickMarker(this.state.fLat, this.state.fLng);
@@ -366,7 +398,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       // Plain satellite tiles (no baked-in place-name labels) — `lyrs=y` (hybrid)
       // draws Google's own city/country labels straight into the raster image,
       // which collided with our own aimag-name/pin labels drawn on top.
-      window.L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 19 }).addTo(m);
+      this.addBasemap(m, 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', ['0', '1', '2', '3']);
       this._aimagPolyLayer = window.L.layerGroup().addTo(m);
       this._aimagLabelLayer = window.L.layerGroup().addTo(m);
       this._pinLayer = window.L.layerGroup().addTo(m);
@@ -389,7 +421,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // it + the pin markers to match current state. Called after mount, after
   // the mn-aimags.json fetch resolves, and from componentDidUpdate whenever
   // a field that affects what the map shows changes (see componentDidUpdate).
-  syncMainMap() {
+  syncMainMap(rebuildPins: boolean = true) {
     const m = this._mainMap;
     const geo = this.geo;
     if (!m || !geo || !window.L) return;
@@ -411,7 +443,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         })
           .on('mouseover', () => this.setState({ hoverAimag: id }))
           .on('mouseout', () => this.setState({ hoverAimag: null }))
-          .on('click', () => this.setState({ mapAimag: id, pin: -1 }))
+          .on('click', () => this.setState((s: any) => ({ mapAimag: s.mapAimag === id ? null : id, pin: -1 })))
           .addTo(this._aimagPolyLayer));
         const [clat, clng] = xyToLonLat(sh.lx ?? sh.cx, sh.ly ?? sh.cy);
         const label = window.L.marker([clat, clng], { icon: window.L.divIcon({ className: '', html: '', iconSize: [1, 1] }), interactive: false, opacity: 1 }).addTo(this._aimagLabelLayer);
@@ -483,17 +515,30 @@ export default class BigBangLayout extends React.Component<Props, any> {
       label.setIcon(window.L.divIcon({ className: '', html, iconSize: [1, 1] }));
     });
 
+    if (!rebuildPins) return;
+
     this._pinLayer.clearLayers();
     if (mapAimag) {
       const entry = this._aimagLayers[mapAimag];
       const sh = entry && entry.sh;
       const aimagPins = pins.map((p, i) => ({ p, i })).filter((o) => o.p.aimag === mapAimag);
-      aimagPins.forEach((o, j) => {
+      // Places with no real lat/lng (most CATS items) need a made-up spot
+      // inside the aimag's shape — PIN_OFFS used to cycle through just 5
+      // fixed positions, so any aimag with more than 5 of them (Улаанбаатар
+      // alone can hold 30+) wrapped back over the same spots and stacked
+      // pins exactly on top of each other, making a 37-pin aimag look like
+      // only ~6 were there. A sunflower/phyllotaxis scatter instead gives
+      // every pin its own distinct spot no matter the count.
+      const autoTotal = aimagPins.reduce((n, o) => n + (o.p.lat == null ? 1 : 0), 0);
+      let autoIdx = 0;
+      aimagPins.forEach((o) => {
         let latlng: [number, number];
         if (o.p.lat != null) latlng = [o.p.lat, o.p.lng];
         else {
-          const off = PIN_OFFS[j % PIN_OFFS.length];
-          latlng = xyToLonLat(sh.cx + off[0] * sh.bw * 0.8, sh.cy + off[1] * sh.bh * 0.8);
+          const r = Math.sqrt((autoIdx + 0.5) / autoTotal) * 0.4;
+          const theta = autoIdx * GOLDEN_ANGLE;
+          autoIdx++;
+          latlng = xyToLonLat(sh.cx + Math.cos(theta) * r * sh.bw, sh.cy + Math.sin(theta) * r * sh.bh);
         }
         const on = pin === o.i;
         const dot = on ? 15 : 11;
@@ -510,7 +555,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
       // every time they'd tried to pan/zoom freely after selecting.
       if (sh && this._lastFlownAimag !== mapAimag) {
         const bounds = this.polysOf(sh).flat().map(([x, y]: number[]) => xyToLonLat(x, y));
-        m.flyToBounds(bounds, { padding: [70, 70], maxZoom: 9, duration: 0.9 });
+        // Asymmetric padding, not a plain [70,70] — a selected aimag also
+        // brings up the info panel (bottom-right) and the globe/pin-mode
+        // controls (top-right), so the fitted shape needs extra clearance
+        // on those two edges to land inside the space that's actually free,
+        // instead of ending up cropped/hidden under that chrome.
+        m.flyToBounds(bounds, { paddingTopLeft: [50, 145], paddingBottomRight: [385, 80], maxZoom: 11, duration: 0.9 });
         this._lastFlownAimag = mapAimag;
       }
       this._wasZoomed = true;
@@ -664,7 +714,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         key: activeCat.slug + '-' + o.idx, onClick: () => this.openPlace(activeCat, o.idx), 'aria-label': o.it.name,
         style: { all: 'unset', cursor: 'pointer', width: '160px', height: '200px', boxSizing: 'border-box', position: 'relative', overflow: 'hidden', border: '1px solid rgba(255,255,255,.1)', borderRadius: '18px', animation: 'bbCardIn .55s cubic-bezier(.22,.8,.3,1) both', animationDelay: (i * 80) + 'ms' } as any,
       },
-        e('div', { style: { position: 'absolute', inset: 0, backgroundImage: thumbOf(activeCat, o.idx).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'), backgroundSize: 'cover', backgroundPosition: 'center' } }),
+        e(BgMedia, { bg: thumbOf(activeCat, o.idx).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'), className: 'absolute inset-0', imgClassName: 'bg-cover bg-center' }),
         e('div', { style: { position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.18) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.92) 100%)', pointerEvents: 'none' } }),
         e('div', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: '13px 15px', pointerEvents: 'none' } },
           e('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '7px' } },
@@ -689,6 +739,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const favs = this.state.favs || {};
     const toggleFav = (key: string) => (ev: any) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState((s: any) => ({ favs: { ...s.favs, [key]: !s.favs[key] } })); };
     const heartOf = (on: boolean) => ({ favOn: on, heartColor: on ? accent : 'rgba(242,237,227,.9)' });
+
+    // Visitor-given star rating for a place's detail page — kept alongside
+    // favs/joined as plain in-memory state (not persisted server-side; this
+    // app has no review/rating backend), keyed the same way favs already are.
+    const myRatings = this.state.myRatings || {};
+    const ratePlace = (key: string) => (n: number) => this.setState((s: any) => ({ myRatings: { ...s.myRatings, [key]: n } }));
 
     const joined = this.state.joined || {};
     const toggleJoin = (key: string) => (ev: any) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState((s: any) => ({ joined: { ...s.joined, [key]: !s.joined[key] } })); };
@@ -735,6 +791,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const showPhoto = !!mapAimag;
     const pinBgAOpacity = (showPhoto && this._bg.slot === 'a') ? 1 : 0;
     const pinBgBOpacity = (showPhoto && this._bg.slot === 'b') ? 1 : 0;
+    // True for the brief window after an aimag is picked but before its photo
+    // has actually finished preloading — neither crossfade slot is showing
+    // yet, so without this the map would sit on flat black underneath.
+    const pinBgLoading = showPhoto && pinBgAOpacity === 0 && pinBgBOpacity === 0;
     const selP = pin >= 0 ? this.mapPins()[pin] : null;
     const pinSel = selP ? {
       ...selP, rating: ratingOf(selP.name),
@@ -843,7 +903,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     if (aimagImg && this.bgReady(aimagImg, 1800)) this._lastAimagBg = aimagImg;
 
     return {
-      accent, driftAnim, L, lang, aimag, favs, toggleFav, spNeeds: st.spNeeds,
+      accent, driftAnim, L, lang, aimag, favs, toggleFav, myRatings, ratePlace, spNeeds: st.spNeeds,
       catBgOverride: st.catBgOverride, suggestBgOverride: st.suggestBgOverride,
       isHome: route === 'home', isMapsPage: route === 'pin',
       openPin: () => go('pin'), openEvent: () => go('event'), openSuggest: () => go('suggest'),
@@ -911,6 +971,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
       aimagBg: 'linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78)), url("' + imgUrl(this._lastAimagBg || '1470071459604-3b5ec3a7fe05', 1800) + '")',
       aimagBgIsVideo: isVideoUrl(this._lastAimagBg || ''), aimagBgRawUrl: this._lastAimagBg || '',
       aimagBgOpacity: (aimagImg && this._lastAimagBg === aimagImg) ? 1 : 0,
+      // Same idea as pinBgLoading (maps.tsx) — the moment an aimag's photo
+      // hasn't loaded yet, this shows a skeleton instead of the Home hero
+      // just sitting there under a flat black scrim.
+      aimagBgLoading: aimag !== 'Бүгд' && !(aimagImg && this._lastAimagBg === aimagImg),
+      pinBgLoading,
       pickerSvg: this.buildPickerSvg(accent, lang, aimag === 'Бүгд' ? null : aimag, this.state.heroHover, false, this.state.bigText),
       pickerWrapRef: this.handlePickerWrapRef,
       heroAimagLabel: aimag === 'Бүгд' ? '' : aimagName(aimag, lang),
@@ -930,9 +995,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
       closeMobileMenu: () => this.setState({ mobileMenuOpen: false }),
       heroVertLabel: aimag !== 'Бүгд' && lang === 'mn' ? AIMAG_MN_SCRIPT[aimag] || '' : '',
       heroVertPos: this.state.heroVertPos,
-      mapViewUrl: (this.state.mapView && selP) ? embedUrlFor(selP) : false,
-      mapViewName: selP ? selP.name : '',
-      openMapView: () => this.setState({ mapView: true }), closeMapView: () => this.setState({ mapView: false }),
       mapZoomed: !!mapAimag, resetMap: () => this.setState({ mapAimag: null, pin: -1, hoverAimag: null }),
       aimagPanelShow: !!(mapAimag && !selP && !this.state.showAddForm),
       panelName: mapAimag ? aimagName(mapAimag, lang) : '',
@@ -965,11 +1027,14 @@ export default class BigBangLayout extends React.Component<Props, any> {
           return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]) };
         }),
       suggests, navCats, bgLayers, previewCards, topItems: topItems2,
-      travelApps: TRAVEL_APPS.map((a) => ({ ...a, purpose: lang === 'en' ? a.en : a.mn })),
-      travelAppsHasBg: !!this.state.travelAppsBgOverride,
-      travelAppsBg: this.state.travelAppsBgOverride ? 'url("' + imgUrl(this.state.travelAppsBgOverride, 1800) + '")' : 'none',
-      travelAppsBgIsVideo: isVideoUrl(this.state.travelAppsBgOverride || ''),
-      travelAppsBgRawUrl: this.state.travelAppsBgOverride || '',
+      travelApps: TRAVEL_APPS.map((a) => {
+        const raw = (this.state.travelAppsBgOverride || {})[a.slug] || '';
+        return {
+          ...a, purpose: lang === 'en' ? a.en : a.mn,
+          hasBg: !!raw, bg: raw ? 'url("' + imgUrl(raw, 900) + '")' : 'none',
+          bgIsVideo: isVideoUrl(raw), bgRawUrl: raw,
+        };
+      }),
       clearActive: () => this.setState({ active: -1 }),
       goHome: () => { navigate('/'); this.setState({ active: -1, locOpen: false }); },
       locOpen, toggleLoc: () => this.setState({ locOpen: !locOpen }), closeLoc: () => this.setState({ locOpen: false }),
@@ -998,25 +1063,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
             <button onClick={V.goHome} className="relative z-[2] flex cursor-pointer items-center border-0 bg-transparent p-0 font-inherit text-inherit">
               <span className="font-display font-bold italic tracking-[-0.01em] text-cream" style={{ fontSize: V.isMobile ? 19 : 23 }}>Big Bang</span>
             </button>
-
-            {/* Maps-only controls (globe launcher, scenic/places/events pin
-                toggle, aimag-zoom reset) — used to float over the map itself,
-                moved into the nav, right after the logo, so they read as page
-                controls, not map UI. */}
-            {V.isMapsPage && !V.isMobile && (
-              <div className="flex items-center gap-2.5">
-                <button onClick={V.openGlobe} title={V.L.globe} className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border-none text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5" style={{ background: V.accent }}><Globe size={15} /></button>
-                <div className="relative inline-grid grid-cols-3 rounded-full border border-[rgba(255,255,255,.16)] bg-[rgba(255,255,255,.06)] p-[3px]">
-                  <div className="absolute top-[3px] bottom-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-full transition-transform duration-300 ease-[cubic-bezier(.34,1.4,.5,1)]" style={{ background: V.accent, transform: `translateX(${V.pinPillShift})` }}></div>
-                  {V.pinModeOpts.map((m: any, i: number) => (
-                    <button key={i} onClick={m.pick} className="relative z-[2] cursor-pointer whitespace-nowrap border-none bg-transparent px-3.5 py-[5px] font-[inherit] text-[11.5px] font-bold transition-colors duration-250" style={{ color: m.color }}>{m.label}</button>
-                  ))}
-                </div>
-                {V.mapZoomed && (
-                  <button onClick={V.resetMap} className="cursor-pointer whitespace-nowrap rounded-full border border-[rgba(242,237,227,.3)] bg-[rgba(255,255,255,.05)] px-3.5 py-1.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.85)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">← {V.L.resetMap}</button>
-                )}
-              </div>
-            )}
           </div>
 
           {V.isMobile ? (
@@ -1026,20 +1072,24 @@ export default class BigBangLayout extends React.Component<Props, any> {
                 <>
                   <div onClick={V.closeMobileMenu} className="fixed inset-0 z-40 cursor-default bg-[rgba(0,0,0,.4)]"></div>
                   <div className="fixed top-[66px] right-3 left-3 z-[41] flex max-h-[80vh] flex-col gap-1 overflow-auto rounded-2xl border border-[rgba(255,255,255,.14)] bg-[rgba(13,20,15,.97)] p-3.5 shadow-[0_24px_60px_rgba(0,0,0,.55)] backdrop-blur-[18px]">
-                    <button onClick={V.toggleLoc} className="flex cursor-pointer items-center gap-2 rounded-[11px] border border-[rgba(242,237,227,.16)] bg-[rgba(255,255,255,.05)] px-[13px] py-[11px] text-left font-[inherit] text-[13px] font-semibold text-[rgba(242,237,227,.9)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
-                      <span className="flex-1">{V.aimagLabel}</span>
-                      <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
-                    </button>
-                    {V.locOpen && (
-                      <div className="flex flex-wrap gap-1.5 px-0.5 py-2.5">
-                        {V.aimagOpts.map((a: any, i: number) => (
-                          <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-colors duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
-                            <span>{a.label}</span>
-                            <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
-                          </button>
-                        ))}
-                      </div>
+                    {V.isHome && (
+                      <>
+                        <button onClick={V.toggleLoc} className="flex cursor-pointer items-center gap-2 rounded-[11px] border border-[rgba(242,237,227,.16)] bg-[rgba(255,255,255,.05)] px-[13px] py-[11px] text-left font-[inherit] text-[13px] font-semibold text-[rgba(242,237,227,.9)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
+                          <span className="flex-1">{V.aimagLabel}</span>
+                          <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
+                        </button>
+                        {V.locOpen && (
+                          <div className="flex flex-wrap gap-1.5 px-0.5 py-2.5">
+                            {V.aimagOpts.map((a: any, i: number) => (
+                              <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-colors duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
+                                <span>{a.label}</span>
+                                <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                     {V.isMapsPage && (
                       <div className="flex flex-wrap items-center gap-2 pt-2 pr-0.5 pb-1 pl-0.5">
@@ -1075,29 +1125,31 @@ export default class BigBangLayout extends React.Component<Props, any> {
             </>
           ) : (
             <div className="flex min-w-0 items-center gap-4">
-              <div className="relative">
-                <button onClick={V.toggleLoc} className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.06)] px-3 py-1.5 font-[inherit] text-xs font-semibold text-[rgba(242,237,227,.85)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)]">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
-                  <span>{V.aimagLabel}</span>
-                  <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
-                  <span className="text-[9px] opacity-60">▾</span>
-                </button>
-                {V.locOpen && (
-                  <>
-                    <div onClick={V.closeLoc} className="fixed inset-0 z-40 cursor-default"></div>
-                    <div className="fixed top-[76px] left-1/2 z-[41] max-h-[70vh] w-[560px] -translate-x-1/2 overflow-auto rounded-[14px] border border-[rgba(255,255,255,.35)] bg-[rgba(255,255,255,.09)] p-4 pt-3.5 shadow-[0_24px_60px_rgba(0,0,0,.45),inset_0_1px_0_rgba(255,255,255,.25)] backdrop-blur-[22px] backdrop-saturate-[1.2]">
-                      <div className="flex flex-wrap gap-1.5">
-                        {V.aimagOpts.map((a: any, i: number) => (
-                          <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-all duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
-                            <span>{a.label}</span>
-                            <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
-                          </button>
-                        ))}
+              {V.isHome && (
+                <div className="relative">
+                  <button onClick={V.toggleLoc} className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.06)] px-3 py-1.5 font-[inherit] text-xs font-semibold text-[rgba(242,237,227,.85)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
+                    <span>{V.aimagLabel}</span>
+                    <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
+                    <span className="text-[9px] opacity-60">▾</span>
+                  </button>
+                  {V.locOpen && (
+                    <>
+                      <div onClick={V.closeLoc} className="fixed inset-0 z-40 cursor-default"></div>
+                      <div className="fixed top-[76px] left-1/2 z-[41] max-h-[70vh] w-[560px] -translate-x-1/2 overflow-auto rounded-[14px] border border-[rgba(255,255,255,.35)] bg-[rgba(255,255,255,.09)] p-4 pt-3.5 shadow-[0_24px_60px_rgba(0,0,0,.45),inset_0_1px_0_rgba(255,255,255,.25)] backdrop-blur-[22px] backdrop-saturate-[1.2]">
+                        <div className="flex flex-wrap gap-1.5">
+                          {V.aimagOpts.map((a: any, i: number) => (
+                            <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-all duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
+                              <span>{a.label}</span>
+                              <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </>
-                )}
-              </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {!V.isTablet && (
                 <>

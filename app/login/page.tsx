@@ -2,107 +2,44 @@
 
 // Login / Signup — OTP user flow + Host registration flow.
 // Converted from Login.dc.html to React + TypeScript + Tailwind.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Accessibility, Eye, type LucideIcon } from 'lucide-react';
-import { PLACEHOLDER_IMG } from '@/components/bigbang/data';
+import { PLACEHOLDER_IMG, isVideoUrl } from '@/components/bigbang/data';
+import { apiGet } from '@/lib/api';
 
 const ACCENT = '#E8B84B';
-
-const HCRIT = [
-  'Тэргэнцэртэй орох боломж — хаалганы өргөн ≥ 120 см',
-  'Тусгай зам (налуу зам)',
-  'Тэргэнцэрт зориулсан ариун цэврийн өрөө',
-  'Довжоо / налуу гарц',
-  'Тайлбар бичлэг (дүрс, дууны тайлбар)',
-];
 
 const inputCls =
   'rounded-[11px] border border-white/20 bg-ink/[.35] px-[13px] py-[10px] font-sans text-cream outline-none transition-colors focus:border-accent placeholder:text-cream/[.32]';
 
-function Toggle({ on }: { on: boolean }) {
-  return (
-    <span
-      className="relative h-6 w-[42px] flex-shrink-0 rounded-full transition-colors"
-      style={{ background: on ? ACCENT : 'rgba(255,255,255,.2)' }}
-    >
-      <span
-        className="absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white transition-[left]"
-        style={{ left: on ? 21 : 3 }}
-      />
-    </span>
-  );
-}
-
-function AccessRow({
-  icon: Icon,
-  title,
-  desc,
-  on,
-  onClick,
-}: {
-  icon: LucideIcon;
-  title: string;
-  desc: string;
-  on: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-xl border px-[15px] py-[13px] text-left transition-all"
-      style={{
-        borderColor: on ? ACCENT : 'rgba(255,255,255,.18)',
-        background: on ? 'rgba(232, 184, 75,.14)' : 'rgba(0,0,0,.3)',
-      }}
-    >
-      <Icon size={19} className="text-cream" />
-      <span className="flex-1">
-        <span className="block font-bold text-cream">{title}</span>
-        <span className="mt-0.5 block text-[11px] text-cream/[.55]">{desc}</span>
-      </span>
-      <Toggle on={on} />
-    </button>
-  );
-}
-
 export default function Login() {
   const [role, setRole] = useState<'user' | 'host'>('user');
+  // Admin Panel → "Фон зураг" → "Нэвтрэх хуудасны фон". Best-effort, same as
+  // AppShell's loader background: keep the placeholder photo if the backend
+  // isn't reachable rather than showing an empty screen.
+  const [bgSrc, setBgSrc] = useState('');
+
+  useEffect(() => {
+    apiGet<{ loginBackgroundImage: string | null }>('/settings')
+      .then((s) => { if (s.loginBackgroundImage) setBgSrc(s.loginBackgroundImage); })
+      .catch(() => {});
+  }, []);
 
   // user flow
   const [method, setMethod] = useState<'phone' | 'email'>('phone');
   const [contact, setContact] = useState('');
   const [step, setStep] = useState<'input' | 'otp' | 'done'>('input');
   const [otp, setOtp] = useState(['', '', '', '']);
-  const [spNeeds, setSpNeeds] = useState(false);
-  const [a11y, setA11y] = useState(false);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // host flow
   const [hEmail, setHEmail] = useState('');
   const [hPhone, setHPhone] = useState('');
   const [hPass, setHPass] = useState('');
-  const [hPlace, setHPlace] = useState('');
-  const [hA11y, setHA11y] = useState(false);
-  const [hCrit, setHCrit] = useState([false, false, false, false, false]);
   const [hostDone, setHostDone] = useState(false);
 
   const isPhone = method === 'phone';
   const contactShown = contact || (isPhone ? '99112233' : 'tanii@email.mn');
-  const hAllCrit = hA11y && hCrit.every(Boolean);
-
-  const toggleSp = () => {
-    setSpNeeds((v) => {
-      try { localStorage.setItem('bb_sp', !v ? '1' : '0'); } catch { /* ignore */ }
-      return !v;
-    });
-  };
-  const toggleA11y = () => {
-    setA11y((v) => {
-      try { localStorage.setItem('bb_big', !v ? '1' : '0'); } catch { /* ignore */ }
-      return !v;
-    });
-  };
 
   const onOtp = (i: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const d = e.target.value.replace(/\D/g, '').slice(-1);
@@ -117,19 +54,28 @@ export default function Login() {
   });
 
   return (
-    <div className={a11y ? 'bb-hc' : undefined}>
+    <div>
       <div
         className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-10"
         data-screen-label="Нэвтрэх / Бүртгүүлэх"
       >
-        {/* background */}
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{
-            backgroundImage:
-              `linear-gradient(rgba(0,0,0,.72), rgba(0,0,0,.88)), url('${PLACEHOLDER_IMG}')`,
-          }}
-        />
+        {/* background — admin-set photo or video, else the placeholder photo.
+            A video needs its own element (a gradient can't be layered into it
+            via background-image), so the darkening overlay is a sibling there. */}
+        {isVideoUrl(bgSrc) ? (
+          <>
+            <video src={bgSrc} autoPlay loop muted playsInline className="absolute inset-0 h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,.72),rgba(0,0,0,.88))]" />
+          </>
+        ) : (
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{
+              backgroundImage:
+                `linear-gradient(rgba(0,0,0,.72), rgba(0,0,0,.88)), url('${bgSrc || PLACEHOLDER_IMG}')`,
+            }}
+          />
+        )}
 
         {/* card */}
         <div
@@ -191,25 +137,6 @@ export default function Login() {
                 />
               </label>
 
-              <div className="mb-2.5">
-                <AccessRow
-                  icon={Accessibility}
-                  title="Тусгай хэрэгцээт юу?"
-                  desc="Тийм бол ♿ шалгуур хангасан газруудыг хамгийн дээр харуулна"
-                  on={spNeeds}
-                  onClick={toggleSp}
-                />
-              </div>
-              <div className="mb-[18px]">
-                <AccessRow
-                  icon={Eye}
-                  title="Харааны бэрхшээлтэй юу?"
-                  desc="Тийм бол товч, текстийг стандартын дагуу томоор, тодоор харуулна"
-                  on={a11y}
-                  onClick={toggleA11y}
-                />
-              </div>
-
               <button
                 onClick={() => contact.trim() && setStep('otp')}
                 className="w-full rounded-xl border-none bg-accent py-[11px] text-[14px] font-extrabold text-[#132a1f] transition-transform hover:-translate-y-0.5"
@@ -265,9 +192,7 @@ export default function Login() {
                 ✓
               </div>
               <h1 className="m-0 text-[22px] font-extrabold text-cream-2">Амжилттай нэвтэрлээ</h1>
-              <p className="mb-[18px] mt-2 text-[13px] text-cream/60">
-                {a11y ? 'Том текстийн горим идэвхжсэн байна.' : 'Big bang-д тавтай морил!'}
-              </p>
+              <p className="mb-[18px] mt-2 text-[13px] text-cream/60">Big bang-д тавтай морил!</p>
               <Link
                 href="/"
                 className="inline-block rounded-xl border-none bg-accent px-7 py-[11px] text-[14px] font-extrabold !text-[#132a1f]"
@@ -290,7 +215,6 @@ export default function Login() {
                   { label: 'Имэйл', v: hEmail, set: setHEmail, ph: 'tanii@email.mn', type: 'text', mode: undefined },
                   { label: 'Утасны дугаар', v: hPhone, set: setHPhone, ph: '99112233', type: 'text', mode: 'numeric' as const },
                   { label: 'Нууц үг', v: hPass, set: setHPass, ph: 'Дор хаяж 8 тэмдэгт', type: 'password', mode: undefined },
-                  { label: 'Газрын нэр', v: hPlace, set: setHPlace, ph: 'Ж: Sky Lounge 21', type: 'text', mode: undefined },
                 ].map((f) => (
                   <label key={f.label} className="flex flex-col gap-[7px]">
                     <span className="text-[12px] font-bold text-cream/70">{f.label}</span>
@@ -304,52 +228,6 @@ export default function Login() {
                     />
                   </label>
                 ))}
-
-                <AccessRow
-                  icon={Accessibility}
-                  title="Хөгжлийн бэрхшээлтэй хүнд тохиромжтой юу?"
-                  desc="Сонговол доорх шалгууруудыг бүгдийг хангасан байх шаардлагатай"
-                  on={hA11y}
-                  onClick={() => setHA11y((v) => !v)}
-                />
-
-                {hA11y && (
-                  <div className="flex flex-col gap-2 rounded-xl border border-dashed border-[rgba(232, 184, 75,.45)] bg-[rgba(232, 184, 75,.05)] px-[15px] py-3.5">
-                    <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[.06em] text-accent">
-                      <Accessibility size={13} /> Шалгуурууд — бүгдийг хангасан байх
-                    </div>
-                    {HCRIT.map((label, i) => {
-                      const on = hCrit[i];
-                      return (
-                        <button
-                          key={i}
-                          onClick={() => setHCrit((c) => { const n = c.slice(); n[i] = !n[i]; return n; })}
-                          className="flex items-center gap-2.5 rounded-[9px] border px-2.5 py-2 text-left transition-all"
-                          style={{
-                            borderColor: on ? 'rgba(232, 184, 75,.4)' : 'rgba(255,255,255,.12)',
-                            background: on ? 'rgba(232, 184, 75,.1)' : 'transparent',
-                          }}
-                        >
-                          <span
-                            className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[5px] border-[1.5px] text-[12px] font-extrabold text-[#132a1f]"
-                            style={{
-                              borderColor: on ? ACCENT : 'rgba(255,255,255,.3)',
-                              background: on ? ACCENT : 'transparent',
-                            }}
-                          >
-                            {on ? '✓' : ''}
-                          </span>
-                          <span className="text-[12px] font-semibold leading-snug text-cream/[.85]">{label}</span>
-                        </button>
-                      );
-                    })}
-                    {hAllCrit && (
-                      <div className="flex items-center gap-2 text-[12px] font-bold text-[#a8d5a2]">
-                        <Accessibility size={14} /> Таны газар «Тусгай хэрэгцээт хүнд ээлтэй» тэмдэгтэй харагдана
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 <button
                   onClick={() => hEmail.trim() && hPhone.trim() && hPass.trim() && setHostDone(true)}

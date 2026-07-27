@@ -4,6 +4,7 @@
 import { useContext } from 'react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
 import LanyardBadge from '@/components/bigbang/LanyardBadge';
+import { BgMedia } from '@/components/bigbang/ui';
 
 // Groups a space-separated vertical-script string 2 words per column (line),
 // joined with a real `\n` — paired with `whiteSpace: 'pre'` on the element so
@@ -30,11 +31,10 @@ export default function AboutPage() {
           inspired by the "Eiger Trail" style infographic layout. Edge-to-edge like the
           Home hero, with the fixed site nav floating over it via its own fade-gradient. */}
       <div className="relative overflow-hidden">
-        {V.abHeroIsVideo ? (
-          <video src={V.abHeroRawUrl} autoPlay loop muted playsInline className="absolute inset-0 h-full w-full object-cover saturate-[1.05]" />
-        ) : (
-          <div className="absolute inset-0 bg-cover bg-top saturate-[1.05]" style={{ background: V.abHeroFullBg }}></div>
-        )}
+        <BgMedia
+          bg={V.abHeroFullBg} isVideo={V.abHeroIsVideo} videoSrc={V.abHeroRawUrl}
+          className="absolute inset-0" imgClassName="bg-cover bg-top saturate-[1.05]" videoClassName="saturate-[1.05]"
+        />
         <div className="absolute inset-0 bg-[linear-gradient(100deg,_rgba(0,0,0,.88)_0%,_rgba(0,0,0,.6)_34%,_rgba(0,0,0,.16)_62%,_rgba(0,0,0,.4)_100%)]"></div>
         <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.55)_0%,_rgba(0,0,0,.08)_14%,_rgba(0,0,0,.08)_44%,_rgba(0,0,0,.42)_60%,_rgba(0,0,0,.85)_100%)]"></div>
 
@@ -112,19 +112,34 @@ export default function AboutPage() {
           <span className="text-[11px] tracking-[.04em] text-[rgba(242,237,227,.6)]">big bang · {V.L.abContact}</span>
         </div>
 
-      <div className="relative z-[2] mx-auto max-w-[1200px]" style={{ padding: V.isMobile ? '20px 18px 60px' : '20px 48px 96px' }}>
+      {/* Same column width as the sections above — the map SVG is width:100%
+          of its container (see travel-map.js VB), so narrowing this column
+          scales the whole globe down with it. */}
+      <div className="relative z-[2] mx-auto max-w-[1280px]" style={{ padding: V.isMobile ? '20px 18px 40px' : '20px 32px 56px' }}>
         <div className="text-cream-2">
-          <div className="mb-3.5 flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[.2em] text-[rgba(242,237,227,.4)]"><span className="h-1.5 w-1.5 flex-none rounded-full bg-[#e2685c]"></span>[ {V.travelEyebrow} ]</div>
           <div className="mb-6">
             <div className="font-display italic text-[32px] leading-[1.05] text-cream-2">{V.travelTitle}</div>
             <div className="mt-2.5 max-w-[520px] text-[13px] leading-normal text-[rgba(242,237,227,.6)]">{V.travelSub}</div>
           </div>
-          <div className={V.isTablet ? 'flex flex-col gap-6' : 'grid grid-cols-[2.1fr_0.8fr] items-start gap-6'}>
-            <div className="relative overflow-hidden rounded-[20px]">
+          <div className={V.isTablet ? 'flex flex-col gap-6' : 'flex items-center gap-6'}>
+            <div className="relative min-w-0 flex-1 overflow-hidden rounded-[20px]">
               <div className="absolute inset-[-10%] bg-[radial-gradient(60%_60%_at_50%_50%,_rgba(0,0,0,.4)_0%,_rgba(0,0,0,0)_72%)]"></div>
-              <div ref={V.travelMapRef} className="relative w-full overflow-hidden rounded-[14px]" style={{ minHeight: V.isMobile ? 280 : 440 }}></div>
+              {/* The mounted SVG is width:100% over a ~1184×640 viewBox (see
+                  travel-map.js VB), so it takes the column's full width and
+                  sets its own height from that (~1.85:1). Only a
+                  pre-mount reservation here, kept under that so it can't leave
+                  a dead band below the map. */}
+              <div ref={V.travelMapRef} className="relative w-full overflow-hidden rounded-[14px]" style={{ minHeight: V.isMobile ? 180 : 420 }}></div>
             </div>
-            <div className="bb-hscroll box-border max-h-[460px] overflow-y-auto rounded-[20px] border border-[rgba(255,255,255,.14)] bg-[rgba(255,255,255,.05)] pt-[18px] px-4 pb-2 backdrop-blur-sm shadow-[0_12px_28px_rgba(0,0,0,.22),inset_0_1px_0_rgba(255,255,255,.1)]">
+            {/* Desktop puts the list in its own column beside the map rather
+                than floating it over the map's corner, so the rows never
+                cover the arcs/labels underneath. Fixed height (20 rows scroll
+                inside) and centred against the taller map column. */}
+            <div className={
+              V.isTablet
+                ? 'bb-hscroll box-border max-h-[460px] overflow-y-auto rounded-[20px] border border-[rgba(255,255,255,.14)] bg-[rgba(255,255,255,.05)] pt-[18px] px-4 pb-2 backdrop-blur-sm shadow-[0_12px_28px_rgba(0,0,0,.22),inset_0_1px_0_rgba(255,255,255,.1)]'
+                : 'bb-hscroll box-border w-[248px] flex-none h-[440px] overflow-y-auto rounded-[20px] border border-[rgba(255,255,255,.14)] bg-[rgba(255,255,255,.05)] pt-[18px] px-4 pb-2 backdrop-blur-sm shadow-[0_12px_28px_rgba(0,0,0,.22),inset_0_1px_0_rgba(255,255,255,.1)]'
+            }>
               <div className="mb-1.5 flex items-center gap-[9px] font-mono text-[10.5px] font-bold text-white">
                 <span className="inline-block h-0.5 w-5 flex-none bg-white"></span>{V.L.abReachCaption}
               </div>

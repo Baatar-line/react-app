@@ -36,21 +36,42 @@
 
   var LAND_IMAGE_URL = "/assets/travel-map-land.svg";
   var W = 1240, H = 700;
+  // Visible window into that 1240×700 space — the whole globe, with only
+  // fitExtent's dead margin trimmed. The land image is baked against this exact
+  // projection/extent, so framing has to happen through the viewBox (moving
+  // fitExtent would slide the arcs off the coastlines). fitExtent below fits the
+  // sphere into [[16,20],[1224,660]]; that box is slightly wider than Natural
+  // Earth's ~1.85 aspect, so the fit is height-constrained and the sphere lands
+  // at x28–1212, y20–660. A little wider than that on the left, because city
+  // labels are drawn outside their dot (text-anchor:end on the western ones) and
+  // Washington's ran off the sphere's own edge. Don't crop inside it to enlarge
+  // the map (scale is columnWidth / VB.w, so a narrower window does magnify):
+  // every side of the sphere carries land, and cutting even the far Pacific
+  // takes Australia/New Zealand and the southern hemisphere with it.
+  var VB = { x: 4, y: 20, w: 1232, h: 640 };
+  // Stamped on the container instead of a plain boolean so an already-rendered
+  // SVG from an older copy of this file gets rebuilt rather than kept: the guard
+  // exists to stop re-rendering the same map, but a `true` flag also froze in
+  // whatever framing the previously-loaded script had. Bump when editing.
+  var VERSION = 4;
 
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
 
   window.renderTravelMap = function (container) {
-    if (!container || container.__built) return;
-    container.__built = true;
+    if (!container || container.__built === VERSION) return;
+    container.__built = VERSION;
     var d3 = window.d3;
-    if (!d3) { container.__built = false; setTimeout(function () { window.renderTravelMap(container); }, 150); return; }
+    if (!d3) { container.__built = null; setTimeout(function () { window.renderTravelMap(container); }, 150); return; }
 
     try {
       var proj = d3.geoNaturalEarth1().rotate([-100, 0]);
       proj.fitExtent([[16, 20], [W - 16, H - 40]], { type: "Sphere" });
 
       var svg = [];
-      svg.push('<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="display:block" xmlns="http://www.w3.org/2000/svg">');
+      // width-only, so the box height follows the viewBox aspect and the whole
+      // world renders as large as the column allows. (Pinning height:100% to a
+      // fixed host height instead would letterbox the globe inside it.)
+      svg.push('<svg viewBox="' + VB.x + ' ' + VB.y + ' ' + VB.w + ' ' + VB.h + '" width="100%" style="display:block" xmlns="http://www.w3.org/2000/svg">');
       // backdrop — a single flat pre-rendered map image, not per-country shapes
       svg.push('<image href="' + LAND_IMAGE_URL + '" x="0" y="0" width="' + W + '" height="' + H + '" preserveAspectRatio="none" />');
 
@@ -116,7 +137,7 @@
 
       svg.push('</svg>');
       container.innerHTML = svg.join("");
-    } catch (e) { container.__built = false; console.warn("travel map failed", e); }
+    } catch (e) { container.__built = null; console.warn("travel map failed", e); }
   };
 
   window.TRAVEL_ORIGINS = ORIGINS;

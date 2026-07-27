@@ -1,7 +1,82 @@
 'use client';
 
 // Small runtime helpers used by the Big Bang port.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+
+// Pulls the `url("...")` portion out of a composed CSS background value
+// (e.g. 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.4)), url("https://...")')
+// and returns what's left (the gradient/scrim layers, if any) separately —
+// used by BgMedia so it can preload just the photo and still show the scrim
+// underneath a <video> (which can't take a CSS background-image itself).
+function parseBg(bg?: string): { url: string; scrim: string } {
+  if (!bg) return { url: '', scrim: '' };
+  const m = /url\((['"]?)(.*?)\1\)/.exec(bg);
+  if (!m) return { url: '', scrim: bg };
+  const scrim = (bg.slice(0, m.index) + bg.slice(m.index + m[0].length)).replace(/^\s*,\s*|\s*,\s*$/g, '').trim();
+  return { url: m[2], scrim };
+}
+
+const POSITIONED = /(^|\s)(absolute|relative|fixed|sticky)(\s|$)/;
+
+// Drop-in replacement for a plain `<div style={{ backgroundImage: bg }} />`
+// (or a photo/video pair) that shows a shimmering skeleton in place of the
+// photo/video until it has actually finished loading, instead of a flash of
+// blank/black. `bg` is the full CSS background value (gradient scrim + the
+// real `url(...)`, same string these call sites already compute) — pass
+// `isVideo`/`videoSrc` for the spots that can hold an admin-uploaded video
+// instead of a photo.
+export function BgMedia({
+  bg, isVideo, videoSrc, className = '', imgClassName = '', videoClassName = '', style, children,
+}: {
+  bg?: string;
+  isVideo?: boolean;
+  videoSrc?: string;
+  className?: string;
+  imgClassName?: string;
+  videoClassName?: string;
+  style?: React.CSSProperties;
+  children?: React.ReactNode;
+}) {
+  const { url, scrim } = useMemo(() => parseBg(bg), [bg]);
+  const vSrc = videoSrc || url;
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (isVideo) { setReady(false); return; }
+    if (!url) { setReady(true); return; }
+    setReady(false);
+    let alive = true;
+    const im = new Image();
+    im.onload = () => { if (alive) setReady(true); };
+    im.onerror = () => { if (alive) setReady(true); };
+    im.src = url;
+    return () => { alive = false; };
+  }, [url, isVideo]);
+
+  return (
+    <div className={(POSITIONED.test(className) ? '' : 'relative ') + 'overflow-hidden ' + className} style={style}>
+      {!ready && <div className="absolute inset-0 bb-skeleton" />}
+      {isVideo ? (
+        <>
+          <video
+            src={vSrc} autoPlay loop muted playsInline
+            onLoadedData={() => setReady(true)}
+            className={'absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ' + videoClassName}
+            style={{ opacity: ready ? 1 : 0 }}
+          />
+          {scrim && (
+            <div className="absolute inset-0 transition-opacity duration-300" style={{ background: scrim, opacity: ready ? 1 : 0 }} />
+          )}
+        </>
+      ) : (
+        <div
+          className={'absolute inset-0 transition-opacity duration-300 ' + imgClassName}
+          style={{ backgroundImage: bg, opacity: ready ? 1 : 0 }}
+        />
+      )}
+      {children}
+    </div>
+  );
+}
 
 // Styling across the app is Tailwind utility classes now — no @media queries
 // available for inline `style` values (genuinely dynamic/per-instance colors,

@@ -4,6 +4,7 @@
 // GlobeEngine script (see BigBangLayout.handleGlobeRef, wired via V.globeMountRef).
 import { useContext } from 'react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
+import { BgMedia } from '@/components/bigbang/ui';
 
 export default function GlobePage() {
   const V: any = useContext(BigBangContext);
@@ -30,7 +31,7 @@ export default function GlobePage() {
               <button
                 key={i}
                 onClick={r.pick}
-                className="block w-full cursor-pointer box-border px-4 py-[10px] [all:unset] hover:bg-[rgba(232,184,75,.14)]"
+                className="block w-full cursor-pointer box-border border-0 bg-transparent px-4 py-[10px] text-left hover:bg-[rgba(232,184,75,.14)]"
               >
                 <div className="text-[13px] font-bold text-cream">{r.name}</div>
                 <div className="mt-[2px] text-[10.5px] text-[rgba(242,237,227,.5)]">{r.region}</div>
@@ -58,7 +59,7 @@ export default function GlobePage() {
           </div>
           {V.gcSites.map((s: any, i: number) => (
             <div key={i} className="relative h-[130px] overflow-hidden rounded-2xl border border-[rgba(255,255,255,.1)] shadow-[0_16px_40px_rgba(0,0,0,.28)]">
-              <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: s.cover }}></div>
+              <BgMedia bg={s.cover} className="absolute inset-0" imgClassName="bg-cover bg-center" />
               <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.12)_0%,_rgba(0,0,0,0)_34%,_rgba(0,0,0,.5)_72%,_rgba(0,0,0,.85)_100%)]"></div>
               <div className="absolute left-[11px] top-[11px] flex min-w-[30px] h-[30px] items-center justify-center rounded-[9px] border border-[rgba(255,255,255,.16)] bg-[rgba(0,0,0,.5)] px-[7px] font-[ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] font-bold text-cream-2 backdrop-blur-[8px]">{s.n}</div>
               <div className="pointer-events-none absolute left-0 right-0 bottom-0 px-[14px] py-3">

@@ -15,8 +15,8 @@ export async function PUT(request: Request) {
   try {
     const user = await requireAuth(request);
     requireRole(user, 'admin');
-    const { aboutBackgroundImage, homeBackgroundImage, mongoliaFlagImage, suggestBackgroundImages, loaderBackgroundImage, travelAppsBackgroundImage } = await request.json();
-    const data = { aboutBackgroundImage, homeBackgroundImage, mongoliaFlagImage, suggestBackgroundImages, loaderBackgroundImage, travelAppsBackgroundImage };
+    const { aboutBackgroundImage, homeBackgroundImage, mongoliaFlagImage, suggestBackgroundImages, loaderBackgroundImage, travelAppsBackgroundImages, loginBackgroundImage } = await request.json();
+    const data = { aboutBackgroundImage, homeBackgroundImage, mongoliaFlagImage, suggestBackgroundImages, loaderBackgroundImage, travelAppsBackgroundImages, loginBackgroundImage };
     const settings = await prisma.siteSettings.upsert({
       where: { id: 1 },
       update: data,

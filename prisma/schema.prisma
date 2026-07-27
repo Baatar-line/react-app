@@ -177,9 +177,14 @@ model SiteSettings {
   // Full-bleed photo behind the Marauder's-map loading screen (MarauderLoader) —
   // falls back to the plain dark gradient in the component's own CSS when unset.
   loaderBackgroundImage String?
-  // Background photo/video behind the "Аяллын апп" (travel apps) card on the
-  // Suggest page — falls back to the plain dark gradient there when unset.
-  travelAppsBackgroundImage String?
+  // Full-bleed photo/video behind the login & host-signup screen (/login) —
+  // falls back to the shared placeholder photo in the page when unset.
+  loginBackgroundImage  String?
+  // Per-app background photo/video behind each of the "Аяллын апп" (travel
+  // apps) tiles on the Suggest page, keyed by the app's static slug (see
+  // TRAVEL_APPS in data.ts — organic-maps/osmand/windy/...). Same JSON-map
+  // pattern as suggestBackgroundImages, for the same reason.
+  travelAppsBackgroundImages Json?
   updatedAt            DateTime @updatedAt
 
   @@map("site_settings")

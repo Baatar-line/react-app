@@ -3,9 +3,8 @@
 // Big Bang — Suggest (/suggest): top-rated carousel, curated collections, quick
 // picks, and the travel-apps kit.
 import { useContext } from 'react';
-import { Plane } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { Isometric3DIcon } from '@/components/bigbang/ui';
+import { BgMedia, Isometric3DIcon } from '@/components/bigbang/ui';
 
 // Bento-style spans (desktop only — collapses to a plain single column on
 // mobile) for the 6 travel-app cards, matched by index to V.travelApps'
@@ -19,8 +18,10 @@ const TRAVEL_SPANS = [
   { gridColumn: '3 / 4', gridRow: '1 / 3' },
   { gridColumn: '4 / 5', gridRow: '1 / 2' },
   { gridColumn: '4 / 5', gridRow: '2 / 3' },
-  { gridColumn: '1 / 3', gridRow: '3 / 4' },
-  { gridColumn: '3 / 5', gridRow: '3 / 4' },
+  // Avis Mongolia / Drive Mongolia — only they sit in this grid row, so their
+  // own min-height drives the row height.
+  { gridColumn: '1 / 3', gridRow: '3 / 4', minHeight: 250 },
+  { gridColumn: '3 / 5', gridRow: '3 / 4', minHeight: 250 },
 ];
 
 export default function SuggestPage() {
@@ -29,7 +30,7 @@ export default function SuggestPage() {
     <section
       data-screen-label="Санал болгох"
       className="box-border min-h-screen"
-      style={{ padding: V.isMobile ? '96px 18px 40px' : '110px 48px 60px' }}
+      style={{ padding: V.isMobile ? '96px 18px 14px' : '110px 48px 18px' }}
     >
       <div className="mb-10">
         <h2 className="m-0 mb-3.5 text-lg font-extrabold tracking-[-0.02em] text-cream">{V.L.topRowTitle}</h2>
@@ -44,7 +45,7 @@ export default function SuggestPage() {
               onClick={it.onClick}
               className="relative grow-0 shrink-0 basis-[220px] aspect-[4/5] cursor-pointer overflow-hidden rounded-2xl border border-[rgba(255,255,255,.1)] transition-transform duration-300 ease-[cubic-bezier(.22,.8,.3,1)] hover:-translate-y-2"
             >
-              <div style={{ position: 'absolute', inset: 0, backgroundImage: it.thumb, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
+              <BgMedia bg={it.thumb} className="absolute inset-0" imgClassName="bg-cover bg-center" />
               <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,.1)_0%,rgba(0,0,0,0)_40%,rgba(0,0,0,.92)_100%)]"></div>
               <span className="absolute top-[10px] left-[10px] rounded-full border border-[rgba(255,255,255,.2)] bg-[rgba(0,0,0,.55)] px-[10px] py-1 text-[10px] font-bold tracking-[.05em] text-[var(--accent,#E8B84B)] uppercase backdrop-blur-[8px]">{it.kind}</span>
               <span className="absolute top-[10px] right-[10px] rounded-full border border-[rgba(255,255,255,.2)] bg-[rgba(0,0,0,.55)] px-[9px] py-[3px] text-[11px] font-bold text-cream-2 backdrop-blur-[8px]">★ {it.rating}</span>
@@ -65,11 +66,7 @@ export default function SuggestPage() {
             className="relative cursor-pointer overflow-hidden rounded-[22px] transition-transform duration-300 ease-in-out hover:-translate-y-[3px]"
             style={{ height: V.isMobile ? '360px' : '420px' }}
           >
-            {s.coverIsVideo ? (
-              <video src={s.coverRawUrl} autoPlay loop muted playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } as any} />
-            ) : (
-              <div style={{ position: 'absolute', inset: 0, backgroundImage: s.cover, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
-            )}
+            <BgMedia bg={s.cover} isVideo={s.coverIsVideo} videoSrc={s.coverRawUrl} className="absolute inset-0" imgClassName="bg-cover bg-center" />
             <div style={{ position: 'absolute', inset: 0, background: s.scrim }}></div>
             <div style={V.isMobile
               ? { position: 'absolute', left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', gap: 12, padding: '0 20px 24px', boxSizing: 'border-box' }
@@ -92,54 +89,53 @@ export default function SuggestPage() {
         ))}
       </div>
 
-      {/* ── TRAVEL APPS — big card ── */}
-      <div className="relative overflow-hidden rounded-[22px] border border-[rgba(255,255,255,.1)] bg-[radial-gradient(120%_140%_at_100%_0%,rgba(232,184,75,.14)_0%,rgba(0,0,0,0)_55%),linear-gradient(180deg,#17130d_0%,#120f0a_100%)]">
-        {V.travelAppsHasBg && (
-          <>
-            {V.travelAppsBgIsVideo ? (
-              <video src={V.travelAppsBgRawUrl} autoPlay loop muted playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } as any} />
-            ) : (
-              <div style={{ position: 'absolute', inset: 0, backgroundImage: V.travelAppsBg, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
-            )}
-            <div className="absolute inset-0 bg-[radial-gradient(120%_140%_at_100%_0%,rgba(232,184,75,.22)_0%,rgba(0,0,0,0)_55%),linear-gradient(180deg,rgba(15,12,8,.55)_0%,rgba(9,7,4,.9)_100%)]"></div>
-          </>
-        )}
-        <div className="relative" style={{ padding: V.isMobile ? '22px 18px 24px' : '32px 40px 34px' }}>
+      {/* ── TRAVEL APPS ── */}
+      <div className="relative">
+        {/* Horizontal padding dropped — that was interior padding for the
+            card border this section used to have; now that the border's
+            gone, the grid should reach the same left/right edges as the
+            carousel/banners above instead of sitting inset from them. */}
+        <div className="relative" style={{ padding: V.isMobile ? '22px 0 6px' : '32px 0 8px' }}>
           <div className="mb-[26px] flex flex-wrap items-end justify-between gap-4">
             <div className="flex items-center gap-4">
               <Isometric3DIcon kind="travel" size={56} />
               <div>
-                <span className="mb-3.5 inline-flex items-center gap-1.5 rounded-full border border-[rgba(232,184,75,.4)] bg-[rgba(232,184,75,.14)] px-3 py-1 text-[10.5px] font-bold tracking-[.1em] text-[var(--accent,#E8B84B)] uppercase"><Plane size={12} /> {V.L.appsBadge}</span>
                 <h3 className="m-0 text-[clamp(22px,2.2vw,30px)] font-extrabold tracking-[-0.02em] text-cream-2">{V.L.appsTitle}</h3>
                 <p className="mt-2 mb-0 max-w-[520px] text-[13.5px] leading-[1.5] text-[rgba(242,237,227,.6)]">{V.L.appsSub}</p>
               </div>
             </div>
           </div>
-          <div className={V.isMobile ? 'flex flex-col gap-4' : 'grid grid-cols-4 auto-rows-[minmax(150px,auto)] gap-4'}>
+          <div className={V.isTablet ? 'flex flex-col gap-4' : 'grid grid-cols-4 auto-rows-[minmax(118px,auto)] gap-4'}>
             {V.travelApps.map((a: any, i: number) => (
               <a
                 key={i}
                 href={a.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="relative flex flex-col gap-[18px] overflow-hidden rounded-[20px] px-[22px] pt-[22px] pb-6 no-underline shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px] transition-transform duration-[350ms] ease-[cubic-bezier(.22,.8,.3,1)] hover:-translate-y-[6px] hover:shadow-[0_24px_48px_rgba(0,0,0,.4)]"
+                className="relative flex flex-col overflow-hidden rounded-[20px] px-[22px] pt-[22px] pb-6 no-underline shadow-[0_14px_34px_rgba(0,0,0,.28)] backdrop-blur-[14px] transition-transform duration-[350ms] ease-[cubic-bezier(.22,.8,.3,1)] hover:-translate-y-[6px] hover:shadow-[0_24px_48px_rgba(0,0,0,.4)]"
                 style={{
-                  background: `linear-gradient(155deg, ${a.tint} 0%, rgba(255,255,255,.035) 45%, rgba(255,255,255,.015) 100%)`,
-                  border: `1px solid ${a.ring}`,
-                  ...(V.isMobile ? {} : { gridColumn: TRAVEL_SPANS[i].gridColumn, gridRow: TRAVEL_SPANS[i].gridRow }),
+                  background: a.hasBg ? undefined : 'rgba(255,255,255,.04)',
+                  border: '1px solid rgba(255,255,255,.1)',
+                  ...(V.isTablet ? {} : { gridColumn: TRAVEL_SPANS[i].gridColumn, gridRow: TRAVEL_SPANS[i].gridRow, minHeight: TRAVEL_SPANS[i].minHeight }),
                 }}
               >
-                <div className="relative flex items-start justify-between gap-3">
-                  <div className="box-border flex h-[60px] w-[60px] flex-none items-center justify-center rounded-[17px] p-[5px]" style={{ border: `1px solid ${a.ring}` }}>
-                    <div className="flex h-full w-full items-center justify-center rounded-xl shadow-[inset_0_1px_0_rgba(255,255,255,.2)]" style={{ background: a.tint }}>
-                      {a.logo ? <img src={a.logo} alt={a.name} style={{ width: '58%', height: '58%', objectFit: 'contain' }} /> : <a.icon size={24} />}
+                {a.hasBg && (
+                  <>
+                    <BgMedia bg={a.bg} isVideo={a.bgIsVideo} videoSrc={a.bgRawUrl} className="absolute inset-0" imgClassName="bg-cover bg-center" />
+                    <div className="absolute inset-0 bg-[linear-gradient(165deg,rgba(0,0,0,.1)_0%,rgba(0,0,0,.4)_40%,rgba(0,0,0,.82)_100%)]"></div>
+                  </>
+                )}
+                <span className="absolute top-[18px] right-[18px] z-[1] flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full border border-[rgba(255,255,255,.22)] bg-[rgba(0,0,0,.22)] text-[13px] text-cream-2 opacity-75 transition-[opacity,transform] duration-[250ms]">↗</span>
+                <div className="relative flex items-center gap-3">
+                  <div className="box-border flex h-[38px] w-[38px] flex-none items-center justify-center rounded-xl p-[3px]" style={{ border: `1px solid ${a.ring}` }}>
+                    <div className="flex h-full w-full items-center justify-center rounded-[8px] shadow-[inset_0_1px_0_rgba(255,255,255,.2)]" style={{ background: a.tint }}>
+                      {a.logo ? <img src={a.logo} alt={a.name} style={{ width: '58%', height: '58%', objectFit: 'contain' }} /> : <a.icon size={16} />}
                     </div>
                   </div>
-                  <span className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full border border-[rgba(255,255,255,.22)] bg-[rgba(0,0,0,.22)] text-sm text-cream-2 opacity-75 transition-[opacity,transform] duration-[250ms]">↗</span>
-                </div>
-                <div className="relative min-w-0">
-                  <div className="text-[16.5px] font-extrabold tracking-[-0.01em] text-cream-2 leading-[1.2]">{a.name}</div>
-                  <div className="mt-1.5 text-[12.5px] leading-[1.4] text-[rgba(242,237,227,.68)]">{a.purpose}</div>
+                  <div className="relative min-w-0">
+                    <div className="text-[16.5px] font-extrabold tracking-[-0.01em] text-cream-2 leading-[1.2]">{a.name}</div>
+                    <div className="mt-1.5 text-[12.5px] leading-[1.4] text-[rgba(242,237,227,.68)]">{a.purpose}</div>
+                  </div>
                 </div>
               </a>
             ))}

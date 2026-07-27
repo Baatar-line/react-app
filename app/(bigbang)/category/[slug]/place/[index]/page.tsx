@@ -4,9 +4,10 @@
 // straight from CATS + the URL params, same as openPlace() used to build it via setState.
 import React, { useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Accessibility, Heart, MapPin, Phone } from 'lucide-react';
+import { Accessibility, Heart, MapPin, Phone, Star } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
 import { CATS, U, ratingOf, isAccessible, aimagName, mapsUrlFor, FCRIT } from '@/components/bigbang/data';
+import { BgMedia } from '@/components/bigbang/ui';
 
 export default function PlaceDetail() {
   const V: any = useContext(BigBangContext);
@@ -14,6 +15,7 @@ export default function PlaceDetail() {
   const { slug, index } = useParams<{ slug: string; index: string }>();
   const [pdImgIdx, setPdImgIdx] = React.useState(0);
   React.useEffect(() => { setPdImgIdx(0); }, [slug, index]);
+  const [hoverStar, setHoverStar] = React.useState(0);
 
   const accent = V.accent;
   const L = V.L;
@@ -30,6 +32,7 @@ export default function PlaceDetail() {
   const gallery = [0, 1, 2, 3].map((k) => pool[(i + k) % pool.length]);
   const favKey = 'p:' + cat.slug + ':' + it.name;
   const favOn = !!V.favs[favKey];
+  const myRating = V.myRatings[favKey] || 0;
   const sel = Math.min(pdImgIdx, Math.max(0, gallery.length - 1));
   const mainImg = 'linear-gradient(rgba(0,0,0,.06), rgba(0,0,0,.2)), url("' + U(gallery[sel], 1200) + '")';
   const aimag = it.aimag || 'Улаанбаатар';
@@ -52,18 +55,20 @@ export default function PlaceDetail() {
     <section data-screen-label="Газрын дэлгэрэнгүй" className="box-border min-h-screen" style={{ padding: V.isMobile ? '88px 18px 40px' : '96px 48px 60px' }}>
       <button onClick={() => router.push('/category/' + cat.slug)} className="mb-[26px] inline-flex cursor-pointer items-center gap-2 border-0 bg-transparent text-[13px] font-semibold text-[rgba(242,237,227,.6)] transition-colors duration-[250ms] hover:text-[var(--accent,#E8B84B)]">{L.back}</button>
       <div className={V.isTablet ? 'flex flex-col gap-7' : 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] items-start gap-12'}>
-        <div className={(V.isTablet ? 'static' : 'sticky top-24') + ' flex flex-col gap-2.5'}>
+        <div className="static flex flex-col gap-2.5">
           <div className="relative aspect-[4/3] max-h-[420px] overflow-hidden rounded-[22px] border border-[rgba(255,255,255,.1)]">
-            <div className="absolute inset-0 bg-cover bg-center transition-[background-image] duration-300 ease-in-out" style={{ backgroundImage: mainImg }}></div>
+            <BgMedia bg={mainImg} className="absolute inset-0" imgClassName="bg-cover bg-center" />
           </div>
           <div className="flex gap-2.5">
             {gallery.map((id: string, k: number) => (
               <button
                 key={k}
                 onClick={() => setPdImgIdx(k)}
-                className={`aspect-[4/3] max-h-24 flex-1 cursor-pointer overflow-hidden rounded-xl p-0 transition-all duration-200 hover:opacity-100 ${k === sel ? 'opacity-100' : 'opacity-60'}`}
-                style={{ border: `1.5px solid ${k === sel ? accent : 'rgba(255,255,255,.14)'}`, background: `url("${U(id, 300)}")`, backgroundSize: 'cover', backgroundPosition: 'center' }}
-              ></button>
+                className={`relative aspect-[4/3] max-h-24 flex-1 cursor-pointer overflow-hidden rounded-xl p-0 ${k === sel ? 'opacity-100' : 'opacity-60'}`}
+                style={{ border: `1.5px solid ${k === sel ? accent : 'rgba(255,255,255,.14)'}` }}
+              >
+                <BgMedia bg={`url("${U(id, 300)}")`} className="absolute inset-0" imgClassName="bg-cover bg-center" />
+              </button>
             ))}
           </div>
         </div>
@@ -114,6 +119,29 @@ export default function PlaceDetail() {
               </div>
             </div>
           )}
+          <h2 className="mt-[34px] mb-3.5 inline-block border-b-2 border-[var(--accent,#E8B84B)] pb-1.5 text-[22px] font-extrabold tracking-[-0.02em] text-cream">{L.pdRateTitle}</h2>
+          <div className="flex items-center gap-3.5">
+            <div className="flex gap-1.5" onMouseLeave={() => setHoverStar(0)}>
+              {[1, 2, 3, 4, 5].map((n) => {
+                const on = n <= (hoverStar || myRating);
+                return (
+                  <button
+                    key={n}
+                    onClick={() => V.ratePlace(favKey)(n)}
+                    onMouseEnter={() => setHoverStar(n)}
+                    aria-label={String(n)}
+                    className="cursor-pointer border-0 bg-transparent p-0 transition-transform duration-150 hover:scale-110"
+                    style={{ color: on ? accent : 'rgba(242,237,227,.28)' }}
+                  >
+                    <Star size={26} fill={on ? 'currentColor' : 'none'} />
+                  </button>
+                );
+              })}
+            </div>
+            <span className="text-[13px] font-semibold text-[rgba(242,237,227,.6)]">
+              {myRating ? `${L.pdRateThanks}: ${myRating}/5` : L.pdRateHint}
+            </span>
+          </div>
           <div className="mt-[30px] flex flex-wrap gap-3">
             <a href={mapsUrlFor({ name: it.name, aimag })} target="_blank" rel="noopener" className="inline-flex items-center gap-2 rounded-full border border-[rgba(66,133,244,.4)] bg-[rgba(66,133,244,.14)] py-3 px-[22px] text-[13px] font-bold text-[#8ab4f8] no-underline transition-all duration-[200ms] hover:bg-[rgba(66,133,244,.22)]"><MapPin size={14} />{L.openMaps}</a>
             <button onClick={V.toggleFav(favKey)} className="inline-flex cursor-pointer items-center gap-2 rounded-full py-3 px-[22px] text-[13px] font-bold transition-all duration-[250ms]" style={{ border: `1px solid ${favOn ? accent : 'rgba(242,237,227,.28)'}`, background: favOn ? accent : 'transparent', color: favOn ? '#132a1f' : 'rgba(242,237,227,.8)' }}><Heart size={15} fill={favOn ? 'currentColor' : 'none'} /> {favOn ? L.savedLabel : L.save}</button>

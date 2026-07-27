@@ -5,6 +5,7 @@ import { useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
 import { SUGGESTS, SUGGEST_COLLECTIONS, imgUrl } from '@/components/bigbang/data';
+import { BgMedia } from '@/components/bigbang/ui';
 
 export default function SuggestDetail() {
   const V: any = useContext(BigBangContext);
@@ -32,7 +33,7 @@ export default function SuggestDetail() {
       <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-5">
         {items.map((it: any, i: number) => (
           <div key={i} className="overflow-hidden rounded-[18px] border border-[rgba(255,255,255,.1)] bg-[rgba(255,255,255,.03)]">
-            <div className="relative aspect-[16/10] bg-cover bg-center" style={{ backgroundImage: it.cover }}></div>
+            <BgMedia bg={it.cover} className="relative aspect-[16/10]" imgClassName="bg-cover bg-center" />
             <div className="px-[18px] pt-4 pb-[18px]">
               <div className="text-[15px] font-extrabold text-cream-2">{it.name}</div>
               <div className="mt-[5px] text-[12.5px] leading-[1.4] text-[rgba(242,237,227,.55)]">{it.desc}</div>

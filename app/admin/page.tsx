@@ -8,7 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, Film, Search, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
 import { useIsMobile } from '@/components/bigbang/ui';
-import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, U, imgUrl, isVideoUrl } from '@/components/bigbang/data';
+import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, TRAVEL_APPS, U, imgUrl, isVideoUrl } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
 import { apiGet, apiPatch, apiPut, uploadImage } from '@/lib/api';
 
@@ -23,6 +23,10 @@ interface CreatedPlace { name: string; cat: string; aimag: string; access?: bool
 // settings row instead; `slug` is the SUGGESTS card key used there since that
 // list isn't a db table with its own row ids.
 interface BgItem { id?: number; slug?: string; name: string; type: 'image' | 'video'; src: string; }
+// Which background list the "Фон зураг" tab is showing / editing. Named rather
+// than repeated inline at each of the state, lookup and handler sites, so
+// adding a kind is one edit here plus its own branches.
+type BgKind = 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps' | 'login';
 
 const PLACE_REQS = [
   { name: 'Sky Lounge 21', cat: 'Хоол & Кофе', aimag: 'Улаанбаатар', host: 'host: @boldoo', when: 'өнөөдөр 14:02', desc: 'Хотын дээвэр ресторан, нар жаргах гоё үзэмжтэй', img: '1517248135467-4c7edcad34c4' },
@@ -127,7 +131,7 @@ export default function AdminPanel() {
   const [sgImg, setSgImg] = useState('');
   const [sgErr, setSgErr] = useState(false);
 
-  const [bgSub, setBgSub] = useState<'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps'>('cat');
+  const [bgSub, setBgSub] = useState<BgKind>('cat');
   // Seeded with the same local defaults as before so the tab isn't empty while the
   // backend fetch below is in flight; the effect then attaches real ids + latest
   // saved images so edits actually PATCH/PUT the right row and survive a refresh.
@@ -146,8 +150,11 @@ export default function AdminPanel() {
   const [suggestBg, setSuggestBg] = useState<BgItem[]>(() => SUGGESTS.map((s) => ({ slug: s.slug, name: s.title, type: 'image' as const, src: U(s.img, 900) })));
   // Full-bleed photo behind the Marauder's-map loading screen shown on first load.
   const [loaderBg, setLoaderBg] = useState<BgItem[]>(() => [{ name: 'Ачаалж буй дэлгэцийн фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1800) }]);
+  // Full-bleed photo/video behind the /login screen (both the user OTP and the
+  // host signup flows — it's one screen).
+  const [loginBg, setLoginBg] = useState<BgItem[]>(() => [{ name: 'Нэвтрэх хуудасны фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1800) }]);
   // Background photo/video behind the "Аяллын апп" card on the Suggest page.
-  const [travelAppsBg, setTravelAppsBg] = useState<BgItem[]>(() => [{ name: 'Аяллын апп хэсгийн фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1800) }]);
+  const [travelAppsBg, setTravelAppsBg] = useState<BgItem[]>(() => TRAVEL_APPS.map((a) => ({ slug: a.slug, name: a.name, type: 'image' as const, src: U('1470071459604-3b5ec3a7fe05', 900) })));
   const [bgSyncError, setBgSyncError] = useState('');
   const [bgUploading, setBgUploading] = useState(false);
 
@@ -158,7 +165,7 @@ export default function AdminPanel() {
         const [cats, aimags, settings] = await Promise.all([
           apiGet<{ id: number; name: string; image: string | null }[]>('/categories'),
           apiGet<{ id: number; name: string; backgroundImage: string | null }[]>('/aimags'),
-          apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; loaderBackgroundImage: string | null; travelAppsBackgroundImage: string | null }>('/settings'),
+          apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; loaderBackgroundImage: string | null; travelAppsBackgroundImages: Record<string, string> | null; loginBackgroundImage: string | null }>('/settings'),
         ]);
         if (cancelled) return;
         setCatBg((prev) => prev.map((it) => {
@@ -193,8 +200,16 @@ export default function AdminPanel() {
         if (settings.loaderBackgroundImage) {
           setLoaderBg((prev) => [{ ...prev[0], src: settings.loaderBackgroundImage as string, type: isVideoUrl(settings.loaderBackgroundImage as string) ? 'video' : 'image' }]);
         }
-        if (settings.travelAppsBackgroundImage) {
-          setTravelAppsBg((prev) => [{ ...prev[0], src: settings.travelAppsBackgroundImage as string, type: isVideoUrl(settings.travelAppsBackgroundImage as string) ? 'video' : 'image' }]);
+        if (settings.loginBackgroundImage) {
+          setLoginBg((prev) => [{ ...prev[0], src: settings.loginBackgroundImage as string, type: isVideoUrl(settings.loginBackgroundImage as string) ? 'video' : 'image' }]);
+        }
+        if (settings.travelAppsBackgroundImages) {
+          const map = settings.travelAppsBackgroundImages;
+          setTravelAppsBg((prev) => prev.map((it) => {
+            const saved = it.slug ? map[it.slug] : null;
+            if (!saved) return it;
+            return { ...it, src: saved, type: isVideoUrl(saved) ? 'video' : 'image' };
+          }));
         }
       } catch {
         if (!cancelled) setBgSyncError('Backend-тэй холбогдож чадсангүй — локал жишээ өгөгдөл харагдаж байна.');
@@ -204,7 +219,7 @@ export default function AdminPanel() {
   }, []);
 
   const [bgEditOpen, setBgEditOpen] = useState(false);
-  const [bgEditKind, setBgEditKind] = useState<'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps'>('cat');
+  const [bgEditKind, setBgEditKind] = useState<BgKind>('cat');
   const [bgEditIdx, setBgEditIdx] = useState(-1);
   const [bgDraftType, setBgDraftType] = useState<'image' | 'video'>('image');
   const [bgDraftSrc, setBgDraftSrc] = useState('');
@@ -232,11 +247,11 @@ export default function AdminPanel() {
     setSharedFormOpen(false);
   };
 
-  const bgArrFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps') => (kind === 'aimag' ? aimagBg : kind === 'about' ? aboutBg : kind === 'home' ? homeBg : kind === 'flag' ? flagBg : kind === 'suggest' ? suggestBg : kind === 'loader' ? loaderBg : kind === 'travelApps' ? travelAppsBg : catBg);
-  const bgSetterFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps') => (kind === 'aimag' ? setAimagBg : kind === 'about' ? setAboutBg : kind === 'home' ? setHomeBg : kind === 'flag' ? setFlagBg : kind === 'suggest' ? setSuggestBg : kind === 'loader' ? setLoaderBg : kind === 'travelApps' ? setTravelAppsBg : setCatBg);
-  const bgLabelFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps') => (kind === 'aimag' ? 'Аймгийн фон' : kind === 'about' ? 'Тухай хуудасны фон' : kind === 'home' ? 'Нүүр хуудасны фон' : kind === 'flag' ? 'Монгол улсын дэлбээ' : kind === 'suggest' ? 'Санал болгохын фон' : kind === 'loader' ? 'Ачаалж буй дэлгэцийн фон' : kind === 'travelApps' ? 'Аяллын апп хэсгийн фон' : 'Ангиллын фон');
+  const bgArrFor = (kind: BgKind) => (kind === 'aimag' ? aimagBg : kind === 'about' ? aboutBg : kind === 'home' ? homeBg : kind === 'flag' ? flagBg : kind === 'suggest' ? suggestBg : kind === 'loader' ? loaderBg : kind === 'travelApps' ? travelAppsBg : kind === 'login' ? loginBg : catBg);
+  const bgSetterFor = (kind: BgKind) => (kind === 'aimag' ? setAimagBg : kind === 'about' ? setAboutBg : kind === 'home' ? setHomeBg : kind === 'flag' ? setFlagBg : kind === 'suggest' ? setSuggestBg : kind === 'loader' ? setLoaderBg : kind === 'travelApps' ? setTravelAppsBg : kind === 'login' ? setLoginBg : setCatBg);
+  const bgLabelFor = (kind: BgKind) => (kind === 'aimag' ? 'Аймгийн фон' : kind === 'about' ? 'Тухай хуудасны фон' : kind === 'home' ? 'Нүүр хуудасны фон' : kind === 'flag' ? 'Монгол улсын дэлбээ' : kind === 'suggest' ? 'Санал болгохын фон' : kind === 'loader' ? 'Ачаалж буй дэлгэцийн фон' : kind === 'travelApps' ? 'Аяллын апп хэсгийн фон' : kind === 'login' ? 'Нэвтрэх хуудасны фон' : 'Ангиллын фон');
 
-  const openBgEdit = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps', idx: number) => {
+  const openBgEdit = (kind: BgKind, idx: number) => {
     const cur = bgArrFor(kind)[idx];
     setBgEditKind(kind); setBgEditIdx(idx); setBgDraftType(cur.type); setBgDraftSrc(cur.src); setBgEditOpen(true);
   };
@@ -250,12 +265,17 @@ export default function AdminPanel() {
       else if (bgEditKind === 'home') await apiPut('/settings', { homeBackgroundImage: bgDraftSrc });
       else if (bgEditKind === 'flag') await apiPut('/settings', { mongoliaFlagImage: bgDraftSrc });
       else if (bgEditKind === 'loader') await apiPut('/settings', { loaderBackgroundImage: bgDraftSrc });
-      else if (bgEditKind === 'travelApps') await apiPut('/settings', { travelAppsBackgroundImage: bgDraftSrc });
+      else if (bgEditKind === 'login') await apiPut('/settings', { loginBackgroundImage: bgDraftSrc });
       else if (bgEditKind === 'suggest' && item.slug) {
         const map: Record<string, string> = {};
         suggestBg.forEach((it) => { if (it.slug) map[it.slug] = it.src; });
         map[item.slug] = bgDraftSrc;
         await apiPut('/settings', { suggestBackgroundImages: map });
+      } else if (bgEditKind === 'travelApps' && item.slug) {
+        const map: Record<string, string> = {};
+        travelAppsBg.forEach((it) => { if (it.slug) map[it.slug] = it.src; });
+        map[item.slug] = bgDraftSrc;
+        await apiPut('/settings', { travelAppsBackgroundImages: map });
       }
       const setArr = bgSetterFor(bgEditKind);
       setArr((arr) => arr.map((it, i) => (i === bgEditIdx ? { ...it, type: bgDraftType, src: bgDraftSrc } : it)));
@@ -640,10 +660,11 @@ export default function AdminPanel() {
               <button onClick={() => setBgSub('flag')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'flag' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'flag' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'flag' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Монголын дэлбээ (Глобус) · {flagBg.length}</button>
               <button onClick={() => setBgSub('suggest')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'suggest' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'suggest' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'suggest' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Санал болгохын фон · {suggestBg.length}</button>
               <button onClick={() => setBgSub('loader')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'loader' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'loader' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'loader' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Ачаалж буй дэлгэцийн фон · {loaderBg.length}</button>
+              <button onClick={() => setBgSub('login')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'login' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'login' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'login' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Нэвтрэх хуудасны фон · {loginBg.length}</button>
               <button onClick={() => setBgSub('travelApps')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'travelApps' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'travelApps' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'travelApps' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Аяллын апп хэсгийн фон · {travelAppsBg.length}</button>
             </div>
             <div className="text-xs text-[rgba(242,237,227,.5)] mb-4 max-w-[640px] leading-[1.5]">
-              {bgSub === 'cat' ? 'Хэрэглэгч ангилал сонгоход арын фонд харагдах зураг. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'aimag' ? '21 аймаг + Нийслэлийн арын фон. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'home' ? 'Ямар ч ангилал, аймаг сонгоогүй үед нүүр хуудсанд анхнаас нь харагдах фон зураг.' : bgSub === 'flag' ? '"Дэлхийн архив" 3D глобус дээр Монголыг сонгоход харагдах жинхэнэ дэлбээний зураг (зөвхөн зураг, видео биш) — оруулаагүй бол автоматаар зурсан Соёмбо харагдана.' : bgSub === 'suggest' ? 'Нүүр хуудасны "Санал болгох" том картуудын арын дэвсгэр зураг/бичлэг.' : bgSub === 'loader' ? 'Апп анх ачаалж байх үеийн Marauder\'s Map дэлгэцийн арын дэвсгэр зураг — оруулаагүй бол өнөөгийн бараан градиент харагдана.' : bgSub === 'travelApps' ? '"Санал болгох" хуудасны доод хэсэгт байрлах Аяллын апп (Organic Maps, OsmAnd г.м) картын арын дэвсгэр зураг/бичлэг — оруулаагүй бол өнөөгийн бараан градиент харагдана.' : '"Бидний тухай" хуудасны үндсэн дэвсгэр зураг.'}
+              {bgSub === 'cat' ? 'Хэрэглэгч ангилал сонгоход арын фонд харагдах зураг. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'aimag' ? '21 аймаг + Нийслэлийн арын фон. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'home' ? 'Ямар ч ангилал, аймаг сонгоогүй үед нүүр хуудсанд анхнаас нь харагдах фон зураг.' : bgSub === 'flag' ? '"Дэлхийн архив" 3D глобус дээр Монголыг сонгоход харагдах жинхэнэ дэлбээний зураг (зөвхөн зураг, видео биш) — оруулаагүй бол автоматаар зурсан Соёмбо харагдана.' : bgSub === 'suggest' ? 'Нүүр хуудасны "Санал болгох" том картуудын арын дэвсгэр зураг/бичлэг.' : bgSub === 'loader' ? 'Апп анх ачаалж байх үеийн Marauder\'s Map дэлгэцийн арын дэвсгэр зураг — оруулаагүй бол өнөөгийн бараан градиент харагдана.' : bgSub === 'login' ? 'Нэвтрэх / бүртгүүлэх хуудасны (Хэрэглэгч ба Host хоёр урсгал нэг дэлгэц) арын дэвсгэр зураг/бичлэг — оруулаагүй бол ерөнхий жишээ зураг харагдана.' : bgSub === 'travelApps' ? '"Санал болгох" хуудасны доод хэсэгт байрлах Аяллын апп-уудын (Organic Maps, OsmAnd г.м) карт тус бүрийн арын дэвсгэр зураг/бичлэг — апп бүрт тусад нь оруулна, оруулаагүй бол тухайн картын өнгөт градиент харагдана.' : '"Бидний тухай" хуудасны үндсэн дэвсгэр зураг.'}
             </div>
             {bgSyncError && (
               <div className="text-[11.5px] text-[#f08a8a] mb-4 py-2.5 px-3.5 rounded-[10px] border border-dashed border-[rgba(240,138,138,.4)] bg-[rgba(240,138,138,.06)] max-w-[640px]">{bgSyncError}</div>
