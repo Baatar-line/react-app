@@ -1,6 +1,8 @@
 'use client';
 
-// Login / Signup — OTP user flow + Host registration flow.
+// Login / Signup — OTP user flow. Signup always creates a plain user
+// account; becoming a host happens later from /profile (see "Host болох"
+// there), not as a separate signup path here.
 // Converted from Login.dc.html to React + TypeScript + Tailwind.
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -13,7 +15,6 @@ const inputCls =
   'rounded-[11px] border border-white/20 bg-ink/[.35] px-[13px] py-[10px] font-sans text-cream outline-none transition-colors focus:border-accent placeholder:text-cream/[.32]';
 
 export default function Login() {
-  const [role, setRole] = useState<'user' | 'host'>('user');
   // Admin Panel → "Фон зураг" → "Нэвтрэх хуудасны фон". Best-effort, same as
   // AppShell's loader background: keep the placeholder photo if the backend
   // isn't reachable rather than showing an empty screen.
@@ -25,18 +26,15 @@ export default function Login() {
       .catch(() => {});
   }, []);
 
-  // user flow
+  // Signup only ever creates a plain user account now — becoming a host
+  // happens later, from the same account, via the "Host болох" flow on
+  // /profile (see BigBangLayout's hostForm state) instead of a separate
+  // signup path here.
   const [method, setMethod] = useState<'phone' | 'email'>('phone');
   const [contact, setContact] = useState('');
   const [step, setStep] = useState<'input' | 'otp' | 'done'>('input');
   const [otp, setOtp] = useState(['', '', '', '']);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // host flow
-  const [hEmail, setHEmail] = useState('');
-  const [hPhone, setHPhone] = useState('');
-  const [hPass, setHPass] = useState('');
-  const [hostDone, setHostDone] = useState(false);
 
   const isPhone = method === 'phone';
   const contactShown = contact || (isPhone ? '99112233' : 'tanii@email.mn');
@@ -90,24 +88,8 @@ export default function Login() {
             <span className="text-[15px] font-extrabold tracking-[-0.03em] text-cream">big bang</span>
           </div>
 
-          {/* role switch */}
-          <div className="mb-[22px] flex gap-1.5 rounded-full border border-white/[.14] bg-ink/40 p-[5px]">
-            {(['user', 'host'] as const).map((r) => (
-              <button
-                key={r}
-                onClick={() => setRole(r)}
-                className="flex-1 rounded-full border-none py-[7px] text-[13px] font-bold transition-all"
-                style={role === r
-                  ? { background: ACCENT, color: '#132a1f' }
-                  : { background: 'transparent', color: 'rgba(242,237,227,.75)' }}
-              >
-                {r === 'user' ? 'Хэрэглэгч' : 'Host — газар нэмэгч'}
-              </button>
-            ))}
-          </div>
-
           {/* ══ USER FLOW ══ */}
-          {role === 'user' && step === 'input' && (
+          {step === 'input' && (
             <>
               <h1 className="m-0 text-[22px] font-extrabold tracking-[-0.03em] text-cream-2">Тавтай морил 👋</h1>
               <p className="mb-5 mt-1.5 text-[13px] leading-relaxed text-cream/60">
@@ -146,7 +128,7 @@ export default function Login() {
             </>
           )}
 
-          {role === 'user' && step === 'otp' && (
+          {step === 'otp' && (
             <>
               <h1 className="m-0 text-[22px] font-extrabold tracking-[-0.03em] text-cream-2">Кодоо оруулна уу</h1>
               <p className="mb-[22px] mt-1.5 text-[13px] leading-relaxed text-cream/60">
@@ -186,7 +168,7 @@ export default function Login() {
             </>
           )}
 
-          {role === 'user' && step === 'done' && (
+          {step === 'done' && (
             <div className="px-0 pb-2.5 pt-5 text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border-[1.5px] border-[rgba(168,213,162,.5)] bg-[rgba(168,213,162,.16)] text-[28px]">
                 ✓
@@ -200,57 +182,6 @@ export default function Login() {
                 Big bang руу орох →
               </Link>
             </div>
-          )}
-
-          {/* ══ HOST FLOW ══ */}
-          {role === 'host' && (
-            <>
-              <h1 className="m-0 text-[22px] font-extrabold tracking-[-0.03em] text-cream-2">Host болж бүртгүүлэх</h1>
-              <p className="mb-5 mt-1.5 text-[13px] leading-relaxed text-cream/60">
-                Өөрийн газраа big bang дээр нэмж, болзооны газруудын сүлжээнд нэгдээрэй.
-              </p>
-
-              <div className="flex flex-col gap-3.5">
-                {[
-                  { label: 'Имэйл', v: hEmail, set: setHEmail, ph: 'tanii@email.mn', type: 'text', mode: undefined },
-                  { label: 'Утасны дугаар', v: hPhone, set: setHPhone, ph: '99112233', type: 'text', mode: 'numeric' as const },
-                  { label: 'Нууц үг', v: hPass, set: setHPass, ph: 'Дор хаяж 8 тэмдэгт', type: 'password', mode: undefined },
-                ].map((f) => (
-                  <label key={f.label} className="flex flex-col gap-[7px]">
-                    <span className="text-[12px] font-bold text-cream/70">{f.label}</span>
-                    <input
-                      type={f.type}
-                      value={f.v}
-                      onChange={(e) => f.set(e.target.value)}
-                      placeholder={f.ph}
-                      inputMode={f.mode}
-                      className={`${inputCls} text-[16px]`}
-                    />
-                  </label>
-                ))}
-
-                <button
-                  onClick={() => hEmail.trim() && hPhone.trim() && hPass.trim() && setHostDone(true)}
-                  className="mt-1 w-full rounded-xl border-none bg-accent py-[11px] text-[14px] font-extrabold text-[#132a1f] transition-transform hover:-translate-y-0.5"
-                >
-                  Бүртгүүлэх →
-                </button>
-
-                {hostDone && (
-                  <div className="mt-1 flex flex-col gap-3">
-                    <div className="flex items-center gap-2.5 rounded-xl border border-[rgba(168,213,162,.4)] bg-[rgba(168,213,162,.12)] px-[15px] py-3 text-[12px] font-bold text-[#a8d5a2]">
-                      ✓ Хүсэлт илгээгдлээ — админ баталсны дараа газраа нэмэх боломжтой болно.
-                    </div>
-                    <Link
-                      href="/"
-                      className="rounded-xl border-none bg-accent py-[11px] text-center text-[14px] font-extrabold !text-[#132a1f]"
-                    >
-                      Big bang руу орох →
-                    </Link>
-                  </div>
-                )}
-              </div>
-            </>
           )}
 
           <div className="mt-5 text-center text-[11px] text-cream/40">

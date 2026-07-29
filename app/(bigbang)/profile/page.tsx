@@ -3,6 +3,7 @@
 // Big Bang — Profile (/profile): favorites, accessibility settings, add-content
 // cards, and the user's own submitted scenic spots / events.
 import { useContext } from 'react';
+import Link from 'next/link';
 import { Accessibility, Heart } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
 import { BgMedia, Isometric3DIcon } from '@/components/bigbang/ui';
@@ -72,8 +73,9 @@ export default function ProfilePage() {
 
       <div className="mt-[38px]">
         <div className="text-xs font-extrabold tracking-[.08em] uppercase text-[rgba(242,237,227,.5)] mb-[14px]">{V.L.addContent}</div>
-        {/* Adding a place is host/admin business content (see HostProfile / AdminPanel) —
-            regular users here can only contribute scenic spots and events. */}
+        {/* Adding a place is host business — regular users here can only
+            contribute scenic spots and events, until they become a host
+            below (same account, see BigBangLayout's isHost/hostSubmitted). */}
         <div className="grid grid-cols-2 gap-[14px]">
           {[
             { icon3d: 'scenic' as const, title: V.L.addScenicTitle, desc: V.L.addScenicDesc, onClick: V.openScenicForm },
@@ -91,6 +93,70 @@ export default function ProfilePage() {
           ))}
         </div>
       </div>
+
+      {!V.isHost && !V.hostSubmitted && (
+        <div className="mt-[38px] flex flex-wrap items-center justify-between gap-5 rounded-2xl border border-[rgba(255,255,255,.1)] bg-[rgba(255,255,255,.03)] p-6">
+          <div>
+            <div className="text-[15px] font-extrabold text-cream-2">{V.L.hostBecomeTitle}</div>
+            <div className="mt-1.5 max-w-[420px] text-xs leading-[1.5] text-[rgba(242,237,227,.55)]">{V.L.hostBecomeDesc}</div>
+          </div>
+          <button
+            onClick={V.openHostForm}
+            className="cursor-pointer whitespace-nowrap rounded-full border-none bg-[var(--accent,#E8B84B)] px-6 py-3 font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"
+          >
+            {V.L.hostBecomeBtn}
+          </button>
+        </div>
+      )}
+
+      {V.hostSubmitted && (
+        <div className="mt-[38px] flex flex-wrap items-center justify-between gap-5 rounded-2xl border border-[rgba(168,213,162,.35)] bg-[rgba(168,213,162,.08)] p-6">
+          <div className="text-[13px] font-bold text-[#a8d5a2]">{V.L.hostPendingMsg}</div>
+          <Link
+            href="/host"
+            className="cursor-pointer whitespace-nowrap rounded-full border-none bg-[var(--accent,#E8B84B)] px-6 py-3 font-[inherit] text-[13px] font-extrabold !text-[#132a1f] no-underline transition-transform duration-200 hover:-translate-y-0.5"
+          >
+            {V.L.hostDashboardBtn}
+          </Link>
+        </div>
+      )}
+
+      {V.showHostForm && (
+        <div onClick={V.closeHostForm} className="animate-bbFadeUp fixed inset-0 z-40 box-border flex items-center justify-center bg-[rgba(6,8,12,.66)] px-3 py-5 backdrop-blur-[6px]">
+          <div onClick={(e) => e.stopPropagation()} className="w-[420px] max-w-full max-h-[88vh] overflow-auto rounded-[20px] border border-[rgba(255,255,255,.1)] bg-[rgba(20,18,15,.98)] p-[30px] pt-7 shadow-[0_30px_80px_rgba(0,0,0,.6)]">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div className="text-[20px] font-extrabold tracking-[-0.02em] text-cream-2">{V.L.hostModalTitle}</div>
+              <button onClick={V.closeHostForm} className="h-[34px] w-[34px] cursor-pointer rounded-full border border-[rgba(242,237,227,.2)] bg-transparent font-[inherit] text-xl leading-none text-[rgba(242,237,227,.7)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">×</button>
+            </div>
+            <div className="flex flex-col gap-3.5">
+              {[
+                { label: V.L.hostEmail, v: V.hEmail, set: V.onHEmail, ph: V.L.hostEmailPh, type: 'text' },
+                { label: V.L.hostPhone, v: V.hPhone, set: V.onHPhone, ph: V.L.hostPhonePh, type: 'text' },
+                { label: V.L.hostPass, v: V.hPass, set: V.onHPass, ph: V.L.hostPassPh, type: 'password' },
+                { label: V.L.hostInstagram, v: V.hInstagram, set: V.onHInstagram, ph: V.L.hostInstagramPh, type: 'text' },
+                { label: V.L.hostFacebook, v: V.hFacebook, set: V.onHFacebook, ph: V.L.hostFacebookPh, type: 'text' },
+              ].map((f, i) => (
+                <label key={i} className="flex flex-col gap-[7px]">
+                  <span className="text-[12px] font-bold text-[rgba(242,237,227,.7)]">{f.label}</span>
+                  <input
+                    type={f.type}
+                    value={f.v}
+                    onChange={f.set}
+                    placeholder={f.ph}
+                    className="rounded-[11px] border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.04)] px-[13px] py-[11px] font-[inherit] text-[13.5px] text-cream outline-none"
+                  />
+                </label>
+              ))}
+              <button
+                onClick={V.submitHost}
+                className="mt-1 w-full cursor-pointer rounded-xl border-none bg-[var(--accent,#E8B84B)] py-[11px] font-[inherit] text-[14px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"
+              >
+                {V.L.hostSubmitBtn}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {V.hasMyScenic && (
         <div className="mt-[38px]">
