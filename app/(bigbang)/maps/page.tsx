@@ -10,12 +10,6 @@ export default function MapsPage() {
   const V: any = useContext(BigBangContext);
   return (
     <section data-screen-label="Пин — газрын зураг" className="relative h-screen overflow-hidden bg-ink">
-      {/* Selecting an aimag before its photo has preloaded left this stretch
-          flat black (neither crossfade slot below has anything to show yet) —
-          a skeleton fills that gap instead. */}
-      {V.pinBgLoading && <div className="absolute inset-0 bb-skeleton" />}
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: V.pinBgA, backgroundSize: 'cover', backgroundPosition: 'center', opacity: V.pinBgAOpacity, transition: 'opacity .55s ease' }}></div>
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: V.pinBgB, backgroundSize: 'cover', backgroundPosition: 'center', opacity: V.pinBgBOpacity, transition: 'opacity .55s ease' }}></div>
       <div className={`absolute inset-0 box-border px-4 pb-4 ${V.isMobile ? 'pt-[66px]' : 'pt-[72px]'}`}>
         <div ref={V.mainMapRef} className={`absolute inset-x-4 bottom-4 isolate overflow-hidden rounded-[18px] bg-[#1a2534] ${V.isMobile ? 'top-[66px]' : 'top-[72px]'}`}></div>
 

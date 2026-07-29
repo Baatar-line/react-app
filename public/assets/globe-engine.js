@@ -84,6 +84,7 @@
     this.lastHoverT = 0;
     this.raf = 0;
     this.alive = false;
+    this._disposed = false;
     this.selName = null;
     this.selLL = null;
     this.hovName = null;
@@ -112,6 +113,14 @@
   GlobeEngine.prototype.init = function () {
     var self = this;
     return fetch(ATLAS_URL).then(function (r) { return r.json(); }).then(function (topo) {
+      // dispose() (component unmounted — e.g. navigating away from /globe
+      // and back before this fetch finished) sets `alive` false, but nothing
+      // stopped this resolved callback from stomping it back to true and
+      // building a *second* full Three.js scene + pin set into the same
+      // mount element — the two independent instances then rendered every
+      // country's badge twice, each pair a frame apart. `_disposed` isn't
+      // touched anywhere else, so it survives to actually gate this.
+      if (self._disposed) return;
       var fc = topojson.feature(topo, topo.objects.countries);
       self.features = fc.features.filter(function (f) { return f.properties && f.properties.name; });
       self.alive = true;
@@ -301,8 +310,10 @@
     this.renderer.domElement.style.cursor = "grab";
     this.renderer.domElement.style.touchAction = "none";
 
-    // 23.5° axial tilt (Earth's real obliquity)
-    this.tiltQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -23.5 * Math.PI / 180);
+    // Level axis, equator centered — was Earth's real 23.5° obliquity, but
+    // that tilt read as an error on this stylized globe rather than a
+    // deliberate astronomical touch.
+    this.tiltQuat = new THREE.Quaternion();
     this.tiltGroup = new THREE.Group();
     this.tiltGroup.quaternion.copy(this.tiltQuat);
     this.scene.add(this.tiltGroup);
@@ -524,6 +535,15 @@
     var q = this.group.quaternion;
     var tq = this.tiltGroup.quaternion;
     var t = (performance.now() % 1600) / 1600;
+    // `vec.z > 0` (plain front/back hemisphere split) only holds for a camera
+    // infinitely far away. This camera sits close (2–4.6 units off a radius-1
+    // globe), so the true visible horizon is nearer the camera than the
+    // equator-plane — pins between the two "passed" this check while
+    // actually already behind the sphere's silhouette from the camera's own
+    // point of view, so they floated in place outside the visible globe
+    // instead of rotating out of view with it. cos(horizon angle) = R/D.
+    var horizonCos = 1 / cam.position.z;
+    var isFront = function (v) { return (v.z / v.length()) > horizonCos; };
     // Driven directly by the actual selection (selName/selLL, set in
     // selectByName for *any* of the ~180 real countries) instead of only the
     // 15 curated `countries` pins below — that loop previously left the label
@@ -533,7 +553,7 @@
     if (this.selName && this.selLL && this.nameLabel) {
       var lwv = this.llToVec(this.selLL[0], this.selLL[1], 1.015).applyQuaternion(q).applyQuaternion(tq);
       var lproj = lwv.clone().project(cam);
-      var lfront = lwv.z > 0;
+      var lfront = isFront(lwv);
       this.nameLabel.textContent = this.selName;
       this.nameLabel.style.left = (lproj.x * 0.5 + 0.5) * w + "px";
       this.nameLabel.style.top = (-lproj.y * 0.5 + 0.5) * h + "px";
@@ -548,7 +568,7 @@
       // count badge
       var bwv = p.vec.clone().applyQuaternion(q).applyQuaternion(tq);
       var bproj = bwv.clone().project(cam);
-      var bfront = bwv.z > 0;
+      var bfront = isFront(bwv);
       p.badge.style.left = (bproj.x * 0.5 + 0.5) * w + "px";
       p.badge.style.top = (-bproj.y * 0.5 + 0.5) * h + "px";
       var showBadge = bfront && !selected;
@@ -559,7 +579,7 @@
         var d = p.dots[k];
         var wv = d.vec.clone().applyQuaternion(q).applyQuaternion(tq);
         var proj = wv.clone().project(cam);
-        var front = wv.z > 0;
+        var front = isFront(wv);
         d.el.style.left = (proj.x * 0.5 + 0.5) * w + "px";
         d.el.style.top = (-proj.y * 0.5 + 0.5) * h + "px";
         d.el.style.opacity = (selected && front && p.name !== "Mongolia") ? "0.95" : "0";
@@ -600,6 +620,7 @@
   };
 
   GlobeEngine.prototype.dispose = function () {
+    this._disposed = true;
     this.alive = false;
     cancelAnimationFrame(this.raf);
     this._cleanupPointer();

@@ -76,7 +76,6 @@ export default function Home() {
             </button>
           ))}
         </div>
-        <div className="mt-[18px] text-[12px] text-[rgba(242,237,227,.38)]">{V.L.hint}</div>
       </div>
 
       {/* map picker + preview cards — the absolute side-by-side hero
@@ -87,8 +86,8 @@ export default function Home() {
         <>
           {/* top/bottom shifted together (not just top) so nudging the map
               down the page doesn't also squash the picker's height. */}
-          <div className="absolute left-[30%] right-[30px] top-[136px] bottom-[114px] z-[6] flex flex-col gap-[10px]">
-            <div ref={V.pickerWrapRef} className="relative min-h-0 flex-1">
+          <div className="absolute left-[30%] right-[30px] top-[136px] bottom-[114px] z-[6]">
+            <div ref={V.pickerWrapRef} className="relative h-full">
               {V.pickerSvg}
               {V.heroVertLabel && V.heroVertPos && (
                 <div
@@ -99,6 +98,10 @@ export default function Home() {
               )}
             </div>
           </div>
+
+          {/* Sits in the otherwise-empty background above the map's
+              right edge — the spot the map itself doesn't reach. */}
+          <div className="absolute right-[80px] top-[110px] z-[7] max-w-[240px] text-right text-[12px] text-[rgba(242,237,227,.45)]">{V.L.mapHint}</div>
 
           <div className="absolute right-12 bottom-11 z-10 flex items-end gap-[14px]">{V.previewCards}</div>
         </>

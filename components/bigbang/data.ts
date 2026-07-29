@@ -420,6 +420,7 @@ export const CATS: Cat[] = [
 export const STR: Record<'mn' | 'en', Record<string, string>> = {
   mn: { home: 'Нүүр', about: 'Бидний тухай', signin: 'Нэвтрэх', catLabel: 'Ангилал',
     hint: 'Ангилал дээр хулганаа аваачиж үзээрэй', places: 'газар', all: 'Бүгд',
+    mapHint: 'Газрын зураг дээр аймгаа дарж шүүнэ үү', pinsLabel: 'пин',
     back: '← Нүүр хуудас', tag: 'болзооны санаануудын орон зай', location: 'Байршил',
     empty: 'Энэ аймагт одоогоор газар алга', reset: 'Бүгдийг харах',
     pin: 'Maps', event: 'Эвент', suggest: 'Санал болгох', globe: 'Дэлхий', travel: 'Аялал',
@@ -478,6 +479,7 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     pdRateTitle: 'Үнэлгээ өгөх', pdRateThanks: 'Баярлалаа! Таны үнэлгээ', pdRateHint: 'Одоор дарж үнэлнэ үү' },
   en: { home: 'Home', about: 'About', signin: 'Sign in', catLabel: 'Categories',
     hint: 'Hover over a category', places: 'places', all: 'All', back: '← Home', tag: 'a space of date ideas', location: 'Location',
+    mapHint: 'Click the map to filter by province', pinsLabel: 'pins',
     empty: 'No places in this province yet', reset: 'Show all',
     pin: 'Maps', event: 'Event', suggest: 'Suggest', globe: 'World', travel: 'Travel',
     locTitle: 'Provinces', locSub: 'Browse places by province',

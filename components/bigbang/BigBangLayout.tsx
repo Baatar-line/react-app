@@ -60,10 +60,8 @@ function routeFromPathname(pathname: string): string {
 
 export default class BigBangLayout extends React.Component<Props, any> {
   geo: any = null;
-  _bg: any = null;
   _bgOk: any = {};
   _bgLd: any = {};
-  _lastPinBg: any = null;
   _lastAimagBg: any = null;
   _pickMap: any = null;
   _pickMarker: any = null;
@@ -654,6 +652,35 @@ export default class BigBangLayout extends React.Component<Props, any> {
         style: { paintOrder: 'stroke', pointerEvents: 'none' }, fontFamily: "'Manrope',sans-serif",
       }, aimagName(id, lang)));
     });
+    // Selected aimag's pin total — just the count (matches the nav pill's
+    // "N пин"), not individual dots: at country-map scale, plotting every
+    // pin with its own name label made the shape too cluttered to read.
+    // Counts CATS place items (газрын пин — same "Газрууд" pins /maps shows),
+    // not the separate scenic-spot PINS array (vзэсгэлэнт газрын пин).
+    const selSh = sel ? geo.shapes.find((s: any) => mnOf(s.name) === sel) : null;
+    if (selSh) {
+      const pinCount = CATS.reduce((n: number, c: any) => n + c.items.filter((it: any) => (it.aimag || 'Улаанбаатар') === sel).length, 0);
+      if (pinCount > 0) {
+        const off = LABEL_OFF[selSh.name] || [0, 0];
+        const countFs = mini ? 15 : (bigText ? 10.5 : 8);
+        const anchorX = (selSh.lx || selSh.cx) + off[0], anchorY = (selSh.ly || selSh.cy) + off[1];
+        // The vertical traditional-script overlay (rendered as HTML at
+        // heroVertPos, same anchor — a top-anchored column, not centered on
+        // it) sits to the right of/below this anchor point — so when it's
+        // showing, the count reads better beside it (левэside, vertically
+        // centered on the column) with a gap, instead of stacked underneath.
+        const scriptShowing = lang === 'mn' && AIMAG_MN_SCRIPT[sel];
+        const countX = scriptShowing ? anchorX - fs * 0.9 : anchorX;
+        const countY = scriptShowing ? anchorY + fs * 1.3 : anchorY + fs * 0.95;
+        kids.push(e('text', {
+          key: 'pincount', x: countX, y: countY,
+          textAnchor: scriptShowing ? 'end' : 'middle', dominantBaseline: scriptShowing ? 'middle' : 'auto',
+          fontSize: countFs, fontWeight: 800,
+          fill: accent, stroke: 'rgba(6,9,14,.8)', strokeWidth: countFs * 0.24,
+          style: { paintOrder: 'stroke', pointerEvents: 'none' }, fontFamily: "'Manrope',sans-serif",
+        }, pinCount + ' ' + STR[lang as 'mn' | 'en'].pinsLabel));
+      }
+    }
     return e('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet', style: { width: '100%', height: '100%', display: 'block', overflow: 'visible' } }, kids);
   }
 
@@ -669,6 +696,16 @@ export default class BigBangLayout extends React.Component<Props, any> {
   openPlace = (cat: any, i: number) => {
     this.props.navigate('/category/' + cat.slug + '/place/' + i);
     this.setState({ locOpen: false });
+    try { window.scrollTo(0, 0); } catch (err) { /* ignore */ }
+  };
+
+  // Same index-in-the-URL approach as openPlace, but EventDetail reads the
+  // matching entry straight off V.events (via context) instead of rebuilding
+  // from a static data.ts array — myEvents (user-submitted, this-session-only)
+  // only exists on this layout's own state, not in any file EventDetail could
+  // import and rebuild from.
+  openEventDetail = (i: number) => {
+    this.props.navigate('/event/' + i);
     try { window.scrollTo(0, 0); } catch (err) { /* ignore */ }
   };
 
@@ -777,24 +814,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
     const go = (r: string) => { navigate(ROUTE_PATH[r] || '/'); this.setState({ locOpen: false, active: -1 }); try { window.scrollTo(0, 0); } catch (err) { /* ignore */ } };
 
-    const pinBgImg = mapAimag ? (this.state.aimagBgOverride[mapAimag] || AIMAG_BG[mapAimag] || '1470071459604-3b5ec3a7fe05') : null;
-    if (pinBgImg && this.bgReady(pinBgImg, 1800)) this._lastPinBg = pinBgImg;
-    this._bg = this._bg || { a: null, b: null, slot: 'a', shown: null };
-    const newReady = (pinBgImg && this._lastPinBg && this.bgReady(this._lastPinBg, 1800)) ? this._lastPinBg : null;
-    if (newReady && newReady !== this._bg.shown) {
-      const next = this._bg.slot === 'a' ? 'b' : 'a';
-      this._bg[next] = newReady; this._bg.slot = next; this._bg.shown = newReady;
-    }
-    const pinBgUrl = (id: any) => id ? ('linear-gradient(rgba(0,0,0,.82), rgba(0,0,0,.9)), url("' + imgUrl(id, 1800) + '")') : 'none';
-    const pinBgA = pinBgUrl(this._bg.a);
-    const pinBgB = pinBgUrl(this._bg.b);
-    const showPhoto = !!mapAimag;
-    const pinBgAOpacity = (showPhoto && this._bg.slot === 'a') ? 1 : 0;
-    const pinBgBOpacity = (showPhoto && this._bg.slot === 'b') ? 1 : 0;
-    // True for the brief window after an aimag is picked but before its photo
-    // has actually finished preloading — neither crossfade slot is showing
-    // yet, so without this the map would sit on flat black underneath.
-    const pinBgLoading = showPhoto && pinBgAOpacity === 0 && pinBgBOpacity === 0;
     const selP = pin >= 0 ? this.mapPins()[pin] : null;
     const pinSel = selP ? {
       ...selP, rating: ratingOf(selP.name),
@@ -971,18 +990,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
       aimagBg: 'linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78)), url("' + imgUrl(this._lastAimagBg || '1470071459604-3b5ec3a7fe05', 1800) + '")',
       aimagBgIsVideo: isVideoUrl(this._lastAimagBg || ''), aimagBgRawUrl: this._lastAimagBg || '',
       aimagBgOpacity: (aimagImg && this._lastAimagBg === aimagImg) ? 1 : 0,
-      // Same idea as pinBgLoading (maps.tsx) — the moment an aimag's photo
-      // hasn't loaded yet, this shows a skeleton instead of the Home hero
-      // just sitting there under a flat black scrim.
+      // The moment an aimag's photo hasn't loaded yet, this shows a skeleton
+      // instead of the Home hero just sitting there under a flat black scrim.
       aimagBgLoading: aimag !== 'Бүгд' && !(aimagImg && this._lastAimagBg === aimagImg),
-      pinBgLoading,
       pickerSvg: this.buildPickerSvg(accent, lang, aimag === 'Бүгд' ? null : aimag, this.state.heroHover, false, this.state.bigText),
       pickerWrapRef: this.handlePickerWrapRef,
       heroAimagLabel: aimag === 'Бүгд' ? '' : aimagName(aimag, lang),
       // Traditional (vertical) Mongolian script for the selected aimag — see
       // AIMAG_MN_SCRIPT in data.ts for the accuracy caveat on this transliteration.
       heroAimagVert: aimag !== 'Бүгд' && lang === 'mn' ? AIMAG_MN_SCRIPT[aimag] || '' : '',
-      pinBgA, pinBgB, pinBgAOpacity, pinBgBOpacity,
       pinModeOpts: ([['scenic', lang === 'en' ? 'Scenic' : 'Үзэсгэлэнт'], ['places', lang === 'en' ? 'Places' : 'Газрууд'], ['events', lang === 'en' ? 'Events' : 'Эвент']] as [string, string][]).map((m) => {
         const on = (this.state.pinMode || 'scenic') === m[0];
         return { label: m[1], color: on ? '#132a1f' : 'rgba(255,255,255,.85)', pick: () => this.setState({ pinMode: m[0], pin: -1 }) };
@@ -1021,10 +1037,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
       formMsg: st.fMsg, errColor: st.fErr ? '#e88a8a' : 'rgba(140,214,150,.9)',
       fevBg: 'linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.4)), url("' + U(fe.img, 1600) + '")',
       fevDate: fe.date, fevName: fe.name, fevMeta: fe.meta,
+      openEventDetail: this.openEventDetail,
       events: st.myEvents.concat(EVENTS.map((ev) => ({ ...ev, thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + U(ev.img, 800) + '")' }))).map((ev: any) => ({ ...ev, thumb: ev.thumb || evThumb(ev.img) }))
-        .map((ev: any) => {
+        .map((ev: any, i: number) => {
           const key = 'e:' + ev.name;
-          return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]) };
+          return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]), onClick: () => this.openEventDetail(i) };
         }),
       suggests, navCats, bgLayers, previewCards, topItems: topItems2,
       travelApps: TRAVEL_APPS.map((a) => {

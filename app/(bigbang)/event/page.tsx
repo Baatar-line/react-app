@@ -27,6 +27,7 @@ export default function EventPage() {
         {V.events.map((ev: any, i: number) => (
           <div
             key={i}
+            onClick={ev.onClick}
             className="relative aspect-[677/525] cursor-pointer overflow-hidden rounded-2xl border border-[rgba(0,0,0,.6)] transition-[transform_.35s_cubic-bezier(.22,.8,.3,1),_box-shadow_.35s_ease] animate-[bbFadeUp_.5s_cubic-bezier(.22,.8,.3,1)_both] hover:-translate-y-[5px] hover:shadow-[0_22px_48px_rgba(0,0,0,.5)]"
           >
             <BgMedia bg={ev.thumb} className="absolute inset-0" imgClassName="bg-cover bg-center transition-transform duration-[600ms] ease-[cubic-bezier(.22,.8,.3,1)]" />
