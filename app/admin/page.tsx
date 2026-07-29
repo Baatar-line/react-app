@@ -22,7 +22,11 @@ interface CreatedPlace { name: string; cat: string; aimag: string; access?: bool
 // Absent for the 'about'/'home'/'flag'/'suggest' kinds, which PUT the singleton
 // settings row instead; `slug` is the SUGGESTS card key used there since that
 // list isn't a db table with its own row ids.
-interface BgItem { id?: number; slug?: string; name: string; type: 'image' | 'video'; src: string; }
+// `video` is only meaningful for category items — the background video shown
+// inside that category's own page, uploaded separately from `src` (the still
+// photo shown on Home's hover/selection preview). Every other BgKind still
+// holds a single image-or-video asset via `type`/`src`, same as before.
+interface BgItem { id?: number; slug?: string; name: string; type: 'image' | 'video'; src: string; video?: string; }
 // Which background list the "Фон зураг" tab is showing / editing. Named rather
 // than repeated inline at each of the state, lookup and handler sites, so
 // adding a kind is one edit here plus its own branches.
@@ -135,7 +139,7 @@ export default function AdminPanel() {
   // Seeded with the same local defaults as before so the tab isn't empty while the
   // backend fetch below is in flight; the effect then attaches real ids + latest
   // saved images so edits actually PATCH/PUT the right row and survive a refresh.
-  const [catBg, setCatBg] = useState<BgItem[]>(() => CAT_BG_DEFS.map(([name, id]) => ({ name, type: 'image' as const, src: U(id, 900) })));
+  const [catBg, setCatBg] = useState<BgItem[]>(() => CAT_BG_DEFS.map(([name, id]) => ({ name, type: 'image' as const, src: U(id, 900), video: '' })));
   const [aimagBg, setAimagBg] = useState<BgItem[]>(() => ALL_AIMAGS.map((a) => ({ name: a, type: 'image' as const, src: U(AIMAG_BG[a] || '1470071459604-3b5ec3a7fe05', 900) })));
   // Single-item "list" so it can reuse the same edit modal as cat/aimag backgrounds.
   const [aboutBg, setAboutBg] = useState<BgItem[]>(() => [{ name: 'Бидний тухай фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1200) }]);
@@ -163,7 +167,7 @@ export default function AdminPanel() {
     (async () => {
       try {
         const [cats, aimags, settings] = await Promise.all([
-          apiGet<{ id: number; name: string; image: string | null }[]>('/categories'),
+          apiGet<{ id: number; name: string; image: string | null; videoImage: string | null }[]>('/categories'),
           apiGet<{ id: number; name: string; backgroundImage: string | null }[]>('/aimags'),
           apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; loaderBackgroundImage: string | null; travelAppsBackgroundImages: Record<string, string> | null; loginBackgroundImage: string | null }>('/settings'),
         ]);
@@ -172,7 +176,7 @@ export default function AdminPanel() {
           const match = cats.find((c) => c.name === it.name);
           if (!match) return it;
           const src = match.image || it.src;
-          return { ...it, id: match.id, src, type: match.image ? (isVideoUrl(src) ? 'video' : 'image') : it.type };
+          return { ...it, id: match.id, src, type: 'image', video: match.videoImage || '' };
         }));
         setAimagBg((prev) => prev.map((it) => {
           const match = aimags.find((a) => a.name === it.name);
@@ -223,6 +227,10 @@ export default function AdminPanel() {
   const [bgEditIdx, setBgEditIdx] = useState(-1);
   const [bgDraftType, setBgDraftType] = useState<'image' | 'video'>('image');
   const [bgDraftSrc, setBgDraftSrc] = useState('');
+  // Only used while editing a category ('cat') — its background video, held
+  // alongside bgDraftSrc (the photo) instead of replacing it, since a
+  // category now carries both at once.
+  const [bgDraftVideoSrc, setBgDraftVideoSrc] = useState('');
 
   const pendingPlaces = PLACE_REQS.filter((_, i) => !placeDecisions[i]).length;
   const pendingEvents = EVENT_REQS.filter((_, i) => !eventDecisions[i]).length;
@@ -253,13 +261,13 @@ export default function AdminPanel() {
 
   const openBgEdit = (kind: BgKind, idx: number) => {
     const cur = bgArrFor(kind)[idx];
-    setBgEditKind(kind); setBgEditIdx(idx); setBgDraftType(cur.type); setBgDraftSrc(cur.src); setBgEditOpen(true);
+    setBgEditKind(kind); setBgEditIdx(idx); setBgDraftType(cur.type); setBgDraftSrc(cur.src); setBgDraftVideoSrc(cur.video || ''); setBgEditOpen(true);
   };
   const saveBg = async () => {
     if (bgEditIdx < 0) { setBgEditOpen(false); return; }
     const item = bgArrFor(bgEditKind)[bgEditIdx];
     try {
-      if (bgEditKind === 'cat' && item.id) await apiPatch(`/categories/${item.id}`, { image: bgDraftSrc });
+      if (bgEditKind === 'cat' && item.id) await apiPatch(`/categories/${item.id}`, { image: bgDraftSrc, videoImage: bgDraftVideoSrc });
       else if (bgEditKind === 'aimag' && item.id) await apiPatch(`/aimags/${item.id}`, { backgroundImage: bgDraftSrc });
       else if (bgEditKind === 'about') await apiPut('/settings', { aboutBackgroundImage: bgDraftSrc });
       else if (bgEditKind === 'home') await apiPut('/settings', { homeBackgroundImage: bgDraftSrc });
@@ -278,7 +286,7 @@ export default function AdminPanel() {
         await apiPut('/settings', { travelAppsBackgroundImages: map });
       }
       const setArr = bgSetterFor(bgEditKind);
-      setArr((arr) => arr.map((it, i) => (i === bgEditIdx ? { ...it, type: bgDraftType, src: bgDraftSrc } : it)));
+      setArr((arr) => arr.map((it, i) => (i === bgEditIdx ? (bgEditKind === 'cat' ? { ...it, type: 'image' as const, src: bgDraftSrc, video: bgDraftVideoSrc } : { ...it, type: bgDraftType, src: bgDraftSrc }) : it)));
       setBgEditOpen(false);
     } catch (err) {
       alert('Хадгалахад алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
@@ -291,6 +299,9 @@ export default function AdminPanel() {
     setBgUploading(true);
     try {
       const url = await uploadImage(f, 'backgrounds');
+      // A category keeps its photo and video as two independent slots — the
+      // video button fills bgDraftVideoSrc instead of replacing bgDraftSrc.
+      if (bgEditKind === 'cat' && asVideo) { setBgDraftVideoSrc(url); return; }
       setBgDraftType(asVideo ? 'video' : 'image');
       setBgDraftSrc(url);
     } catch (err) {
@@ -664,7 +675,7 @@ export default function AdminPanel() {
               <button onClick={() => setBgSub('travelApps')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'travelApps' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'travelApps' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'travelApps' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Аяллын апп хэсгийн фон · {travelAppsBg.length}</button>
             </div>
             <div className="text-xs text-[rgba(242,237,227,.5)] mb-4 max-w-[640px] leading-[1.5]">
-              {bgSub === 'cat' ? 'Хэрэглэгч ангилал сонгоход арын фонд харагдах зураг. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'aimag' ? '21 аймаг + Нийслэлийн арын фон. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'home' ? 'Ямар ч ангилал, аймаг сонгоогүй үед нүүр хуудсанд анхнаас нь харагдах фон зураг.' : bgSub === 'flag' ? '"Дэлхийн архив" 3D глобус дээр Монголыг сонгоход харагдах жинхэнэ дэлбээний зураг (зөвхөн зураг, видео биш) — оруулаагүй бол автоматаар зурсан Соёмбо харагдана.' : bgSub === 'suggest' ? 'Нүүр хуудасны "Санал болгох" том картуудын арын дэвсгэр зураг/бичлэг.' : bgSub === 'loader' ? 'Апп анх ачаалж байх үеийн Marauder\'s Map дэлгэцийн арын дэвсгэр зураг — оруулаагүй бол өнөөгийн бараан градиент харагдана.' : bgSub === 'login' ? 'Нэвтрэх / бүртгүүлэх хуудасны (Хэрэглэгч ба Host хоёр урсгал нэг дэлгэц) арын дэвсгэр зураг/бичлэг — оруулаагүй бол ерөнхий жишээ зураг харагдана.' : bgSub === 'travelApps' ? '"Санал болгох" хуудасны доод хэсэгт байрлах Аяллын апп-уудын (Organic Maps, OsmAnd г.м) карт тус бүрийн арын дэвсгэр зураг/бичлэг — апп бүрт тусад нь оруулна, оруулаагүй бол тухайн картын өнгөт градиент харагдана.' : '"Бидний тухай" хуудасны үндсэн дэвсгэр зураг.'}
+              {bgSub === 'cat' ? 'Ангилал бүрт 2 тусдаа фон байна: Зураг — нүүр хуудсанд ангиллаа сонгоход харагдана; Бичлэг — тухайн ангилал руу орсны дараа тоглоно.' : bgSub === 'aimag' ? '21 аймаг + Нийслэлийн арын фон. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'home' ? 'Ямар ч ангилал, аймаг сонгоогүй үед нүүр хуудсанд анхнаас нь харагдах фон зураг.' : bgSub === 'flag' ? '"Дэлхийн архив" 3D глобус дээр Монголыг сонгоход харагдах жинхэнэ дэлбээний зураг (зөвхөн зураг, видео биш) — оруулаагүй бол автоматаар зурсан Соёмбо харагдана.' : bgSub === 'suggest' ? 'Нүүр хуудасны "Санал болгох" том картуудын арын дэвсгэр зураг/бичлэг.' : bgSub === 'loader' ? 'Апп анх ачаалж байх үеийн Marauder\'s Map дэлгэцийн арын дэвсгэр зураг — оруулаагүй бол өнөөгийн бараан градиент харагдана.' : bgSub === 'login' ? 'Нэвтрэх / бүртгүүлэх хуудасны (Хэрэглэгч ба Host хоёр урсгал нэг дэлгэц) арын дэвсгэр зураг/бичлэг — оруулаагүй бол ерөнхий жишээ зураг харагдана.' : bgSub === 'travelApps' ? '"Санал болгох" хуудасны доод хэсэгт байрлах Аяллын апп-уудын (Organic Maps, OsmAnd г.м) карт тус бүрийн арын дэвсгэр зураг/бичлэг — апп бүрт тусад нь оруулна, оруулаагүй бол тухайн картын өнгөт градиент харагдана.' : '"Бидний тухай" хуудасны үндсэн дэвсгэр зураг.'}
             </div>
             {bgSyncError && (
               <div className="text-[11.5px] text-[#f08a8a] mb-4 py-2.5 px-3.5 rounded-[10px] border border-dashed border-[rgba(240,138,138,.4)] bg-[rgba(240,138,138,.06)] max-w-[640px]">{bgSyncError}</div>
@@ -673,12 +684,24 @@ export default function AdminPanel() {
               {bgArrFor(bgSub).map((it, i) => ({ it, i })).filter(({ it }) => matches(it.name)).map(({ it, i }) => (
                 <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
                   <div className="relative aspect-[16/10] overflow-hidden bg-ink">
-                    {it.type === 'video' ? (
+                    {bgSub === 'cat' ? (
+                      // Category thumbnail always shows the photo (Home never plays
+                      // its video) — a second badge just flags whether a video is
+                      // also on file for when the visitor enters the category.
+                      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(it.src, 700)}")` }}></div>
+                    ) : it.type === 'video' ? (
                       <video src={it.src} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(it.src, 700)}")` }}></div>
                     )}
-                    <span className="absolute left-[9px] top-[9px] text-[9.5px] font-extrabold tracking-[.05em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(0,0,0,.62)] backdrop-blur-[6px] border border-[rgba(255,255,255,.2)] text-cream inline-flex items-center gap-[5px]">{it.type === 'video' ? <><Film size={11} /> Бичлэг</> : <><ImageIcon size={11} /> Зураг</>}</span>
+                    {bgSub === 'cat' ? (
+                      <div className="absolute left-[9px] top-[9px] flex gap-1.5">
+                        <span className="text-[9.5px] font-extrabold tracking-[.05em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(0,0,0,.62)] backdrop-blur-[6px] border border-[rgba(255,255,255,.2)] text-cream inline-flex items-center gap-[5px]"><ImageIcon size={11} /> Зураг</span>
+                        {it.video && <span className="text-[9.5px] font-extrabold tracking-[.05em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(0,0,0,.62)] backdrop-blur-[6px] border border-[rgba(255,255,255,.2)] text-cream inline-flex items-center gap-[5px]"><Film size={11} /> Бичлэгтэй</span>}
+                      </div>
+                    ) : (
+                      <span className="absolute left-[9px] top-[9px] text-[9.5px] font-extrabold tracking-[.05em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(0,0,0,.62)] backdrop-blur-[6px] border border-[rgba(255,255,255,.2)] text-cream inline-flex items-center gap-[5px]">{it.type === 'video' ? <><Film size={11} /> Бичлэг</> : <><ImageIcon size={11} /> Зураг</>}</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2.5 py-[11px] px-[13px]">
                     <span className="flex-1 min-w-0 text-[13px] font-extrabold whitespace-nowrap overflow-hidden text-ellipsis">{it.name}</span>
@@ -784,34 +807,78 @@ export default function AdminPanel() {
               <button onClick={() => setBgEditOpen(false)} className="cursor-pointer font-[inherit] text-xl leading-none w-[34px] h-[34px] rounded-full border border-[rgba(242,237,227,.2)] bg-transparent text-[rgba(242,237,227,.7)] flex-shrink-0">×</button>
             </div>
 
-            <div className="relative aspect-[16/9] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink mt-[18px] mb-4">
-              {bgDraftType === 'video' ? (
-                <video src={bgDraftSrc} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
-              ) : (
-                <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(bgDraftSrc || '1470071459604-3b5ec3a7fe05', 1200)}")` }}></div>
-              )}
-              {bgUploading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
-              )}
-            </div>
-
-            <div className="grid gap-3 mb-3.5" style={{ gridTemplateColumns: (bgEditKind === 'flag' || isMobile) ? '1fr' : '1fr 1fr' }}>
-              <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
-                <ImageIcon size={15} /> Зураг оруулах
-                <input type="file" accept="image/*" onChange={onBgFile(false)} style={{ display: 'none' }} />
-              </label>
-              {bgEditKind !== 'flag' && (
-                <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
-                  <Film size={15} /> Бичлэг оруулах
-                  <input type="file" accept="video/*" onChange={onBgFile(true)} style={{ display: 'none' }} />
+            {bgEditKind === 'cat' ? (
+              <>
+                <div className="text-[10.5px] font-extrabold tracking-[.06em] uppercase text-[rgba(242,237,227,.5)] mt-[18px] mb-2">Зураг · нүүр хуудсанд харагдана</div>
+                <div className="relative aspect-[16/9] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink mb-2.5">
+                  <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(bgDraftSrc || '1470071459604-3b5ec3a7fe05', 1200)}")` }}></div>
+                  {bgUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
+                  )}
+                </div>
+                <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)] mb-4">
+                  <ImageIcon size={15} /> Зураг оруулах
+                  <input type="file" accept="image/*" onChange={onBgFile(false)} style={{ display: 'none' }} />
                 </label>
-              )}
-            </div>
 
-            <div className="flex items-start gap-[9px] text-[11.5px] leading-[1.5] text-[rgba(242,237,227,.6)] py-[11px] px-[13px] rounded-[11px] bg-[rgba(232,184,75,.06)] border border-[rgba(232,184,75,.22)] mb-5">
-              <Play size={13} style={{ flex: 'none', marginTop: 2, color: 'var(--accent,#E8B84B)' }} fill="currentColor" />
-              <span>Бичлэг оруулбал апп дээр <b>автоматаар, дуугүй, давталттай</b> тоглоно.</span>
-            </div>
+                <div className="text-[10.5px] font-extrabold tracking-[.06em] uppercase text-[rgba(242,237,227,.5)] mb-2">Бичлэг · ангилал руу орсны дараа тоглоно</div>
+                <div className="relative aspect-[16/9] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink mb-2.5">
+                  {bgDraftVideoSrc ? (
+                    <video src={bgDraftVideoSrc} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-center px-4 text-[12px] text-[rgba(242,237,227,.4)]">Бичлэг оруулаагүй бол дээрх зураг харагдана</div>
+                  )}
+                  {bgUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
+                  )}
+                </div>
+                <div className="grid gap-3 mb-3.5" style={{ gridTemplateColumns: (isMobile || !bgDraftVideoSrc) ? '1fr' : '1fr 1fr' }}>
+                  <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                    <Film size={15} /> Бичлэг оруулах
+                    <input type="file" accept="video/*" onChange={onBgFile(true)} style={{ display: 'none' }} />
+                  </label>
+                  {bgDraftVideoSrc && (
+                    <button onClick={() => setBgDraftVideoSrc('')} className="cursor-pointer font-[inherit] h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(240,138,138,.4)] bg-transparent text-[12.5px] font-bold text-[#f08a8a] transition-colors duration-200 hover:border-[#f08a8a]">Бичлэг хасах</button>
+                  )}
+                </div>
+
+                <div className="flex items-start gap-[9px] text-[11.5px] leading-[1.5] text-[rgba(242,237,227,.6)] py-[11px] px-[13px] rounded-[11px] bg-[rgba(232,184,75,.06)] border border-[rgba(232,184,75,.22)] mb-5">
+                  <Play size={13} style={{ flex: 'none', marginTop: 2, color: 'var(--accent,#E8B84B)' }} fill="currentColor" />
+                  <span>Нүүр хуудсан дээр ангиллаа сонгоход <b>зөвхөн зураг</b> харагдана. Бичлэг зөвхөн тухайн ангилал руу орсны дараа, <b>автоматаар, дуугүй, давталттай</b> тоглоно.</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="relative aspect-[16/9] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink mt-[18px] mb-4">
+                  {bgDraftType === 'video' ? (
+                    <video src={bgDraftSrc} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(bgDraftSrc || '1470071459604-3b5ec3a7fe05', 1200)}")` }}></div>
+                  )}
+                  {bgUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
+                  )}
+                </div>
+
+                <div className="grid gap-3 mb-3.5" style={{ gridTemplateColumns: (bgEditKind === 'flag' || isMobile) ? '1fr' : '1fr 1fr' }}>
+                  <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                    <ImageIcon size={15} /> Зураг оруулах
+                    <input type="file" accept="image/*" onChange={onBgFile(false)} style={{ display: 'none' }} />
+                  </label>
+                  {bgEditKind !== 'flag' && (
+                    <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                      <Film size={15} /> Бичлэг оруулах
+                      <input type="file" accept="video/*" onChange={onBgFile(true)} style={{ display: 'none' }} />
+                    </label>
+                  )}
+                </div>
+
+                <div className="flex items-start gap-[9px] text-[11.5px] leading-[1.5] text-[rgba(242,237,227,.6)] py-[11px] px-[13px] rounded-[11px] bg-[rgba(232,184,75,.06)] border border-[rgba(232,184,75,.22)] mb-5">
+                  <Play size={13} style={{ flex: 'none', marginTop: 2, color: 'var(--accent,#E8B84B)' }} fill="currentColor" />
+                  <span>Бичлэг оруулбал апп дээр <b>автоматаар, дуугүй, давталттай</b> тоглоно.</span>
+                </div>
+              </>
+            )}
 
             <div className="flex justify-end gap-3">
               <button onClick={() => setBgEditOpen(false)} className="cursor-pointer font-[inherit] text-[13px] font-bold py-[11px] px-[22px] rounded-full border border-[rgba(242,237,227,.25)] bg-transparent text-[rgba(242,237,227,.75)]">Болих</button>

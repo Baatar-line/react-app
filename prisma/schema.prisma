@@ -89,6 +89,11 @@ model Category {
   name          String
   nameEn        String
   image         String?
+  // Background video shown once a visitor is inside this category's page
+  // (/category/:slug) — `image` above is shown instead on the Home screen's
+  // hover/selection preview, which always stays a still photo even when a
+  // video is set here.
+  videoImage    String?
   subCategories String[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

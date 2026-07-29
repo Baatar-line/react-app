@@ -45,12 +45,17 @@ export default function CategoryPage() {
     .sort((a, b) => { if (V.spNeeds && a.access !== b.access) return a.access ? -1 : 1; return +b.rating - +a.rating; });
 
   const catBgOverride = V.catBgOverride[cat.slug] || '';
+  // The background video (uploaded separately from the photo above) only
+  // plays here, inside the category's own page — Home's hover/selection
+  // preview always stays the still photo instead. Falls back to the photo
+  // when no video has been uploaded for this category.
+  const catVideoOverride = V.catVideoOverride[cat.slug] || '';
 
   return (
     <section data-screen-label="Ангиллын дэлгэрэнгүй">
       <header className="relative flex h-[52vh] min-h-[380px] items-end overflow-hidden">
         <BgMedia
-          bg={catBgOf(cat, catBgOverride)} isVideo={isVideoUrl(catBgOverride)} videoSrc={catBgOverride}
+          bg={catBgOf(cat, catBgOverride)} isVideo={!!catVideoOverride || isVideoUrl(catBgOverride)} videoSrc={catVideoOverride || catBgOverride}
           className="absolute inset-0" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
         />
         <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.4)_0%,_rgba(0,0,0,0)_40%,_rgba(0,0,0,.94)_100%)]"></div>

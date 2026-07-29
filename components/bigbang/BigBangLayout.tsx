@@ -91,6 +91,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
     showScenicForm: false,
     showEventForm: false,
     userPins: [], showAddForm: false,
+    // "Host болох" — becoming a host is the same account gaining host
+    // capability (User.role: user -> host in the schema), not a separate
+    // signup; see the Profile page section this drives.
+    isHost: false, showHostForm: false, hostSubmitted: false,
+    hEmail: '', hPhone: '', hPass: '', hInstagram: '', hFacebook: '',
     fRole: 'host', fName: '', fCat: '', fSub: '', fAimag: 'Дорнод', fOpen: '', fClose: '',
     fDesc: '', fMapUrl: '', fImg: '', fLat: null, fLng: null, fPhone: '',
     fAccess: false, fCrit: [false, false, false, false, false], fMsg: '', fErr: false,
@@ -106,6 +111,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // Per-category (keyed by slug) and per-aimag (keyed by name) background photos
     // saved via Admin Panel → Фон зураг, so the live site shows them too.
     catBgOverride: cachedMap('bb_cat_bg'), aimagBgOverride: cachedMap('bb_aimag_bg'),
+    // Per-category background *video*, shown only once inside that category's own
+    // page (/category/:slug) — the Home screen's hover/selection preview always
+    // stays a still photo (catBgOverride above), even when a video is set here.
+    catVideoOverride: cachedMap('bb_cat_video_bg'),
     // Per-"Санал болгох" card background photo, keyed by SUGGESTS slug.
     suggestBgOverride: cachedMap('bb_suggest_bg'),
     heroVertPos: null,
@@ -218,16 +227,21 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Category/aimag background photos, same "Фон зураг" admin flow as fetchSettings.
   fetchContentBgs = () => {
     Promise.all([
-      apiGet<{ slug: string; image: string | null }[]>('/categories'),
+      apiGet<{ slug: string; image: string | null; videoImage: string | null }[]>('/categories'),
       apiGet<{ name: string; backgroundImage: string | null }[]>('/aimags'),
     ]).then(([cats, aimags]) => {
       const catBgOverride: Record<string, string> = {};
-      cats.forEach((c) => { if (c.image) catBgOverride[c.slug] = c.image; });
+      const catVideoOverride: Record<string, string> = {};
+      cats.forEach((c) => {
+        if (c.image) catBgOverride[c.slug] = c.image;
+        if (c.videoImage) catVideoOverride[c.slug] = c.videoImage;
+      });
       const aimagBgOverride: Record<string, string> = {};
       aimags.forEach((a) => { if (a.backgroundImage) aimagBgOverride[a.name] = a.backgroundImage; });
-      this.setState({ catBgOverride, aimagBgOverride });
+      this.setState({ catBgOverride, catVideoOverride, aimagBgOverride });
       try {
         localStorage.setItem('bb_cat_bg', JSON.stringify(catBgOverride));
+        localStorage.setItem('bb_cat_video_bg', JSON.stringify(catVideoOverride));
         localStorage.setItem('bb_aimag_bg', JSON.stringify(aimagBgOverride));
       } catch (err) { /* ignore */ }
     }).catch(() => {});
@@ -737,9 +751,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
       };
     });
 
+    // Home's hover/selection preview always stays a still photo — even a
+    // category with an uploaded background *video* (shown once you're inside
+    // its own page) only shows its photo here.
     const bgLayers = CATS.map((c, i) => {
       const override = this.state.catBgOverride[c.slug] || '';
-      return { bg: catBgOf(c, override), opacity: active === i ? 1 : 0, isVideo: isVideoUrl(override), rawUrl: override };
+      return { bg: catBgOf(c, override), opacity: active === i ? 1 : 0 };
     });
 
     const activeCat = active >= 0 ? CATS[active] : null;
@@ -884,6 +901,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
         showEventForm: false,
       }));
     };
+    const openHostForm = () => this.setState({ showHostForm: true });
+    const closeHostForm = () => this.setState({ showHostForm: false });
+    // Mock submit (no backend role-upgrade endpoint yet) — flips this same
+    // account to host locally, same "pending admin approval" messaging the
+    // old host-signup flow on /login used to show.
+    const submitHost = () => {
+      if (!(st.hEmail.trim() && st.hPhone.trim() && st.hPass.trim())) return;
+      this.setState({ isHost: true, hostSubmitted: true, showHostForm: false });
+    };
     const readImg = (key: string) => (ev: any) => { const f = ev.target.files && ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => this.setState({ [key]: r.result }); r.readAsDataURL(f); };
     const evThumb = (img: any) => img ? 'url("' + img + '")' : 'linear-gradient(135deg, rgba(232, 184, 75,.25), rgba(120,200,170,.15))';
     const fe = FEATURED_EVENT;
@@ -923,7 +949,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
     return {
       accent, driftAnim, L, lang, aimag, favs, toggleFav, myRatings, ratePlace, spNeeds: st.spNeeds,
-      catBgOverride: st.catBgOverride, suggestBgOverride: st.suggestBgOverride,
+      catBgOverride: st.catBgOverride, catVideoOverride: st.catVideoOverride, suggestBgOverride: st.suggestBgOverride,
       isHome: route === 'home', isMapsPage: route === 'pin',
       openPin: () => go('pin'), openEvent: () => go('event'), openSuggest: () => go('suggest'),
       openGlobe: () => go('globe'), globeMountRef: this.handleGlobeRef,
@@ -962,6 +988,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
       openScenicForm, closeScenicForm: () => this.setState({ showScenicForm: false }),
       openEventForm, closeEventForm: () => this.setState({ showEventForm: false }),
       showScenicForm: st.showScenicForm, showEventForm: st.showEventForm, onScenicSubmit, onEventSubmit,
+      isHost: st.isHost, hostSubmitted: st.hostSubmitted, showHostForm: st.showHostForm,
+      openHostForm, closeHostForm, submitHost,
+      hEmail: st.hEmail, onHEmail: setF('hEmail'),
+      hPhone: st.hPhone, onHPhone: setF('hPhone'),
+      hPass: st.hPass, onHPass: setF('hPass'),
+      hInstagram: st.hInstagram, onHInstagram: setF('hInstagram'),
+      hFacebook: st.hFacebook, onHFacebook: setF('hFacebook'),
       hasMyScenic: st.myScenic.length > 0, myScenicItems: st.myScenic.map((s: any) => ({ ...s, thumb: evThumb(s.img) })),
       hasMyEvents: st.myEvents.length > 0, myEventItems: st.myEvents,
       aboutNavColor: route === 'about' ? accent : 'rgba(242,237,227,.75)',

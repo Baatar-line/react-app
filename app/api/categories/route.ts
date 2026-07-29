@@ -15,10 +15,10 @@ export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
     requireRole(user, 'admin');
-    const { slug, name, nameEn, image, subCategories } = await request.json();
+    const { slug, name, nameEn, image, videoImage, subCategories } = await request.json();
     if (!slug || !name || !nameEn) return NextResponse.json({ error: 'slug, нэр (MN/EN) шаардлагатай' }, { status: 400 });
     const category = await prisma.category.create({
-      data: { slug, name, nameEn, image, subCategories: Array.isArray(subCategories) ? subCategories : [] },
+      data: { slug, name, nameEn, image, videoImage, subCategories: Array.isArray(subCategories) ? subCategories : [] },
     });
     return NextResponse.json(category, { status: 201 });
   } catch (err) {

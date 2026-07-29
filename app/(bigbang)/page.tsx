@@ -25,22 +25,15 @@ export default function Home() {
         className="absolute inset-0 transition-opacity duration-[550ms] ease-in-out" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
         style={{ opacity: V.aimagBgOpacity }}
       />
+      {/* Category hover/selection preview — always a still photo, even for a
+          category with an uploaded background video (that only plays once
+          you're inside the category's own page). */}
       {V.bgLayers.map((layer: any, i: number) => (
-        layer.isVideo ? (
-          // Only mounted while this category is actually the hovered one —
-          // rendering (and autoplaying) all 7 videos at once regardless of
-          // opacity was decoding every category's clip simultaneously in
-          // the background, which is what was causing the stutter.
-          layer.opacity === 1 ? (
-            <BgMedia key={i} bg="linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78))" isVideo videoSrc={layer.rawUrl} className="absolute inset-0" />
-          ) : null
-        ) : (
-          <BgMedia
-            key={i} bg={layer.bg}
-            className="absolute inset-0 transition-opacity duration-[550ms] ease-in-out" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
-            style={{ opacity: layer.opacity }}
-          />
-        )
+        <BgMedia
+          key={i} bg={layer.bg}
+          className="absolute inset-0 transition-opacity duration-[550ms] ease-in-out" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
+          style={{ opacity: layer.opacity }}
+        />
       ))}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_100%_at_50%_50%,_rgba(0,0,0,0)_45%,_rgba(0,0,0,.55)_100%),_linear-gradient(90deg,_rgba(0,0,0,.88)_0%,_rgba(0,0,0,.35)_45%,_rgba(0,0,0,0)_72%)]"></div>
 
