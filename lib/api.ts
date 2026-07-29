@@ -82,11 +82,10 @@ async function shrinkImage(file: File, maxDim: number, quality: number): Promise
 }
 
 const CLOUDINARY_FREE_LIMIT = 10 * 1024 * 1024;
-// Must stay <= the upload size cap in app/api/upload/route.ts. Checking it
-// client-side lets us fail with a clean message instead of a raw "Failed to
-// fetch" — a request that blows past the server's limit gets its connection
-// cut mid-upload, which the browser reports as a network error rather than
-// delivering the 413 the server tried to send.
+// Cloudinary's free-plan video/raw cap. The upload now goes straight to
+// Cloudinary (see uploadImage below), so this is just a client-side
+// pre-check for a clean error message instead of whatever Cloudinary itself
+// returns for an oversized file.
 const SERVER_UPLOAD_LIMIT = 100 * 1024 * 1024;
 
 async function prepareImageForUpload(file: File): Promise<File> {
@@ -95,22 +94,42 @@ async function prepareImageForUpload(file: File): Promise<File> {
   return out;
 }
 
-// Uploads a real file (image or video) to Cloudinary via the backend and
-// returns the resulting URL. Images are shrunk client-side first; video is
-// sent as-is since it can't be cheaply re-encoded in the browser.
+// Uploads a real file (image or video) straight to Cloudinary and returns the
+// resulting URL. Images are shrunk client-side first; video is sent as-is
+// since it can't be cheaply re-encoded in the browser.
+//
+// The file goes browser → Cloudinary directly (signed by our backend, see
+// /api/upload-signature) instead of being proxied through our own API route.
+// Vercel's Serverless Functions reject request bodies over ~4.5MB regardless
+// of any limit our own code sets, which used to surface as an opaque
+// "Upload failed: 413" for anything bigger than that — a multi-MB photo or
+// any real video. Only the tiny signature request now touches our function;
+// the actual bytes bypass Vercel's limit entirely.
 export async function uploadImage(file: File, folder: string): Promise<string> {
   const toSend = file.type.startsWith('image/') ? await prepareImageForUpload(file) : file;
   if (toSend.size > SERVER_UPLOAD_LIMIT) {
     throw new Error(`Файл хэтэрхий том байна (дээд тал ${SERVER_UPLOAD_LIMIT / (1024 * 1024)}MB)`);
   }
+  const sigRes = await authedFetch('/upload-signature', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder }),
+  });
+  if (!sigRes.ok) {
+    const body = await sigRes.json().catch(() => null);
+    throw new Error(body?.error || `Upload signature failed: ${sigRes.status}`);
+  }
+  const sig = await sigRes.json();
+
   const form = new FormData();
   form.append('file', toSend);
-  form.append('folder', folder);
-  const res = await authedFetch('/upload', { method: 'POST', body: form });
+  form.append('api_key', sig.apiKey);
+  form.append('timestamp', String(sig.timestamp));
+  form.append('signature', sig.signature);
+  form.append('folder', sig.folder);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${sig.cloudName}/auto/upload`, { method: 'POST', body: form });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.error || `Upload failed: ${res.status}`);
+    throw new Error(body?.error?.message || `Upload failed: ${res.status}`);
   }
   const data = await res.json();
-  return data.url as string;
+  return data.secure_url as string;
 }
