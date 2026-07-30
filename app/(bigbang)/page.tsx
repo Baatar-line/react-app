@@ -69,6 +69,19 @@ export default function Home() {
             </button>
           ))}
         </div>
+        {/* "Planet parable" text per category (see Cat.story in data.ts) —
+            swaps to match whichever category is currently hovered/selected.
+            Always mounted at a fixed height (not min-height — some stories
+            run to two full paragraphs and would otherwise grow past a min)
+            and just faded in/out, so the desktop column — vertically
+            centered via translateY(-50%) — doesn't shift up/down every time
+            a shorter or longer story swaps in on hover. */}
+        <div
+          className="mt-4 overflow-y-auto whitespace-pre-line text-[12.5px] leading-[1.65] text-[rgba(242,237,227,.65)] transition-opacity duration-300"
+          style={{ maxWidth: V.isTablet ? 480 : 380, height: V.isTablet ? 'auto' : 220, opacity: V.activeCatStory ? 1 : 0 }}
+        >
+          {V.activeCatStory}
+        </div>
       </div>
 
       {/* map picker + preview cards — the absolute side-by-side hero

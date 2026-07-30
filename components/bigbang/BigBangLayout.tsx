@@ -95,7 +95,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // capability (User.role: user -> host in the schema), not a separate
     // signup; see the Profile page section this drives.
     isHost: false, showHostForm: false, hostSubmitted: false,
-    hEmail: '', hPhone: '', hPass: '', hInstagram: '', hFacebook: '',
+    hEmail: '', hPhone: '', hPass: '', hInstagram: '', hFacebook: '', hErr: '',
     fRole: 'host', fName: '', fCat: '', fSub: '', fAimag: 'Дорнод', fOpen: '', fClose: '',
     fDesc: '', fMapUrl: '', fImg: '', fLat: null, fLng: null, fPhone: '',
     fAccess: false, fCrit: [false, false, false, false, false], fMsg: '', fErr: false,
@@ -750,6 +750,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
         activate: () => this.setState({ active: i }), open: () => this.openCat(c.slug),
       };
     });
+    // The "planet parable" text shown under the category list — swaps to
+    // match whichever category is currently hovered/selected, falling back
+    // to the plain hover hint while nothing is active.
+    const activeCatStory = active >= 0 ? CATS[active].story : '';
 
     // Home's hover/selection preview always stays a still photo — even a
     // category with an uploaded background *video* (shown once you're inside
@@ -901,14 +905,20 @@ export default class BigBangLayout extends React.Component<Props, any> {
         showEventForm: false,
       }));
     };
-    const openHostForm = () => this.setState({ showHostForm: true });
+    const openHostForm = () => this.setState({ showHostForm: true, hErr: '' });
     const closeHostForm = () => this.setState({ showHostForm: false });
     // Mock submit (no backend role-upgrade endpoint yet) — flips this same
     // account to host locally, same "pending admin approval" messaging the
-    // old host-signup flow on /login used to show.
+    // old host-signup flow on /login used to show. Rejects an obviously
+    // malformed email/phone/password before doing that instead of silently
+    // accepting whatever was typed.
     const submitHost = () => {
-      if (!(st.hEmail.trim() && st.hPhone.trim() && st.hPass.trim())) return;
-      this.setState({ isHost: true, hostSubmitted: true, showHostForm: false });
+      const email = st.hEmail.trim(), phone = st.hPhone.trim(), pass = st.hPass.trim();
+      if (!email || !phone || !pass) { this.setState({ hErr: L.hErrRequired }); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.setState({ hErr: L.hErrEmail }); return; }
+      if (!/^\d{8}$/.test(phone)) { this.setState({ hErr: L.hErrPhone }); return; }
+      if (pass.length < 8) { this.setState({ hErr: L.hErrPass }); return; }
+      this.setState({ isHost: true, hostSubmitted: true, showHostForm: false, hErr: '' });
     };
     const readImg = (key: string) => (ev: any) => { const f = ev.target.files && ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => this.setState({ [key]: r.result }); r.readAsDataURL(f); };
     const evThumb = (img: any) => img ? 'url("' + img + '")' : 'linear-gradient(135deg, rgba(232, 184, 75,.25), rgba(120,200,170,.15))';
@@ -994,7 +1004,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       hPhone: st.hPhone, onHPhone: setF('hPhone'),
       hPass: st.hPass, onHPass: setF('hPass'),
       hInstagram: st.hInstagram, onHInstagram: setF('hInstagram'),
-      hFacebook: st.hFacebook, onHFacebook: setF('hFacebook'),
+      hFacebook: st.hFacebook, onHFacebook: setF('hFacebook'), hErr: st.hErr,
       hasMyScenic: st.myScenic.length > 0, myScenicItems: st.myScenic.map((s: any) => ({ ...s, thumb: evThumb(s.img) })),
       hasMyEvents: st.myEvents.length > 0, myEventItems: st.myEvents,
       aboutNavColor: route === 'about' ? accent : 'rgba(242,237,227,.75)',
@@ -1076,7 +1086,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
           const key = 'e:' + ev.name;
           return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]), onClick: () => this.openEventDetail(i) };
         }),
-      suggests, navCats, bgLayers, previewCards, topItems: topItems2,
+      suggests, navCats, activeCatStory, bgLayers, previewCards, topItems: topItems2,
       travelApps: TRAVEL_APPS.map((a) => {
         const raw = (this.state.travelAppsBgOverride || {})[a.slug] || '';
         return {

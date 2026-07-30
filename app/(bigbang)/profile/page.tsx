@@ -130,8 +130,8 @@ export default function ProfilePage() {
             </div>
             <div className="flex flex-col gap-3.5">
               {[
-                { label: V.L.hostEmail, v: V.hEmail, set: V.onHEmail, ph: V.L.hostEmailPh, type: 'text' },
-                { label: V.L.hostPhone, v: V.hPhone, set: V.onHPhone, ph: V.L.hostPhonePh, type: 'text' },
+                { label: V.L.hostEmail, v: V.hEmail, set: V.onHEmail, ph: V.L.hostEmailPh, type: 'email' },
+                { label: V.L.hostPhone, v: V.hPhone, set: V.onHPhone, ph: V.L.hostPhonePh, type: 'tel' },
                 { label: V.L.hostPass, v: V.hPass, set: V.onHPass, ph: V.L.hostPassPh, type: 'password' },
                 { label: V.L.hostInstagram, v: V.hInstagram, set: V.onHInstagram, ph: V.L.hostInstagramPh, type: 'text' },
                 { label: V.L.hostFacebook, v: V.hFacebook, set: V.onHFacebook, ph: V.L.hostFacebookPh, type: 'text' },
@@ -147,6 +147,7 @@ export default function ProfilePage() {
                   />
                 </label>
               ))}
+              {V.hErr && <div className="text-[12px] font-bold text-[#f08a8a]">{V.hErr}</div>}
               <button
                 onClick={V.submitHost}
                 className="mt-1 w-full cursor-pointer rounded-xl border-none bg-[var(--accent,#E8B84B)] py-[11px] font-[inherit] text-[14px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"

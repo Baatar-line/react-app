@@ -79,7 +79,10 @@ const SEARCH_PLACEHOLDER: Partial<Record<Tab, string>> = {
   ads: 'Зар хайх...',
 };
 
-const CAT_BG_DEFS: [string, string][] = CATS.map((c) => [c.name, c.hero]);
+// slug (not name) is the stable key here — a category's display name can be
+// renamed in data.ts at any time, and matching on it would silently break
+// this row's link to its already-saved backend id/image/video.
+const CAT_BG_DEFS: [string, string, string][] = CATS.map((c) => [c.name, c.hero, c.slug]);
 const ALL_AIMAGS = AIMAGS.map((a) => a[0]);
 
 const thumb = (img: string) => 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(img, 500) + '")';
@@ -139,7 +142,7 @@ export default function AdminPanel() {
   // Seeded with the same local defaults as before so the tab isn't empty while the
   // backend fetch below is in flight; the effect then attaches real ids + latest
   // saved images so edits actually PATCH/PUT the right row and survive a refresh.
-  const [catBg, setCatBg] = useState<BgItem[]>(() => CAT_BG_DEFS.map(([name, id]) => ({ name, type: 'image' as const, src: U(id, 900), video: '' })));
+  const [catBg, setCatBg] = useState<BgItem[]>(() => CAT_BG_DEFS.map(([name, id, slug]) => ({ name, type: 'image' as const, src: U(id, 900), video: '', slug })));
   const [aimagBg, setAimagBg] = useState<BgItem[]>(() => ALL_AIMAGS.map((a) => ({ name: a, type: 'image' as const, src: U(AIMAG_BG[a] || '1470071459604-3b5ec3a7fe05', 900) })));
   // Single-item "list" so it can reuse the same edit modal as cat/aimag backgrounds.
   const [aboutBg, setAboutBg] = useState<BgItem[]>(() => [{ name: 'Бидний тухай фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1200) }]);
@@ -167,13 +170,13 @@ export default function AdminPanel() {
     (async () => {
       try {
         const [cats, aimags, settings] = await Promise.all([
-          apiGet<{ id: number; name: string; image: string | null; videoImage: string | null }[]>('/categories'),
+          apiGet<{ id: number; slug: string; name: string; image: string | null; videoImage: string | null }[]>('/categories'),
           apiGet<{ id: number; name: string; backgroundImage: string | null }[]>('/aimags'),
           apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; loaderBackgroundImage: string | null; travelAppsBackgroundImages: Record<string, string> | null; loginBackgroundImage: string | null }>('/settings'),
         ]);
         if (cancelled) return;
         setCatBg((prev) => prev.map((it) => {
-          const match = cats.find((c) => c.name === it.name);
+          const match = cats.find((c) => c.slug === it.slug);
           if (!match) return it;
           const src = match.image || it.src;
           return { ...it, id: match.id, src, type: 'image', video: match.videoImage || '' };

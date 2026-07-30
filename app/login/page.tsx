@@ -32,12 +32,26 @@ export default function Login() {
   // signup path here.
   const [method, setMethod] = useState<'phone' | 'email'>('phone');
   const [contact, setContact] = useState('');
+  const [contactErr, setContactErr] = useState('');
   const [step, setStep] = useState<'input' | 'otp' | 'done'>('input');
   const [otp, setOtp] = useState(['', '', '', '']);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const isPhone = method === 'phone';
   const contactShown = contact || (isPhone ? '99112233' : 'tanii@email.mn');
+
+  // Rejects an obviously malformed phone number / email instead of silently
+  // accepting whatever was typed and pretending a code was sent.
+  const requestCode = () => {
+    const v = contact.trim();
+    if (!v) { setContactErr(isPhone ? 'Утасны дугаараа оруулна уу' : 'Имэйл хаягаа оруулна уу'); return; }
+    if (isPhone ? !/^\d{8}$/.test(v) : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+      setContactErr(isPhone ? 'Утасны дугаар 8 оронтой тоо байх ёстой — жишээ: 99112233' : 'Имэйл хаяг буруу байна — жишээ: tanii@email.mn');
+      return;
+    }
+    setContactErr('');
+    setStep('otp');
+  };
 
   const onOtp = (i: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const d = e.target.value.replace(/\D/g, '').slice(-1);
@@ -100,7 +114,7 @@ export default function Login() {
                 {(['phone', 'email'] as const).map((m) => (
                   <button
                     key={m}
-                    onClick={() => setMethod(m)}
+                    onClick={() => { setMethod(m); setContactErr(''); }}
                     className="rounded-full border px-4 py-[7px] text-[12px] font-bold transition-all"
                     style={chip(method === m)}
                   >
@@ -109,18 +123,22 @@ export default function Login() {
                 ))}
               </div>
 
-              <label className="mb-4 flex flex-col gap-[7px]">
+              <label className="mb-1.5 flex flex-col gap-[7px]">
                 <span className="text-[12px] font-bold text-cream/70">{isPhone ? 'Утасны дугаар' : 'Имэйл хаяг'}</span>
                 <input
                   value={contact}
-                  onChange={(e) => setContact(e.target.value)}
+                  onChange={(e) => { setContact(e.target.value); if (contactErr) setContactErr(''); }}
                   placeholder={isPhone ? '99112233' : 'tanii@email.mn'}
+                  inputMode={isPhone ? 'numeric' : 'email'}
                   className={`${inputCls} text-[16px]`}
                 />
               </label>
+              <div className="mb-4 min-h-[15px]">
+                {contactErr && <span className="text-[11.5px] font-bold text-[#f08a8a]">{contactErr}</span>}
+              </div>
 
               <button
-                onClick={() => contact.trim() && setStep('otp')}
+                onClick={requestCode}
                 className="w-full rounded-xl border-none bg-accent py-[11px] text-[14px] font-extrabold text-[#132a1f] transition-transform hover:-translate-y-0.5"
               >
                 Код авах →
