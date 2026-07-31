@@ -297,20 +297,48 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   // Google's raw `mt{s}.google.com/vt` tile endpoint is undocumented/unofficial
   // (no API key or referrer check) — some ad blockers/privacy extensions and
-  // networks block it outright, which otherwise leaves the whole map blank
-  // with only our own borders/labels drawn on top. Watch for a burst of
-  // tileerror events and, if the primary source is clearly not coming
-  // through, swap to Esri's World Imagery tiles (a free, no-key satellite
-  // basemap) so the map still shows something.
+  // networks block it outright (sometimes only for that one session/network,
+  // which is why this shows up as "sometimes the map's just blank" rather
+  // than consistently), which otherwise leaves the whole map blank with only
+  // our own borders/labels drawn on top.
+  //
+  // Two independent signals trigger a fallback, since either alone misses a
+  // failure mode the other catches:
+  //   - a burst of `tileerror` events — the source is reachable but actively
+  //     rejecting/erroring on tiles;
+  //   - a "nothing ever loaded" timeout — some blocks (an extension silently
+  //     dropping the request, a network blackholing the domain) never fire
+  //     `tileerror` at all, they just hang forever, which pure error-counting
+  //     would never catch and the map would stay blank indefinitely.
+  // Esri's World Imagery is the first fallback (a free, no-key satellite
+  // basemap that keeps the same look); on a network where that's *also*
+  // unreachable, it falls through again to OSM's standard tiles, which are
+  // about as widely reachable as a tile server gets.
   addBasemap(m: any, primaryUrl: string, subdomains: string[]) {
-    const FALLBACK = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-    const layer = window.L.tileLayer(primaryUrl, { subdomains, maxZoom: 19 }).addTo(m);
-    let errors = 0;
-    let swapped = false;
-    layer.on('tileerror', () => {
-      errors++;
-      if (!swapped && errors >= 6) { swapped = true; layer.setUrl(FALLBACK); }
-    });
+    const SOURCES = [
+      { url: primaryUrl, subdomains },
+      { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' },
+      { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' },
+    ];
+    // noWrap stops Leaflet from tiling repeated copies of the whole world
+    // side by side once the map is zoomed out (or panned) far enough that a
+    // single world's rendered width is narrower than the container — without
+    // it, zooming out shows several duplicate Earths instead of one.
+    const layer = window.L.tileLayer(SOURCES[0].url, { subdomains, maxZoom: 19, noWrap: true }).addTo(m);
+    let idx = 0, errors = 0, loaded = false, timer: any = null;
+    const armTimeout = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { if (!loaded) tryNext(); }, 3000);
+    };
+    const tryNext = () => {
+      if (idx >= SOURCES.length - 1) return;
+      idx++; errors = 0; loaded = false;
+      layer.setUrl(SOURCES[idx].url);
+      armTimeout();
+    };
+    layer.on('tileload', () => { loaded = true; });
+    layer.on('tileerror', () => { errors++; if (errors >= 4) tryNext(); });
+    armTimeout();
     return layer;
   }
 
@@ -323,7 +351,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const init = () => {
       if (!node.isConnected) return;
       if (!window.L) { setTimeout(init, 150); return; }
-      const m = window.L.map(node, { attributionControl: false });
+      const m = window.L.map(node, {
+        attributionControl: false, minZoom: 3,
+        maxBounds: [[-90, -180], [90, 180]], maxBoundsViscosity: 1,
+      });
       m.setView([46.9, 103.8], 5);
       this.addBasemap(m, 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', ['0', '1', '2', '3']);
       m.on('click', (ev: any) => this.pickLocation(ev.latlng.lat, ev.latlng.lng));
@@ -405,7 +436,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const init = () => {
       if (!node.isConnected) return;
       if (!window.L) { setTimeout(init, 150); return; }
-      const m = window.L.map(node, { attributionControl: false, zoomControl: !this.state.isMobile });
+      const m = window.L.map(node, {
+        attributionControl: false, zoomControl: !this.state.isMobile, minZoom: 3,
+        maxBounds: [[-90, -180], [90, 180]], maxBoundsViscosity: 1,
+      });
       m.setView([46.8, 103.8], 5);
       // Plain satellite tiles (no baked-in place-name labels) — `lyrs=y` (hybrid)
       // draws Google's own city/country labels straight into the raster image,
@@ -750,10 +784,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
         activate: () => this.setState({ active: i }), open: () => this.openCat(c.slug),
       };
     });
-    // The "planet parable" text shown under the category list — swaps to
-    // match whichever category is currently hovered/selected, falling back
-    // to the plain hover hint while nothing is active.
-    const activeCatStory = active >= 0 ? CATS[active].story : '';
 
     // Home's hover/selection preview always stays a still photo — even a
     // category with an uploaded background *video* (shown once you're inside
@@ -1086,7 +1116,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
           const key = 'e:' + ev.name;
           return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]), onClick: () => this.openEventDetail(i) };
         }),
-      suggests, navCats, activeCatStory, bgLayers, previewCards, topItems: topItems2,
+      suggests, navCats, bgLayers, previewCards, topItems: topItems2,
       travelApps: TRAVEL_APPS.map((a) => {
         const raw = (this.state.travelAppsBgOverride || {})[a.slug] || '';
         return {
