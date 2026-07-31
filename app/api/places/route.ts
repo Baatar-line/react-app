@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
     requireRole(user, 'host', 'admin');
-    const { name, description, image, categoryId, aimagId, lat, lng, openTime, closeTime, googleMapUrl } = await request.json();
+    const { name, description, image, categoryId, aimagId, lat, lng, openTime, closeTime, googleMapUrl, subCategory, phone, accessible } = await request.json();
     if (!name || !categoryId || !aimagId) {
       return NextResponse.json({ error: 'Нэр, ангилал, аймаг шаардлагатай' }, { status: 400 });
     }
@@ -38,6 +38,7 @@ export async function POST(request: Request) {
         lat: lat != null ? Number(lat) : undefined,
         lng: lng != null ? Number(lng) : undefined,
         openTime, closeTime, googleMapUrl,
+        subCategory, phone, accessible: !!accessible,
         addedBy: user.userId,
         // admins publish immediately, hosts go through the approval queue
         status: user.role === 'admin' ? 'approved' : 'pending',

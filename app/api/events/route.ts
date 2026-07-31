@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    await requireAuth(request);
+    const user = await requireAuth(request);
     const { name, tag, meta, image, startDate, endDate, aimagId, lat, lng, featured } = await request.json();
     if (!name || !startDate || !aimagId) {
       return NextResponse.json({ error: 'Нэр, эхлэх огноо, аймаг шаардлагатай' }, { status: 400 });
@@ -32,7 +32,11 @@ export async function POST(request: Request) {
         aimagId: Number(aimagId),
         lat: lat != null ? Number(lat) : undefined,
         lng: lng != null ? Number(lng) : undefined,
-        featured: !!featured,
+        // Only an admin can pin an event to the home page's featured banner —
+        // a host marking their own event featured would otherwise be a
+        // self-service promotion with no moderation at all.
+        featured: user.role === 'admin' ? !!featured : false,
+        addedBy: user.userId,
       },
     });
     return NextResponse.json(event, { status: 201 });

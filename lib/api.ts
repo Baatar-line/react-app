@@ -29,15 +29,22 @@ export function ensureAdminToken(): Promise<string> {
   return tokenPromise;
 }
 
-async function authedFetch(path: string, opts: RequestInit = {}, retried = false): Promise<Response> {
-  const token = await ensureAdminToken();
+// `token` lets a caller act as a real logged-in user (host/admin session from
+// lib/session.ts) instead of the AdminPanel's bootstrapped dev-admin account.
+// Omitted entirely (undefined) — the default everywhere already calling this
+// — it keeps falling back to ensureAdminToken(), so every existing AdminPanel
+// call site behaves exactly as before.
+async function authedFetch(path: string, opts: RequestInit = {}, token?: string, retried = false): Promise<Response> {
+  const authToken = token ?? await ensureAdminToken();
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
-    headers: { ...(opts.headers || {}), Authorization: `Bearer ${token}` },
+    headers: { ...(opts.headers || {}), Authorization: `Bearer ${authToken}` },
   });
-  if (res.status === 401 && !retried) {
+  // Only the bootstrapped admin token retries itself — a real user session
+  // that's expired/invalid should surface the 401 to its caller instead.
+  if (res.status === 401 && !retried && token === undefined) {
     localStorage.removeItem(TOKEN_KEY);
-    return authedFetch(path, opts, true);
+    return authedFetch(path, opts, undefined, true);
   }
   return res;
 }
@@ -48,14 +55,31 @@ export async function apiGet<T>(path: string): Promise<T> {
   return res.json();
 }
 
-export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
-  const res = await authedFetch(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+// For GET routes that require auth (e.g. /places/pending, admin-only) —
+// same optional-token/bootstrap-fallback behavior as apiPost/apiPatch/apiPut.
+export async function apiGetAuthed<T>(path: string, token?: string): Promise<T> {
+  const res = await authedFetch(path, {}, token);
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+export async function apiPost<T>(path: string, body: unknown, token?: string): Promise<T> {
+  const res = await authedFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, token);
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => null);
+    throw new Error(errBody?.error || `POST ${path} failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function apiPatch<T>(path: string, body: unknown, token?: string): Promise<T> {
+  const res = await authedFetch(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, token);
   if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`);
   return res.json();
 }
 
-export async function apiPut<T>(path: string, body: unknown): Promise<T> {
-  const res = await authedFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export async function apiPut<T>(path: string, body: unknown, token?: string): Promise<T> {
+  const res = await authedFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, token);
   if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`);
   return res.json();
 }
@@ -105,14 +129,14 @@ async function prepareImageForUpload(file: File): Promise<File> {
 // "Upload failed: 413" for anything bigger than that — a multi-MB photo or
 // any real video. Only the tiny signature request now touches our function;
 // the actual bytes bypass Vercel's limit entirely.
-export async function uploadImage(file: File, folder: string): Promise<string> {
+export async function uploadImage(file: File, folder: string, token?: string): Promise<string> {
   const toSend = file.type.startsWith('image/') ? await prepareImageForUpload(file) : file;
   if (toSend.size > SERVER_UPLOAD_LIMIT) {
     throw new Error(`Файл хэтэрхий том байна (дээд тал ${SERVER_UPLOAD_LIMIT / (1024 * 1024)}MB)`);
   }
   const sigRes = await authedFetch('/upload-signature', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder }),
-  });
+  }, token);
   if (!sigRes.ok) {
     const body = await sigRes.json().catch(() => null);
     throw new Error(body?.error || `Upload signature failed: ${sigRes.status}`);

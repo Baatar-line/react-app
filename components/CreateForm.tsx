@@ -18,7 +18,12 @@ export interface CreateFormData {
   desc: string;
   aimag: string;
   images: string[];
+  // Raw File objects paired 1:1 with `images` (base64 previews) — the caller
+  // needs the real File to upload to Cloudinary; CreateForm itself only
+  // renders previews and stays otherwise dumb about where data ends up.
+  imageFiles: File[];
   catName?: string;
+  catSlug?: string;
   sub?: string;
   access?: boolean;
   phone?: string;
@@ -26,6 +31,7 @@ export interface CreateFormData {
   openTime?: string;
   closeTime?: string;
   icon?: string;
+  scenicType?: string;
   date?: string;
   time?: string;
   max?: string;
@@ -65,10 +71,12 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
   const [access, setAccess] = useState(false);
   const [crit, setCrit] = useState<boolean[]>(() => FCRIT.map(() => false));
   const [icon, setIcon] = useState(SCENIC_ICONS[0]);
+  const [scenicType, setScenicType] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [max, setMax] = useState('');
   const [images, setImages] = useState<string[]>([]);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [err, setErr] = useState(false);
@@ -160,23 +168,28 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
   const onImgFile = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const f = ev.target.files && ev.target.files[0];
     if (!f) return;
+    setImageFiles((s) => [...s, f]);
     const r = new FileReader();
     r.onload = () => setImages((s) => [...s, String(r.result)]);
     r.readAsDataURL(f);
     ev.target.value = '';
   };
-  const removeImg = (i: number) => setImages((s) => s.filter((_, k) => k !== i));
+  const removeImg = (i: number) => {
+    setImages((s) => s.filter((_, k) => k !== i));
+    setImageFiles((s) => s.filter((_, k) => k !== i));
+  };
 
   const curCat = CATS.find((c) => c.slug === catSlug) || CATS[0];
 
   const submit = () => {
     if (!name.trim()) { setErr(true); return; }
-    const data: CreateFormData = { kind, name: name.trim(), desc: desc.trim(), aimag, images, lat, lng };
+    if (kind === 'scenic' && !scenicType.trim()) { setErr(true); return; }
+    const data: CreateFormData = { kind, name: name.trim(), desc: desc.trim(), aimag, images, imageFiles, lat, lng };
     if (kind === 'place') {
-      data.catName = curCat.name; data.sub = sub; data.access = access && crit.every(Boolean);
+      data.catName = curCat.name; data.catSlug = curCat.slug; data.sub = sub; data.access = access && crit.every(Boolean);
       data.phone = phone.trim(); data.social = social.trim(); data.openTime = openTime; data.closeTime = closeTime;
     } else if (kind === 'scenic') {
-      data.icon = icon;
+      data.icon = icon; data.scenicType = scenicType.trim();
     } else {
       data.date = date; data.time = time; data.max = max.trim() || '20';
     }
@@ -241,14 +254,20 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
           )}
 
           {kind === 'scenic' && (
-            <label className="flex flex-col gap-2">
-              <span className={labelSpanClass}>Тэмдэг</span>
-              <div className="flex flex-wrap gap-2">
-                {SCENIC_ICONS.map((g) => (
-                  <button key={g} onClick={() => setIcon(g)} className="flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-[10px] text-lg transition-all duration-200" style={{ border: `1.5px solid ${icon === g ? 'var(--accent,#E8B84B)' : 'rgba(255,255,255,.16)'}`, background: icon === g ? 'rgba(232, 184, 75,.2)' : 'rgba(255,255,255,.04)' }}>{g}</button>
-                ))}
-              </div>
-            </label>
+            <>
+              <label className="flex flex-col gap-1.5">
+                <span className={labelSpanClass}>Төрөл <span className="text-[#f08a8a]">*</span></span>
+                <input value={scenicType} onChange={(e) => setScenicType(e.target.value)} placeholder="Ж: Нар жаргах цэг, Уулын харагдац" className={`${inputClass} ${inputFontClass}`} />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className={labelSpanClass}>Тэмдэг</span>
+                <div className="flex flex-wrap gap-2">
+                  {SCENIC_ICONS.map((g) => (
+                    <button key={g} onClick={() => setIcon(g)} className="flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-[10px] text-lg transition-all duration-200" style={{ border: `1.5px solid ${icon === g ? 'var(--accent,#E8B84B)' : 'rgba(255,255,255,.16)'}`, background: icon === g ? 'rgba(232, 184, 75,.2)' : 'rgba(255,255,255,.04)' }}>{g}</button>
+                  ))}
+                </div>
+              </label>
+            </>
           )}
 
           {kind === 'event' && (
@@ -344,7 +363,7 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
           <div className="mt-1 flex items-center gap-3">
             <button onClick={submit} className="cursor-pointer rounded-full border-none bg-[var(--accent,#E8B84B)] px-7 py-[11px] font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5">Үүсгэх →</button>
             <button onClick={onClose} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-5 py-2.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.7)]">Болих</button>
-            {err && <span className="text-[11.5px] font-bold text-[#f08a8a]">Нэр оруулна уу</span>}
+            {err && <span className="text-[11.5px] font-bold text-[#f08a8a]">{!name.trim() ? 'Нэр оруулна уу' : 'Төрлөө оруулна уу'}</span>}
           </div>
         </div>
       </div>

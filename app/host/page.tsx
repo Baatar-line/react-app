@@ -11,10 +11,14 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Hash, Phone, Mail, Clock, Search, User, MapPin, Mountain, CalendarDays, MessageSquare, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
 import { useIsMobile } from '@/components/bigbang/ui';
 import { imgUrl, PLACEHOLDER_IMG } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
+import { apiGet, apiGetAuthed } from '@/lib/api';
+import { getSession, type Session } from '@/lib/session';
+import { createPlace, createScenicPin, createEvent } from '@/lib/hostContent';
 
 type ContentTab = 'places' | 'scenic' | 'events';
 type View = 'profile' | ContentTab | 'feedback';
@@ -25,20 +29,6 @@ const thumb = (img: string) => 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)),
 
 const OK = { status: 'Батлагдсан', stBg: 'rgba(168,213,162,.15)', stColor: '#a8d5a2' };
 const PENDING = { status: 'Хүлээгдэж буй', stBg: 'rgba(232, 184, 75,.15)', stColor: 'var(--accent,#E8B84B)' };
-
-const BASE: Record<ContentTab, ContentItem[]> = {
-  places: [
-    { name: 'Sky Lounge 21', meta: 'Хоол & Кофе · Улаанбаатар', img: '1517248135467-4c7edcad34c4', ...OK },
-    { name: 'Terrace Garden', meta: 'Хоол & Кофе · Улаанбаатар', img: '1414235077428-338989a2e8c0', ...OK },
-    { name: 'Night Sky Bar', meta: 'Шөнийн амьдрал · Улаанбаатар', img: '1514933651103-005eec06c04b', ...PENDING },
-  ],
-  scenic: [
-    { name: 'Богд уулын шандас', meta: 'Үзэсгэлэнт газар · Улаанбаатар', img: '1519681393784-d120267933ba', ...OK },
-  ],
-  events: [
-    { name: 'Rooftop Jazz Evening', meta: '7-р сарын 20 · Sky Lounge 21', img: '1514933651103-005eec06c04b', ...PENDING },
-  ],
-};
 
 const TOPICS = ['Санал', 'Асуудал', 'Гомдол', 'Хамтын ажиллагаа'];
 
@@ -54,15 +44,17 @@ const NAV: { key: View; icon: LucideIcon; label: string }[] = [
 
 export default function HostProfile() {
   const isMobile = useIsMobile();
+  const router = useRouter();
+  const [session, setSession] = useState<Session | null | undefined>(undefined); // undefined = not checked yet
   const [view, setView] = useState<View>('profile');
   const [sbCollapsed, setSbCollapsed] = useState(false);
-  const [added, setAdded] = useState<Record<ContentTab, ContentItem[]>>({ places: [], scenic: [], events: [] });
+  const [content, setContent] = useState<Record<ContentTab, ContentItem[]>>({ places: [], scenic: [], events: [] });
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
 
   const [editOpen, setEditOpen] = useState(false);
-  const [phone, setPhone] = useState('9911 2233');
-  const [email, setEmail] = useState('bold@skylounge.mn');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [ePhone, setEPhone] = useState('');
   const [eEmail, setEEmail] = useState('');
   const [copied, setCopied] = useState('');
@@ -70,9 +62,40 @@ export default function HostProfile() {
   const [fbTopic, setFbTopic] = useState('Санал');
   const [fbText, setFbText] = useState('');
   const [fbSent, setFbSent] = useState(false);
-  const [history, setHistory] = useState<HistoryEntry[]>([
-    { topic: 'Асуудал', text: 'Газрын зургийг шинэчлэх боломжтой юу?', status: 'Хариулсан ✓', stColor: '#a8d5a2' },
-  ]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+
+  // /host is a standalone route (not wrapped by BigBangLayout), so the only
+  // way it knows who's signed in is the same localStorage session the
+  // "Host болох" flow on /profile writes (see lib/session.ts). No session,
+  // or a plain 'user' who never became a host — send them back there.
+  useEffect(() => {
+    const s = getSession();
+    if (!s || (s.user.role !== 'host' && s.user.role !== 'admin')) {
+      router.replace('/profile');
+      return;
+    }
+    setSession(s);
+    setPhone(s.user.phoneNumber || '');
+    setEmail(s.user.email);
+  }, [router]);
+
+  const refetchMine = React.useCallback((token: string, userId: number) => {
+    Promise.all([
+      apiGetAuthed<any[]>('/places/mine', token),
+      apiGet<any[]>('/scenic-pins'),
+      apiGet<any[]>('/events'),
+    ]).then(([myPlaces, pins, events]) => {
+      const toItem = (name: string, meta: string, img: string, approved: boolean): ContentItem =>
+        ({ name, meta, img: img || '', ...(approved ? OK : PENDING) });
+      setContent({
+        places: myPlaces.map((p) => toItem(p.name, [p.category?.name, p.aimag?.name].filter(Boolean).join(' · '), p.image, p.status === 'approved')),
+        scenic: pins.filter((p) => p.addedBy === userId).map((p) => toItem(p.name, [p.type, p.aimag?.name].filter(Boolean).join(' · '), p.image, true)),
+        events: events.filter((ev) => ev.addedBy === userId).map((ev) => toItem(ev.name, [ev.tag, ev.aimag?.name].filter(Boolean).join(' · '), ev.image, true)),
+      });
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => { if (session) refetchMine(session.token, session.user.id); }, [session, refetchMine]);
 
   const copy = (key: string, val: string) => () => {
     try { navigator.clipboard.writeText(val); } catch { /* clipboard unavailable */ }
@@ -81,21 +104,21 @@ export default function HostProfile() {
   };
 
   const infoRows = [
-    { icon: Hash, label: 'Host ID', value: 'BB-H-00214', mono: 'ui-monospace,Menlo,monospace', copyable: true, key: 'id', val: 'BB-H-00214' },
-    { icon: Phone, label: 'Утасны дугаар', value: phone, mono: 'inherit', copyable: true, key: 'ph', val: phone },
+    { icon: Hash, label: 'Хэрэглэгчийн нэр', value: session?.user.username || '', mono: 'inherit', copyable: true, key: 'un', val: session?.user.username || '' },
+    { icon: Phone, label: 'Утасны дугаар', value: phone || '—', mono: 'inherit', copyable: !!phone, key: 'ph', val: phone },
     { icon: Mail, label: 'Имэйл', value: email, mono: 'inherit', copyable: true, key: 'em', val: email },
-    { icon: Clock, label: 'Бүртгүүлсэн', value: '2026 оны 3-р сар', mono: 'inherit', copyable: false, key: '', val: '' },
+    { icon: Clock, label: 'Эрх', value: session?.user.role === 'admin' ? 'Админ' : 'Host', mono: 'inherit', copyable: false, key: '', val: '' },
   ];
 
   const stats = [
-    { value: '3', label: 'Газар', color: '#f2ede3' },
-    { value: '2.4k', label: 'Үзэлт', color: 'var(--accent,#E8B84B)' },
-    { value: '182', label: 'Хадгалалт', color: '#a8d5a2' },
+    { value: String(content.places.length), label: 'Газар', color: '#f2ede3' },
+    { value: String(content.scenic.length), label: 'Үзэсгэлэнт', color: 'var(--accent,#E8B84B)' },
+    { value: String(content.events.length), label: 'Эвент', color: '#a8d5a2' },
   ];
 
   useEffect(() => { setQuery(''); }, [view]);
 
-  const list = (t: ContentTab) => BASE[t].concat(added[t]);
+  const list = (t: ContentTab) => content[t];
   // Which content type the current view is showing — only meaningful while
   // view is 'places'/'scenic'/'events', but always defined so hooks below
   // (and the "+ нэмэх" button) have something to read regardless of view.
@@ -107,22 +130,24 @@ export default function HostProfile() {
 
   const openAdd = () => setAddOpen(true);
   const closeAdd = () => setAddOpen(false);
-  const onFormSubmit = (data: CreateFormData) => {
-    setAdded((s) => {
-      const item: ContentItem =
-        data.kind === 'place'
-          ? { name: data.name + (data.access ? ' ♿' : ''), meta: [data.catName, data.sub, data.aimag].filter(Boolean).join(' · '), img: data.images[0] || '1441974231531-c6227db76b6e', ...PENDING }
-          : data.kind === 'scenic'
-          ? { name: (data.icon || '🏔️') + ' ' + data.name, meta: (data.desc || '—') + (data.lat != null ? ' · ' + data.lat.toFixed(3) + ', ' + data.lng!.toFixed(3) : ''), img: data.images[0] || '1441974231531-c6227db76b6e', ...PENDING }
-          : { name: data.name, meta: [data.date, data.time].filter(Boolean).join(' ') + ' · дээд тал ' + data.max + ' хүн', img: data.images[0] || '1441974231531-c6227db76b6e', ...PENDING };
-      const tabKey: ContentTab = data.kind === 'place' ? 'places' : data.kind === 'scenic' ? 'scenic' : 'events';
-      return { ...s, [tabKey]: [item, ...s[tabKey]] };
-    });
-    setAddOpen(false);
+  const onFormSubmit = async (data: CreateFormData) => {
+    if (!session) return;
+    try {
+      if (data.kind === 'place') await createPlace(session.token, data);
+      else if (data.kind === 'scenic') await createScenicPin(session.token, data);
+      else await createEvent(session.token, data);
+      setAddOpen(false);
+      refetchMine(session.token, session.user.id);
+    } catch (err) {
+      alert('Үүсгэхэд алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
+    }
   };
 
   const addKind: CreateKind = contentKey === 'scenic' ? 'scenic' : contentKey === 'events' ? 'event' : 'place';
   const addLabel = contentKey === 'scenic' ? 'Үзэсгэлэнт газар нэмэх' : contentKey === 'events' ? 'Эвент нэмэх' : 'Газар нэмэх';
+
+  if (session === undefined) return null;
+  if (!session) return null;
 
   const sendFb = () => {
     if (!fbText.trim()) return;
@@ -200,12 +225,12 @@ export default function HostProfile() {
               <div className="relative border border-[rgba(255,255,255,.12)] rounded-[20px] overflow-hidden bg-[rgba(255,255,255,.03)]">
                 <div className="h-[110px] bg-cover bg-center" style={{ backgroundImage: `linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.55)), url("${PLACEHOLDER_IMG}")` }}></div>
                 <div className="px-[22px] pb-[22px]">
-                  <div className="w-[76px] h-[76px] rounded-full bg-[linear-gradient(135deg,#E8B84B,#b57f42)] border-[3px] border-[#171410] flex items-center justify-center text-[26px] font-extrabold text-[#132a1f] -mt-[38px]">Б</div>
+                  <div className="w-[76px] h-[76px] rounded-full bg-[linear-gradient(135deg,#E8B84B,#b57f42)] border-[3px] border-[#171410] flex items-center justify-center text-[26px] font-extrabold text-[#132a1f] -mt-[38px]">{(session.user.username || '?').charAt(0).toUpperCase()}</div>
                   <div className="flex items-center gap-[9px] mt-3">
-                    <span className="text-[19px] font-extrabold tracking-[-0.02em]">Болд-Эрдэнэ</span>
-                    <span className="text-[9.5px] font-extrabold tracking-[.08em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(168,213,162,.15)] border border-[rgba(168,213,162,.45)] text-[#a8d5a2]">Баталгаажсан</span>
+                    <span className="text-[19px] font-extrabold tracking-[-0.02em]">{session.user.username}</span>
+                    <span className="text-[9.5px] font-extrabold tracking-[.08em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(168,213,162,.15)] border border-[rgba(168,213,162,.45)] text-[#a8d5a2]">{session.user.role === 'admin' ? 'Админ' : 'Host'}</span>
                   </div>
-                  <div className="text-xs text-[rgba(242,237,227,.55)] mt-[3px]">Sky Lounge 21 · Улаанбаатар</div>
+                  <div className="text-xs text-[rgba(242,237,227,.55)] mt-[3px]">{session.user.email}</div>
 
                   <div className="flex flex-col gap-px mt-[18px] border border-[rgba(255,255,255,.09)] rounded-[13px] overflow-hidden">
                     {infoRows.map((r, i) => (

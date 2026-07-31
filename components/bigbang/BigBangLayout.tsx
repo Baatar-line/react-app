@@ -14,11 +14,14 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Target, Users, Zap, Globe } from 'lucide-react';
 import CreateForm, { CreateFormData } from '../CreateForm';
 import {
-  U, ratingOf, STR, CATS, PINS, TEAM, EVENTS, SUGGESTS, TRAVEL_APPS, sitesFor, FEATURED_EVENT, AIMAGS, AIMAG_MN_SCRIPT,
-  GEO_MN, LABEL_OFF, AIMAG_BG, FCRIT, ACCESS_NAMES,
-  catBgOf, thumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, lonLatToXY, xyToLonLat, mapsUrlFor,
+  ratingOf, STR, CATS, TEAM, SUGGESTS, TRAVEL_APPS, sitesFor, AIMAGS, AIMAG_MN_SCRIPT,
+  GEO_MN, LABEL_OFF, AIMAG_BG,
+  catBgOf, itemThumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, xyToLonLat, mapsUrlFor,
+  type Pin, type CatItem, type Cat,
 } from './data';
-import { apiGet } from '../../lib/api';
+import { apiGet, apiPost } from '../../lib/api';
+import { getSession, saveSession } from '../../lib/session';
+import { createScenicPin, createEvent } from '../../lib/hostContent';
 import { BgMedia } from './ui';
 
 // Replaces react-router's <Outlet context={V}/> + useOutletContext() pair —
@@ -32,6 +35,22 @@ const e = React.createElement;
 
 // Sunflower/phyllotaxis scatter angle — see syncMainMap's pin placement.
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+const EVENT_MONTHS_MN = ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар'];
+
+// A real Event's `startDate` (an ISO timestamp) shaped into the old
+// day/month display pair (EVENTS used to carry these as separate literal
+// fields) — used wherever an event's date needs to render as text.
+function eventDayMon(iso: string): { day: string; mon: string } {
+  const d = new Date(iso);
+  if (isNaN(+d)) return { day: '01', mon: EVENT_MONTHS_MN[0] };
+  return { day: String(d.getDate()).padStart(2, '0'), mon: EVENT_MONTHS_MN[d.getMonth()] };
+}
+
+function fmtEventDate(iso: string): string {
+  const { day, mon } = eventDayMon(iso);
+  return day + ', ' + mon;
+}
 
 // Last background settings fetched from the backend, read synchronously so the very
 // first render already shows the real photo instead of the placeholder for a beat.
@@ -63,8 +82,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
   _bgOk: any = {};
   _bgLd: any = {};
   _lastAimagBg: any = null;
-  _pickMap: any = null;
-  _pickMarker: any = null;
   globeEngine: any = null;
   _globeEl: any = null;
   _globeTimer: any = null;
@@ -87,18 +104,18 @@ export default class BigBangLayout extends React.Component<Props, any> {
     active: -1, aimag: 'Бүгд', lang: 'mn', locOpen: false,
     pin: -1, saved: {}, favs: {}, joined: {}, myRatings: {}, mapAimag: null, hoverAimag: null,
     spNeeds: false, bigText: false, globeCountry: null, globeHover: null, globeFilter: null,
-    globeQuery: '', globeReady: false, myScenic: [], myEvents: [],
+    globeQuery: '', globeReady: false,
     showScenicForm: false,
     showEventForm: false,
-    userPins: [], showAddForm: false,
+    // Real place/event/scenic-pin rows fetched from the backend (see
+    // fetchLiveContent) — replaces the old static PINS/EVENTS/CATS[].items
+    // mock arrays as the single source of truth for content everywhere below.
+    livePlaces: [], liveEvents: [], liveScenicPins: [],
     // "Host болох" — becoming a host is the same account gaining host
     // capability (User.role: user -> host in the schema), not a separate
     // signup; see the Profile page section this drives.
     isHost: false, showHostForm: false, hostSubmitted: false,
     hEmail: '', hPhone: '', hPass: '', hInstagram: '', hFacebook: '', hErr: '',
-    fRole: 'host', fName: '', fCat: '', fSub: '', fAimag: 'Дорнод', fOpen: '', fClose: '',
-    fDesc: '', fMapUrl: '', fImg: '', fLat: null, fLng: null, fPhone: '',
-    fAccess: false, fCrit: [false, false, false, false, false], fMsg: '', fErr: false,
     pinMode: 'scenic', heroHover: null,
     // Seeded from the last successful /settings fetch (see fetchSettings below) so a
     // refresh shows the real saved photo immediately instead of flashing the built-in
@@ -131,14 +148,21 @@ export default class BigBangLayout extends React.Component<Props, any> {
     fetch('/assets/mn-aimags.json').then((r) => r.json()).then((g) => { this.geo = g; this.forceUpdate(); this.syncMainMap(); }).catch(() => {});
     this.fetchSettings();
     this.fetchContentBgs();
+    this.fetchLiveContent();
     // Admin Panel runs in a separate tab, so a tab already sitting open on this page
     // would otherwise never see a background change until manually reloaded — refetch
     // whenever this tab regains focus so it picks up the latest saved image.
     window.addEventListener('focus', this.fetchSettings);
     window.addEventListener('focus', this.fetchContentBgs);
+    window.addEventListener('focus', this.fetchLiveContent);
     try {
       this.setState({ spNeeds: localStorage.getItem('bb_sp') === '1', bigText: localStorage.getItem('bb_big') === '1' });
     } catch (err) { /* ignore */ }
+    // Restores "Host болох" state across a refresh — today's session is read
+    // straight from localStorage (see lib/session.ts) rather than kept only
+    // in this component's own memory.
+    const session = getSession();
+    if (session) this.setState({ isHost: session.user.role === 'host' || session.user.role === 'admin', hostSubmitted: true });
     this._mnVertResize = () => { this.updateHeroVertPos(); };
     window.addEventListener('resize', this._mnVertResize);
     this._vwResize = () => { if (this.state.vw !== window.innerWidth) this.setState({ vw: window.innerWidth }); };
@@ -156,7 +180,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
       const pinsChanged =
         prevState.pinMode !== this.state.pinMode || prevState.mapAimag !== this.state.mapAimag ||
         prevState.pin !== this.state.pin || prevState.lang !== this.state.lang ||
-        prevState.bigText !== this.state.bigText || prevState.userPins !== this.state.userPins;
+        prevState.bigText !== this.state.bigText || prevState.livePlaces !== this.state.livePlaces ||
+        prevState.liveEvents !== this.state.liveEvents || prevState.liveScenicPins !== this.state.liveScenicPins;
       const hoverChanged = prevState.hoverAimag !== this.state.hoverAimag;
       if (pinsChanged) this.syncMainMap();
       else if (hoverChanged) this.syncMainMap(false);
@@ -196,6 +221,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     this.unmountMainMap();
     window.removeEventListener('focus', this.fetchSettings);
     window.removeEventListener('focus', this.fetchContentBgs);
+    window.removeEventListener('focus', this.fetchLiveContent);
     if (this._mnVertResize) window.removeEventListener('resize', this._mnVertResize);
     if (this._vwResize) window.removeEventListener('resize', this._vwResize);
   }
@@ -246,6 +272,45 @@ export default class BigBangLayout extends React.Component<Props, any> {
       } catch (err) { /* ignore */ }
     }).catch(() => {});
   };
+
+  // Real content — approved places, live events, scenic pins — replacing the
+  // old static PINS/EVENTS/CATS[].items mock arrays. Re-run after any
+  // successful create (see onScenicSubmit/onEventSubmit) so a new submission
+  // shows up immediately instead of waiting for the next focus/refresh.
+  fetchLiveContent = () => {
+    Promise.all([
+      apiGet<any[]>('/places'),
+      apiGet<any[]>('/events'),
+      apiGet<any[]>('/scenic-pins'),
+    ]).then(([livePlaces, liveEvents, liveScenicPins]) => {
+      this.setState({ livePlaces, liveEvents, liveScenicPins });
+    }).catch(() => {});
+  };
+
+  // CATS shell (slug/name/subs/hero/pool/...) with real Place rows grouped
+  // into `.items`/`.previews` by category — every other place this file used
+  // to read CATS directly for content now reads this instead.
+  liveCats(): Cat[] {
+    const places: any[] = this.state.livePlaces || [];
+    return CATS.map((c) => {
+      const items: CatItem[] = places
+        .filter((p) => p.category && p.category.slug === c.slug)
+        .map((p) => {
+          const hours = p.openTime && p.closeTime ? `${p.openTime}–${p.closeTime}` : '';
+          return {
+            name: p.name,
+            meta: [p.subCategory, hours].filter(Boolean).join(' · ') || p.description || '',
+            sub: p.subCategory || c.subs[0],
+            aimag: p.aimag ? p.aimag.name : 'Улаанбаатар',
+            hours, phone: p.phone || '', desc: p.description || '',
+            access: !!p.accessible, img: p.image || '',
+            lat: p.lat ?? undefined, lng: p.lng ?? undefined, mapUrl: p.googleMapUrl || undefined,
+            id: p.id,
+          } as CatItem;
+        });
+      return { ...c, items, previews: items.slice(0, 3).map((it) => ({ name: it.name, meta: it.meta })) };
+    });
+  }
 
   // ── geometry ──
   // Parses a shape's `d` (a series of `M x,y L x,y ... Z` subpaths, in the
@@ -340,51 +405,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
     layer.on('tileerror', () => { errors++; if (errors >= 4) tryNext(); });
     armTimeout();
     return layer;
-  }
-
-  pickMapRef = (node: any) => {
-    if (!node) {
-      if (this._pickMap) { this._pickMap.remove(); this._pickMap = null; this._pickMarker = null; }
-      return;
-    }
-    if (this._pickMap) return;
-    const init = () => {
-      if (!node.isConnected) return;
-      if (!window.L) { setTimeout(init, 150); return; }
-      const m = window.L.map(node, {
-        attributionControl: false, minZoom: 3,
-        maxBounds: [[-90, -180], [90, 180]], maxBoundsViscosity: 1,
-      });
-      m.setView([46.9, 103.8], 5);
-      this.addBasemap(m, 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', ['0', '1', '2', '3']);
-      m.on('click', (ev: any) => this.pickLocation(ev.latlng.lat, ev.latlng.lng));
-      this._pickMap = m;
-      if (this.state.fLat != null) this.placePickMarker(this.state.fLat, this.state.fLng);
-      setTimeout(() => m.invalidateSize(), 120);
-    };
-    init();
-  };
-
-  placePickMarker(lat: number, lng: number) {
-    if (!this._pickMap || !window.L) return;
-    if (this._pickMarker) this._pickMarker.remove();
-    this._pickMarker = window.L.marker([lat, lng], {
-      icon: window.L.divIcon({
-        className: '',
-        html: '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#E8B84B;border:2px solid #132a1f;box-shadow:0 3px 6px rgba(0,0,0,.5)"></div>',
-        iconSize: [22, 22], iconAnchor: [4, 21],
-      }),
-    }).addTo(this._pickMap);
-  }
-
-  pickLocation(lat: number, lng: number) {
-    this.placePickMarker(lat, lng);
-    const xy = lonLatToXY(lng, lat);
-    const aimag = this.xyToAimag(xy[0], xy[1]);
-    this.setState((s: any) => ({
-      fLat: lat, fLng: lng, fAimag: aimag || s.fAimag,
-      fMapUrl: 'https://www.google.com/maps/search/?api=1&query=' + lat.toFixed(5) + '%2C' + lng.toFixed(5),
-    }));
   }
 
   // ── globe ──
@@ -617,24 +637,33 @@ export default class BigBangLayout extends React.Component<Props, any> {
     }
   }
 
-  allPins() { return PINS.concat(this.state.userPins || []); }
+  // Real ScenicPin rows shaped into Pin[] — replaces PINS.concat(userPins).
+  allPins(): Pin[] {
+    return (this.state.liveScenicPins || []).map((p: any): Pin => ({
+      name: p.name, type: p.type, aimag: p.aimag ? p.aimag.name : 'Улаанбаатар',
+      img: p.image || '', desc: p.description || '',
+      mapUrl: p.googleMapUrl || undefined,
+      lat: p.lat ?? undefined, lng: p.lng ?? undefined,
+    }));
+  }
 
   mapPins(): any[] {
     const mode = this.state.pinMode || 'scenic';
     if (mode === 'places') {
       const out: any[] = [];
-      CATS.forEach((c) => c.items.forEach((it, i) => out.push({
+      this.liveCats().forEach((c) => c.items.forEach((it) => out.push({
         name: it.name, type: it.sub || c.name, aimag: it.aimag || 'Улаанбаатар',
-        img: c.pool[i % c.pool.length], desc: it.meta, cat: c.slug,
+        img: it.img || '', desc: it.meta, cat: c.slug,
+        lat: it.lat, lng: it.lng, mapUrl: it.mapUrl, hours: it.hours, access: it.access,
       })));
       return out;
     }
     if (mode === 'events') {
-      return [{ name: FEATURED_EVENT.name, type: 'Наадам', aimag: 'Төв', img: FEATURED_EVENT.img, desc: FEATURED_EVENT.date + ' · ' + FEATURED_EVENT.meta }]
-        .concat(EVENTS.map((ev) => ({
-          name: ev.name, type: ev.tag, aimag: (ev as any).aimag || 'Улаанбаатар',
-          img: ev.img || FEATURED_EVENT.img, desc: ev.day + ', ' + ev.mon + ' · ' + ev.meta,
-        })) as any);
+      return (this.state.liveEvents || []).map((ev: any) => ({
+        name: ev.name, type: ev.tag || 'Эвент', aimag: ev.aimag ? ev.aimag.name : 'Улаанбаатар',
+        img: ev.image || '', desc: [fmtEventDate(ev.startDate), ev.meta].filter(Boolean).join(' · '),
+        lat: ev.lat, lng: ev.lng,
+      }));
     }
     return this.allPins();
   }
@@ -707,7 +736,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // not the separate scenic-spot PINS array (vзэсгэлэнт газрын пин).
     const selSh = sel ? geo.shapes.find((s: any) => mnOf(s.name) === sel) : null;
     if (selSh) {
-      const pinCount = CATS.reduce((n: number, c: any) => n + c.items.filter((it: any) => (it.aimag || 'Улаанбаатар') === sel).length, 0);
+      const pinCount = this.liveCats().reduce((n: number, c: any) => n + c.items.filter((it: any) => (it.aimag || 'Улаанбаатар') === sel).length, 0);
       if (pinCount > 0) {
         const off = LABEL_OFF[selSh.name] || [0, 0];
         const countFs = mini ? 15 : (bigText ? 10.5 : 8);
@@ -772,7 +801,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // allPins() concatenates PINS + userPins fresh each call — compute it once
     // instead of up to twice per category (14x total) as this used to.
     const allPinsOnce = this.allPins();
-    const navCats = CATS.map((c, i) => {
+    // Real Place rows grouped into CATS shape — computed once per render and
+    // reused below instead of reading the (now-empty) CATS[].items directly.
+    const cats = this.liveCats();
+    const navCats = cats.map((c, i) => {
       const isA = active === i;
       const catCount = aimag === 'Бүгд'
         ? c.items.length + allPinsOnce.filter((p) => p.cat === c.slug).length
@@ -788,12 +820,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // Home's hover/selection preview always stays a still photo — even a
     // category with an uploaded background *video* (shown once you're inside
     // its own page) only shows its photo here.
-    const bgLayers = CATS.map((c, i) => {
+    const bgLayers = cats.map((c, i) => {
       const override = this.state.catBgOverride[c.slug] || '';
       return { bg: catBgOf(c, override), opacity: active === i ? 1 : 0 };
     });
 
-    const activeCat = active >= 0 ? CATS[active] : null;
+    const activeCat = active >= 0 ? cats[active] : null;
     const topItems = activeCat
       ? activeCat.items.map((it, idx) => ({ it, idx, rating: ratingOf(it.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
       : [];
@@ -802,7 +834,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         key: activeCat.slug + '-' + o.idx, onClick: () => this.openPlace(activeCat, o.idx), 'aria-label': o.it.name,
         style: { all: 'unset', cursor: 'pointer', width: '160px', height: '200px', boxSizing: 'border-box', position: 'relative', overflow: 'hidden', border: '1px solid rgba(255,255,255,.1)', borderRadius: '18px', animation: 'bbCardIn .55s cubic-bezier(.22,.8,.3,1) both', animationDelay: (i * 80) + 'ms' } as any,
       },
-        e(BgMedia, { bg: thumbOf(activeCat, o.idx).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'), className: 'absolute inset-0', imgClassName: 'bg-cover bg-center' }),
+        e(BgMedia, { bg: itemThumbOf(o.it.img).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'), className: 'absolute inset-0', imgClassName: 'bg-cover bg-center' }),
         e('div', { style: { position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.18) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.92) 100%)', pointerEvents: 'none' } }),
         e('div', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: '13px 15px', pointerEvents: 'none' } },
           e('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '7px' } },
@@ -811,8 +843,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
           e('div', { style: { fontSize: '14px', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.2, color: '#f6f1e7' } }, o.it.name),
           e('div', { style: { fontSize: '11.5px', color: 'rgba(242,237,227,.62)', marginTop: '4px' } }, o.it.meta))) as any) : null;
 
-    const placeCountFor = (a: string) => CATS.reduce((n, c) => n + c.items.filter((it) => (it.aimag || 'Улаанбаатар') === a).length, 0);
-    const totalPlaces = CATS.reduce((n, c) => n + c.items.length, 0);
+    const placeCountFor = (a: string) => cats.reduce((n, c) => n + c.items.filter((it) => (it.aimag || 'Улаанбаатар') === a).length, 0);
+    const totalPlaces = cats.reduce((n, c) => n + c.items.length, 0);
     const aimagOpts = ([['Бүгд', 'All']] as [string, string][]).concat(AIMAGS).map((a) => {
       const on = aimag === a[0];
       return {
@@ -843,12 +875,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
     });
 
     const favPlaces: any[] = [];
-    CATS.forEach((c) => c.items.forEach((it, i) => {
+    cats.forEach((c) => c.items.forEach((it) => {
       const key = 'p:' + c.slug + ':' + it.name;
       if (!favs[key]) return;
       favPlaces.push({
-        name: it.name, sub: it.sub, rating: ratingOf(it.name), accShow: isAccessible(it.name) ? 'flex' : 'none',
-        thumb: thumbOf(c, i).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
+        name: it.name, sub: it.sub, rating: ratingOf(it.name), accShow: it.access ? 'flex' : 'none',
+        thumb: itemThumbOf(it.img).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
         displayMeta: it.meta + ' · ' + aimagName(it.aimag || 'Улаанбаатар', lang), toggleFav: toggleFav(key), ...heartOf(true),
       });
     }));
@@ -875,93 +907,75 @@ export default class BigBangLayout extends React.Component<Props, any> {
     } : false;
 
     const st = this.state;
-    const roleOpts = ([['host', L.roleHost], ['user', L.roleUser], ['admin', L.roleAdmin]] as [string, string][]).map((r) => {
-      const on = st.fRole === r[0];
-      return { label: r[1], pick: () => this.setState({ fRole: r[0] }), bg: on ? accent : 'rgba(255,255,255,.04)', color: on ? '#132a1f' : 'rgba(242,237,227,.8)', border: on ? accent : 'rgba(242,237,227,.18)' };
-    });
-    const catOpts = CATS.map((c) => ({ value: c.slug, label: lang === 'en' ? c.nameEn : c.name }));
-    const curCat = CATS.find((c) => c.slug === st.fCat) || CATS[0];
-    const subOpts = curCat.subs.map((s) => ({ value: s, label: s }));
-    const aimagFormOpts = AIMAGS.map((a) => ({ value: a[0], label: lang === 'en' ? a[1] : a[0] }));
     const setF = (k: string) => (ev: any) => this.setState({ [k]: ev.target.value });
-    const onImg = (ev: any) => {
-      const f = ev.target.files && ev.target.files[0]; if (!f) return;
-      const rd = new FileReader(); rd.onload = () => this.setState({ fImg: rd.result }); rd.readAsDataURL(f);
-    };
-    const openAddForm = () => this.setState({ showAddForm: true, fMsg: '', fErr: false, fCat: st.fCat || CATS[0].slug, fSub: st.fSub || CATS[0].subs[0], fAimag: mapAimag || 'Дорнод' });
-    const submitPlace = () => {
-      if (!st.fName.trim()) { this.setState({ fMsg: L.errName, fErr: true }); return; }
-      const c = CATS.find((x) => x.slug === (st.fCat || CATS[0].slug)) || CATS[0];
-      const hrs = (st.fOpen && st.fClose) ? (st.fOpen + '–' + st.fClose) : '';
-      const pool = ['1470071459604-3b5ec3a7fe05', '1441974231531-c6227db76b6e', '1504280390367-361c6d9f38f4'];
-      const accessible = st.fAccess && st.fCrit.every(Boolean);
-      const newPin: any = {
-        name: st.fName.trim(), type: st.fSub || c.subs[0], aimag: st.fAimag,
-        img: st.fImg || pool[Math.floor(Math.random() * pool.length)],
-        desc: st.fDesc.trim() || '—', hours: hrs, mapUrl: st.fMapUrl.trim() || '',
-        phone: st.fPhone.trim() || '', access: accessible, cat: c.slug, addedBy: st.fRole,
-      };
-      if (accessible) ACCESS_NAMES[st.fName.trim()] = 1;
-      if (st.fLat != null) { newPin.lat = st.fLat; newPin.lng = st.fLng; const xy = lonLatToXY(st.fLng, st.fLat); newPin.px = xy[0]; newPin.py = xy[1]; }
-      this.setState((s: any) => ({
-        userPins: s.userPins.concat([newPin]), showAddForm: false, mapAimag: st.fAimag, pin: -1,
-        fName: '', fSub: '', fOpen: '', fClose: '', fDesc: '', fMapUrl: '', fImg: '', fLat: null, fLng: null,
-        fPhone: '', fAccess: false, fCrit: [false, false, false, false, false], fMsg: '', fErr: false,
-      }));
-    };
 
     // Same shared "add place/scenic/event" modal Host and Admin use (map picker +
     // what3words + satellite tiles included) instead of this layout's own hand-rolled
-    // scenic/event forms — see CreateForm.tsx.
-    const openScenicForm = () => this.setState({ showScenicForm: true });
-    const onScenicSubmit = (data: CreateFormData) => {
-      this.setState((s: any) => ({
-        myScenic: [{
-          name: data.name.trim(),
-          aimag: data.lat != null ? data.lat.toFixed(3) + ', ' + data.lng!.toFixed(3) : data.aimag,
-          desc: data.desc.trim() || '—',
-          img: data.images[0] || '',
-        }].concat(s.myScenic),
-        showScenicForm: false,
-      }));
+    // scenic/event forms — see CreateForm.tsx. Adding a place is host business (see
+    // the Profile page's "Контент нэмэх" section) — only scenic pins and events are
+    // offered here to a plain logged-in visitor.
+    const openScenicForm = () => this.setState({ showScenicForm: true, hErr: '' });
+    const onScenicSubmit = async (data: CreateFormData) => {
+      const session = getSession();
+      if (!session) { this.setState({ showScenicForm: false, showHostForm: true, hErr: L.hErrRequired }); return; }
+      try {
+        await createScenicPin(session.token, data);
+        this.setState({ showScenicForm: false });
+        this.fetchLiveContent();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
     };
-    const openEventForm = () => this.setState({ showEventForm: true });
-    const onEventSubmit = (data: CreateFormData) => {
-      let day = '01', mon = L.eMonFallback;
-      if (data.date) { const d = new Date(data.date); if (!isNaN(+d)) { day = String(d.getDate()).padStart(2, '0'); mon = (d.getMonth() + 1) + (lang === 'en' ? '' : '-р сар'); } }
-      const meta = [data.time, data.desc.trim()].filter(Boolean).join(' · ') || '—';
-      this.setState((s: any) => ({
-        myEvents: [{ day, mon, name: data.name.trim(), meta, tag: L.eTagFallback, img: data.images[0] || '' }].concat(s.myEvents),
-        showEventForm: false,
-      }));
+    const openEventForm = () => this.setState({ showEventForm: true, hErr: '' });
+    const onEventSubmit = async (data: CreateFormData) => {
+      const session = getSession();
+      if (!session) { this.setState({ showEventForm: false, showHostForm: true, hErr: L.hErrRequired }); return; }
+      try {
+        await createEvent(session.token, data);
+        this.setState({ showEventForm: false });
+        this.fetchLiveContent();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
     };
     const openHostForm = () => this.setState({ showHostForm: true, hErr: '' });
     const closeHostForm = () => this.setState({ showHostForm: false });
-    // Mock submit (no backend role-upgrade endpoint yet) — flips this same
-    // account to host locally, same "pending admin approval" messaging the
-    // old host-signup flow on /login used to show. Rejects an obviously
-    // malformed email/phone/password before doing that instead of silently
-    // accepting whatever was typed.
-    const submitHost = () => {
+    // Real signup — POSTs to /api/auth/register with role: 'host' (self-serve,
+    // no admin-approval queue — see the plan this shipped under) and stores
+    // the resulting session (lib/session.ts) so it survives a refresh and so
+    // onScenicSubmit/onEventSubmit/CreateForm on /host can act as this user.
+    const submitHost = async () => {
       const email = st.hEmail.trim(), phone = st.hPhone.trim(), pass = st.hPass.trim();
       if (!email || !phone || !pass) { this.setState({ hErr: L.hErrRequired }); return; }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.setState({ hErr: L.hErrEmail }); return; }
       if (!/^\d{8}$/.test(phone)) { this.setState({ hErr: L.hErrPhone }); return; }
       if (pass.length < 8) { this.setState({ hErr: L.hErrPass }); return; }
-      this.setState({ isHost: true, hostSubmitted: true, showHostForm: false, hErr: '' });
+      const username = email.split('@')[0];
+      try {
+        const res = await apiPost<{ token: string; user: any }>('/auth/register', {
+          email, password: pass, username, phoneNumber: phone, role: 'host',
+        });
+        saveSession(res.token, res.user);
+        this.setState({ isHost: true, hostSubmitted: true, showHostForm: false, hErr: '' });
+      } catch (err) {
+        this.setState({ hErr: err instanceof Error ? err.message : String(err) });
+      }
     };
-    const readImg = (key: string) => (ev: any) => { const f = ev.target.files && ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => this.setState({ [key]: r.result }); r.readAsDataURL(f); };
     const evThumb = (img: any) => img ? 'url("' + img + '")' : 'linear-gradient(135deg, rgba(232, 184, 75,.25), rgba(120,200,170,.15))';
-    const fe = FEATURED_EVENT;
+    const liveEvents: any[] = this.state.liveEvents || [];
+    const featuredEvent = liveEvents.find((ev) => ev.featured) || liveEvents[0] || null;
+    const fe = featuredEvent
+      ? { name: featuredEvent.name, date: fmtEventDate(featuredEvent.startDate), meta: featuredEvent.meta || '', img: featuredEvent.image || '' }
+      : { name: '', date: '', meta: '', img: '' };
 
     const topScenic = this.allPins().map((p) => ({ p, rating: ratingOf(p.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
       .map((o) => ({ name: o.p.name, sub: o.p.type, rating: o.rating, kind: L.favScenic, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.p.img, 500) + '")', onClick: () => { this.setState({ pinMode: 'scenic' }); go('pin'); } }));
     const flatPlaces: any[] = [];
-    CATS.forEach((c) => c.items.forEach((it, i) => flatPlaces.push({ it, cat: c, idx: i })));
+    cats.forEach((c) => c.items.forEach((it, i) => flatPlaces.push({ it, cat: c, idx: i })));
     const topPlaces = flatPlaces.map((o) => ({ ...o, rating: ratingOf(o.it.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
-      .map((o) => ({ name: o.it.name, sub: o.it.sub, rating: o.rating, kind: L.favPlaces, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + U(o.cat.pool[o.idx % o.cat.pool.length], 500) + '")', onClick: () => this.openPlace(o.cat, o.idx) }));
-    const topEvents = EVENTS.map((ev) => ({ ev, rating: ratingOf(ev.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
-      .map((o) => ({ name: o.ev.name, sub: o.ev.tag, rating: o.rating, kind: L.eventTitle, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + U(o.ev.img || fe.img, 500) + '")', onClick: () => go('event') }));
+      .map((o) => ({ name: o.it.name, sub: o.it.sub, rating: o.rating, kind: L.favPlaces, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.it.img || '', 500) + '")', onClick: () => this.openPlace(o.cat, o.idx) }));
+    const topEvents = liveEvents.map((ev) => ({ ev, rating: ratingOf(ev.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
+      .map((o) => ({ name: o.ev.name, sub: o.ev.tag || L.eTagFallback, rating: o.rating, kind: L.eventTitle, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.ev.image || '', 500) + '")', onClick: () => go('event') }));
     const topItems2: any[] = [];
     for (let i = 0; i < 3; i++) { topItems2.push(topScenic[i], topPlaces[i], topEvents[i]); }
 
@@ -986,6 +1000,18 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const gc = this.state.globeCountry;
     const aimagImg = aimag !== 'Бүгд' ? (this.state.aimagBgOverride[aimag] || AIMAG_BG[aimag] || null) : null;
     if (aimagImg && this.bgReady(aimagImg, 1800)) this._lastAimagBg = aimagImg;
+
+    // "Миний нэмсэн..." on the Profile page — this session's own submissions,
+    // filtered out of the same live-fetched lists everyone else sees.
+    const mySession = getSession();
+    const myScenicItems = mySession
+      ? (this.state.liveScenicPins || []).filter((p: any) => p.addedBy === mySession.user.id)
+        .map((p: any) => ({ name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.image) }))
+      : [];
+    const myEventItems = mySession
+      ? liveEvents.filter((ev: any) => ev.addedBy === mySession.user.id)
+        .map((ev: any) => { const { day, mon } = eventDayMon(ev.startDate); return { day, mon, name: ev.name, meta: ev.meta || '', tag: ev.tag || L.eTagFallback }; })
+      : [];
 
     return {
       accent, driftAnim, L, lang, aimag, favs, toggleFav, myRatings, ratePlace, spNeeds: st.spNeeds,
@@ -1035,8 +1061,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
       hPass: st.hPass, onHPass: setF('hPass'),
       hInstagram: st.hInstagram, onHInstagram: setF('hInstagram'),
       hFacebook: st.hFacebook, onHFacebook: setF('hFacebook'), hErr: st.hErr,
-      hasMyScenic: st.myScenic.length > 0, myScenicItems: st.myScenic.map((s: any) => ({ ...s, thumb: evThumb(s.img) })),
-      hasMyEvents: st.myEvents.length > 0, myEventItems: st.myEvents,
+      hasMyScenic: myScenicItems.length > 0, myScenicItems,
+      hasMyEvents: myEventItems.length > 0, myEventItems,
       aboutNavColor: route === 'about' ? accent : 'rgba(242,237,227,.75)',
       team: TEAM.map((t, i) => ({ name: t[0], role: lang === 'en' ? t[2] : t[1], initial: t[0].charAt(0), avatarBg: 'oklch(78% 0.1 ' + (30 + i * 34) + ')' })),
       abHeroFullBg: 'url("' + imgUrl(this.state.aboutBgOverride || '1470071459604-3b5ec3a7fe05', 1800) + '")',
@@ -1085,38 +1111,25 @@ export default class BigBangLayout extends React.Component<Props, any> {
       heroVertLabel: aimag !== 'Бүгд' && lang === 'mn' ? AIMAG_MN_SCRIPT[aimag] || '' : '',
       heroVertPos: this.state.heroVertPos,
       mapZoomed: !!mapAimag, resetMap: () => this.setState({ mapAimag: null, pin: -1, hoverAimag: null }),
-      aimagPanelShow: !!(mapAimag && !selP && !this.state.showAddForm),
+      aimagPanelShow: !!(mapAimag && !selP),
       panelName: mapAimag ? aimagName(mapAimag, lang) : '',
       panelCount: mapAimag ? this.mapPins().filter((p) => p.aimag === mapAimag).length : 0,
-      showAddForm: st.showAddForm, openAddForm, closeAddForm: () => this.setState({ showAddForm: false }),
-      stop: (ev: any) => ev.stopPropagation(),
-      roleOpts, catOpts, subOpts, aimagFormOpts,
-      formName: st.fName, formCat: st.fCat || CATS[0].slug, formSub: st.fSub || CATS[0].subs[0],
-      formAimag: st.fAimag, formOpen: st.fOpen, formClose: st.fClose, formDesc: st.fDesc, formMapUrl: st.fMapUrl,
-      onName: setF('fName'), onCat: (ev: any) => { const v = ev.target.value; const c = CATS.find((x) => x.slug === v) || CATS[0]; this.setState({ fCat: v, fSub: c.subs[0] }); },
-      onSub: setF('fSub'), onAimag: setF('fAimag'), onOpen: setF('fOpen'), onClose: setF('fClose'),
-      onDesc: setF('fDesc'), onMapUrl: setF('fMapUrl'), onImg, submitPlace,
-      formPhone: st.fPhone, onPhone: setF('fPhone'), formAccess: st.fAccess,
-      toggleFAccess: () => this.setState((s: any) => ({ fAccess: !s.fAccess })),
-      fAccBg: st.fAccess ? 'rgba(120,200,170,.1)' : 'rgba(255,255,255,.04)', fAccBorder: st.fAccess ? 'rgba(120,200,170,.5)' : 'rgba(242,237,227,.18)',
-      fAccSwBg: st.fAccess ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.2)', fAccKnob: st.fAccess ? '20px' : '3px',
-      accCriteria: FCRIT.map((label, i) => {
-        const on = st.fCrit[i];
-        return { label, toggle: () => this.setState((s: any) => { const c = s.fCrit.slice(); c[i] = !c[i]; return { fCrit: c }; }), mark: on ? '✓' : '', boxBg: on ? 'rgba(120,200,170,.9)' : 'transparent', boxBorder: on ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.3)', bg: on ? 'rgba(120,200,170,.08)' : 'transparent', border: on ? 'rgba(120,200,170,.4)' : 'rgba(255,255,255,.12)' };
-      }),
-      accAll: st.fAccess && st.fCrit.every(Boolean),
-      pickMapRef: this.pickMapRef, mapPickHint: st.fLat != null ? L.mapPicked : L.mapPick,
-      noImg: !st.fImg, imgPreviewBg: st.fImg ? 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.1)), url("' + st.fImg + '")' : 'rgba(255,255,255,.03)',
-      formMsg: st.fMsg, errColor: st.fErr ? '#e88a8a' : 'rgba(140,214,150,.9)',
-      fevBg: 'linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.4)), url("' + U(fe.img, 1600) + '")',
+      hasFeaturedEvent: !!featuredEvent,
+      fevBg: 'linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.4)), url("' + imgUrl(fe.img, 1600) + '")',
       fevDate: fe.date, fevName: fe.name, fevMeta: fe.meta,
       openEventDetail: this.openEventDetail,
-      events: st.myEvents.concat(EVENTS.map((ev) => ({ ...ev, thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + U(ev.img, 800) + '")' }))).map((ev: any) => ({ ...ev, thumb: ev.thumb || evThumb(ev.img) }))
-        .map((ev: any, i: number) => {
-          const key = 'e:' + ev.name;
-          return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]), onClick: () => this.openEventDetail(i) };
-        }),
-      suggests, navCats, bgLayers, previewCards, topItems: topItems2,
+      events: liveEvents.map((ev: any) => {
+        const { day, mon } = eventDayMon(ev.startDate);
+        return {
+          day, mon, name: ev.name, meta: ev.meta || '', tag: ev.tag || L.eTagFallback,
+          aimag: ev.aimag ? ev.aimag.name : undefined,
+          thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + imgUrl(ev.image || '', 800) + '")',
+        };
+      }).map((ev: any, i: number) => {
+        const key = 'e:' + ev.name;
+        return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]), onClick: () => this.openEventDetail(i) };
+      }),
+      suggests, cats, navCats, bgLayers, previewCards, topItems: topItems2,
       travelApps: TRAVEL_APPS.map((a) => {
         const raw = (this.state.travelAppsBgOverride || {})[a.slug] || '';
         return {

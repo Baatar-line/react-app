@@ -1,10 +1,9 @@
 'use client';
 
 // Big Bang — Event detail (/event/:index). `:index` is the position of the
-// event inside V.events (myEvents first, then EVENTS — see BigBangLayout's
-// `events:` field) — read via context rather than rebuilt from data.ts like
-// PlaceDetail does, since myEvents (user-submitted) only ever lives on this
-// layout's own state, not in any static file this page could import.
+// event inside V.events (see BigBangLayout's `events:` field, built from the
+// live-fetched Event rows) — read via context since that list comes from the
+// backend, not a static file this page could import and rebuild from.
 import { useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Users, MapPin } from 'lucide-react';

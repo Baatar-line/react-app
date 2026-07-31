@@ -8,16 +8,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, Film, Search, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
 import { useIsMobile } from '@/components/bigbang/ui';
-import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, TRAVEL_APPS, U, imgUrl, isVideoUrl } from '@/components/bigbang/data';
+import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, TRAVEL_APPS, U, imgUrl, isVideoUrl, itemThumbOf } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
-import { apiGet, apiPatch, apiPut, uploadImage } from '@/lib/api';
+import { apiGet, apiGetAuthed, apiPatch, apiPost, apiPut, uploadImage } from '@/lib/api';
+import { createPlace, createScenicPin, createEvent } from '@/lib/hostContent';
 
 type Tab = 'dash' | 'places' | 'scenic' | 'events' | 'suggests' | 'bg' | 'ads';
 
 interface Ad { title: string; desc: string; img: string; from: string; to: string; views: number; active: boolean; }
-interface ScenicEntry { name: string; desc: string; icon: string; aimag: string; img: string; }
-interface AdminEvent { name: string; day: string; mon: string; tag: string; aimag: string; meta: string; img: string; }
-interface CreatedPlace { name: string; cat: string; aimag: string; access?: boolean; desc: string; img: string; }
 // `id` is the backend row id (category/aimag) once fetched — needed to PATCH the right row.
 // Absent for the 'about'/'home'/'flag'/'suggest' kinds, which PUT the singleton
 // settings row instead; `slug` is the SUGGESTS card key used there since that
@@ -31,20 +29,6 @@ interface BgItem { id?: number; slug?: string; name: string; type: 'image' | 'vi
 // than repeated inline at each of the state, lookup and handler sites, so
 // adding a kind is one edit here plus its own branches.
 type BgKind = 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps' | 'login';
-
-const PLACE_REQS = [
-  { name: 'Sky Lounge 21', cat: 'Хоол & Кофе', aimag: 'Улаанбаатар', host: 'host: @boldoo', when: 'өнөөдөр 14:02', desc: 'Хотын дээвэр ресторан, нар жаргах гоё үзэмжтэй', img: '1517248135467-4c7edcad34c4' },
-  { name: 'Говь кэмп', cat: 'Аялал & Байгаль', aimag: 'Өмнөговь', host: 'host: @nomin.travel', when: 'өчигдөр 19:44', desc: 'Хонгорын элсний дэргэдэх гэр кэмп', img: '1469854523086-cc02fe5d8800' },
-  { name: 'Ice Rink UB', cat: 'Адреналин & Спорт', aimag: 'Улаанбаатар', host: 'host: @icepark', when: 'өчигдөр 11:20', desc: 'Задгай мөсөн гулгуур, түрээсийн тоноглолтой', img: '1476480862126-209bfaa8edc8' },
-  { name: 'Art Wine Bar', cat: 'Соёл & Урлаг', aimag: 'Улаанбаатар', host: 'host: @artspace', when: '2 хоногийн өмнө', desc: 'Урлагийн галерей болон дарсны бар нэг дор', img: '1514933651103-005eec06c04b' },
-];
-
-const EVENT_REQS = [
-  { name: 'Дуурийн шинэ тайлбар', tag: 'Соёл', day: '12', mon: '7-р сар', aimag: 'Улаанбаатар', host: 'host: @opera.mn', meta: 'Дуурийн театр · 19:00' },
-  { name: 'Jazz Night', tag: 'Хөгжим', day: '18', mon: '7-р сар', aimag: 'Улаанбаатар', host: 'host: @bluenote', meta: 'Blue Note · 21:00' },
-  { name: 'Хөвсгөл мөрний баяр', tag: 'Фестиваль', day: '02', mon: '8-р сар', aimag: 'Хөвсгөл', host: 'host: @travelmn', meta: 'Хатгал тосгон · 2 өдөр' },
-  { name: 'Street Food Fest', tag: 'Хоол', day: '25', mon: '7-р сар', aimag: 'Дархан-Уул', host: 'host: @foodie', meta: 'Төв талбай · 12:00–22:00' },
-];
 
 const INITIAL_ADS: Ad[] = [
   { title: 'Шинэ жилийн онцгой санал', desc: '', img: '1477959858617-67f85cf4f1df', from: '2026-07-01', to: '2026-07-31', views: 1240, active: true },
@@ -107,8 +91,7 @@ export default function AdminPanel() {
   // index), so switching tabs clears whatever was typed for the last one.
   useEffect(() => { setQuery(''); }, [tab]);
 
-  const [placeDecisions, setPlaceDecisions] = useState<Record<number, 'ok' | 'no'>>({});
-  const [eventDecisions, setEventDecisions] = useState<Record<number, 'ok' | 'no'>>({});
+  const [placeActionErr, setPlaceActionErr] = useState('');
   const [ads, setAds] = useState<Ad[]>(INITIAL_ADS);
   const [adFormOpen, setAdFormOpen] = useState(false);
   const [adEditIdx, setAdEditIdx] = useState(-1);
@@ -117,13 +100,29 @@ export default function AdminPanel() {
   const [adFrom, setAdFrom] = useState('');
   const [adTo, setAdTo] = useState('');
 
-  const [scenicList, setScenicList] = useState<ScenicEntry[]>([
-    { name: 'Хайрхан толгой', desc: 'Нар жаргах гоё үзэмж', icon: '🏔️', aimag: 'Улаанбаатар', img: '1470071459604-3b5ec3a7fe05' },
-  ]);
-  const [adminEvents, setAdminEvents] = useState<AdminEvent[]>([
-    { name: 'Playtime Festival 2026', day: '11', mon: '7-р сар', tag: 'Фестиваль', aimag: 'Төв', meta: 'Гачуурт · 2 өдөр', img: '1533105079780-92b9be482077' },
-  ]);
-  const [createdPlaces, setCreatedPlaces] = useState<CreatedPlace[]>([]);
+  // Real place/scenic/event rows — approvedPlaces + pendingPlaceRows both come
+  // from Place (status 'approved' vs 'pending'); scenic pins and events have
+  // no moderation queue, so they're just "everyone's, fetched fresh".
+  const [approvedPlaces, setApprovedPlaces] = useState<any[]>([]);
+  const [pendingPlaceRows, setPendingPlaceRows] = useState<any[]>([]);
+  const [scenicList, setScenicList] = useState<any[]>([]);
+  const [adminEvents, setAdminEvents] = useState<any[]>([]);
+  const [contentSyncError, setContentSyncError] = useState('');
+
+  const refetchContent = React.useCallback(() => {
+    Promise.all([
+      apiGet<any[]>('/places'),
+      apiGetAuthed<any[]>('/places/pending'),
+      apiGet<any[]>('/scenic-pins'),
+      apiGet<any[]>('/events'),
+    ]).then(([places, pending, pins, events]) => {
+      setApprovedPlaces(places);
+      setPendingPlaceRows(pending);
+      setScenicList(pins);
+      setAdminEvents(events);
+    }).catch(() => setContentSyncError('Газар/эвент/үзэсгэлэнт газрын мэдээлэл татахад алдаа гарлаа.'));
+  }, []);
+  useEffect(() => { refetchContent(); }, [refetchContent]);
 
   const [sharedFormOpen, setSharedFormOpen] = useState(false);
   const [sharedFormKind, setSharedFormKind] = useState<CreateKind>('place');
@@ -235,27 +234,29 @@ export default function AdminPanel() {
   // category now carries both at once.
   const [bgDraftVideoSrc, setBgDraftVideoSrc] = useState('');
 
-  const pendingPlaces = PLACE_REQS.filter((_, i) => !placeDecisions[i]).length;
-  const pendingEvents = EVENT_REQS.filter((_, i) => !eventDecisions[i]).length;
+  const pendingPlaces = pendingPlaceRows.length;
 
-  const decidePlace = (i: number, val: 'ok' | 'no') => setPlaceDecisions((d) => ({ ...d, [i]: val }));
-  const decideEvent = (i: number, val: 'ok' | 'no') => setEventDecisions((d) => ({ ...d, [i]: val }));
+  const decidePlace = (id: number, status: 'approved' | 'rejected') => {
+    setPlaceActionErr('');
+    apiPatch(`/places/${id}/status`, { status })
+      .then(() => refetchContent())
+      .catch((err) => setPlaceActionErr(err instanceof Error ? err.message : String(err)));
+  };
 
   const openSharedForm = (kind: CreateKind) => { setSharedFormKind(kind); setSharedFormOpen(true); };
 
-  const onSharedSubmit = (data: CreateFormData) => {
-    if (data.kind === 'place') {
-      setCreatedPlaces((s) => [{ name: data.name, cat: data.catName || '', aimag: data.aimag, access: data.access, desc: data.desc || data.sub || data.catName || '', img: data.images[0] || '' }, ...s]);
-    } else if (data.kind === 'scenic') {
-      const loc = data.lat != null ? data.lat.toFixed(3) + ', ' + data.lng!.toFixed(3) : data.aimag;
-      setScenicList((s) => [{ name: data.name, desc: data.desc, icon: data.icon || '🏔️', aimag: loc, img: data.images[0] || '1470071459604-3b5ec3a7fe05' }, ...s]);
-    } else {
-      let day = '01', mon = '7-р сар';
-      if (data.date) { const d = new Date(data.date); if (!isNaN(+d)) { day = String(d.getDate()).padStart(2, '0'); mon = (d.getMonth() + 1) + '-р сар'; } }
-      const meta = [data.time, data.desc, 'Хамгийн ихдээ ' + data.max + ' хүн'].filter(Boolean).join(' · ');
-      setAdminEvents((s) => [{ name: data.name, day, mon, tag: 'Эвент', aimag: data.aimag, meta, img: data.images[0] || '1533105079780-92b9be482077' }, ...s]);
+  // No token passed — falls back to AdminPanel's own bootstrapped admin
+  // token (see lib/api.ts), same as every other write this screen already does.
+  const onSharedSubmit = async (data: CreateFormData) => {
+    try {
+      if (data.kind === 'place') await createPlace(undefined, data);
+      else if (data.kind === 'scenic') await createScenicPin(undefined, data);
+      else await createEvent(undefined, data);
+      setSharedFormOpen(false);
+      refetchContent();
+    } catch (err) {
+      alert('Үүсгэхэд алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
     }
-    setSharedFormOpen(false);
   };
 
   const bgArrFor = (kind: BgKind) => (kind === 'aimag' ? aimagBg : kind === 'about' ? aboutBg : kind === 'home' ? homeBg : kind === 'flag' ? flagBg : kind === 'suggest' ? suggestBg : kind === 'loader' ? loaderBg : kind === 'travelApps' ? travelAppsBg : kind === 'login' ? loginBg : catBg);
@@ -341,10 +342,10 @@ export default function AdminPanel() {
   const fmtD = (d: string) => (d ? d.slice(5).replace('-', '/') : '—');
 
   const stats = [
-    { label: 'Нийт газар', value: '128', sub: '+6 энэ долоо хоногт', color: '#f2ede3' },
-    { label: 'Хүлээгдэж буй хүсэлт', value: String(pendingPlaces + pendingEvents), sub: 'газар + эвент', color: 'var(--accent,#E8B84B)' },
+    { label: 'Нийт газар', value: String(approvedPlaces.length), sub: 'батлагдсан', color: '#f2ede3' },
+    { label: 'Хүлээгдэж буй хүсэлт', value: String(pendingPlaces), sub: 'газар', color: 'var(--accent,#E8B84B)' },
     { label: 'Идэвхтэй зар', value: String(ads.filter((a) => a.active).length), sub: 'нийт ' + ads.length + ' зар', color: '#a8d5a2' },
-    { label: 'Хэрэглэгчид', value: '2,340', sub: '+112 энэ сард', color: '#8ab4f8' },
+    { label: 'Эвент', value: String(adminEvents.length), sub: 'нийт эвент', color: '#8ab4f8' },
   ];
 
   const recentReqs = [
@@ -394,7 +395,7 @@ export default function AdminPanel() {
         {isMobile ? (
           NAV.map((n) => {
             const on = tab === n.key;
-            const badge = n.key === 'places' ? pendingPlaces : n.key === 'events' ? pendingEvents : 0;
+            const badge = n.key === 'places' ? pendingPlaces : 0;
             return (
               <button
                 key={n.key}
@@ -415,7 +416,7 @@ export default function AdminPanel() {
               {g.keys.map((k) => {
                 const n = NAV.find((x) => x.key === k)!;
                 const on = tab === n.key;
-                const badge = n.key === 'places' ? pendingPlaces : n.key === 'events' ? pendingEvents : 0;
+                const badge = n.key === 'places' ? pendingPlaces : 0;
                 return (
                   <button
                     key={n.key}
@@ -513,20 +514,22 @@ export default function AdminPanel() {
 
         {tab === 'places' && (
           <>
-            {createdPlaces.length > 0 && (
+            {contentSyncError && <div className="mb-4 text-xs font-bold text-[#f08a8a]">{contentSyncError}</div>}
+            {placeActionErr && <div className="mb-4 text-xs font-bold text-[#f08a8a]">{placeActionErr}</div>}
+            {approvedPlaces.length > 0 && (
               <div className="mb-[22px]">
-                <div className={rowLabel}>Админаас нэмсэн газрууд</div>
+                <div className={rowLabel}>Батлагдсан газрууд</div>
                 <div className="flex flex-col gap-3">
-                  {createdPlaces.filter((p) => matches(p.name)).map((p, i) => (
-                    <div key={i} className="flex gap-4 items-center border border-[rgba(232,184,75,.28)] rounded-2xl p-3.5 bg-[rgba(232,184,75,.05)]">
-                      <div className="w-[120px] h-[74px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.img) }}></div>
+                  {approvedPlaces.filter((p) => matches(p.name)).map((p) => (
+                    <div key={p.id} className="flex gap-4 items-center border border-[rgba(232,184,75,.28)] rounded-2xl p-3.5 bg-[rgba(232,184,75,.05)]">
+                      <div className="w-[120px] h-[74px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.image || '') }}></div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2.5">
                           <span className="text-[15px] font-extrabold">{p.name}</span>
-                          <span className={catBadge}>{p.cat}</span>
-                          {p.access && <span title="Тусгай хэрэгцээт хүнд ээлтэй" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[rgba(0,0,0,.5)] text-[#8fd6c6] border border-[rgba(255,255,255,.26)]"><Accessibility size={13} /></span>}
+                          <span className={catBadge}>{p.category?.name}</span>
+                          {p.accessible && <span title="Тусгай хэрэгцээт хүнд ээлтэй" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[rgba(0,0,0,.5)] text-[#8fd6c6] border border-[rgba(255,255,255,.26)]"><Accessibility size={13} /></span>}
                         </div>
-                        <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag} · {p.desc}</div>
+                        <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag?.name} · {p.description || '—'}</div>
                       </div>
                       <span className="flex-shrink-0 text-[11.5px] font-extrabold py-1.5 px-[15px] rounded-full bg-[rgba(168,213,162,.15)] text-[#a8d5a2]">Нийтлэгдсэн ✓</span>
                     </div>
@@ -536,105 +539,72 @@ export default function AdminPanel() {
             )}
             <div className={rowLabel}>Host-уудын илгээсэн хүсэлт</div>
             <div className="flex flex-col gap-3.5">
-              {PLACE_REQS.map((p, i) => ({ p, i })).filter(({ p }) => matches(p.name)).map(({ p, i }) => {
-                const dec = placeDecisions[i];
-                return (
-                  <div key={i} className="flex gap-4 items-center border border-[rgba(255,255,255,.1)] rounded-2xl p-3.5 bg-[rgba(255,255,255,.03)] transition-colors duration-200 hover:border-[rgba(242,237,227,.28)]">
-                    <div className="w-[120px] h-[84px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.img) }}></div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[15px] font-extrabold">{p.name}</span>
-                        <span className={catBadge}>{p.cat}</span>
-                      </div>
-                      <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag} · {p.host} · {p.when}</div>
-                      <div className="text-xs text-[rgba(242,237,227,.45)] mt-[3px] whitespace-nowrap overflow-hidden text-ellipsis">{p.desc}</div>
+              {pendingPlaceRows.filter((p) => matches(p.name)).map((p) => (
+                <div key={p.id} className="flex gap-4 items-center border border-[rgba(255,255,255,.1)] rounded-2xl p-3.5 bg-[rgba(255,255,255,.03)] transition-colors duration-200 hover:border-[rgba(242,237,227,.28)]">
+                  <div className="w-[120px] h-[84px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.image || '') }}></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[15px] font-extrabold">{p.name}</span>
+                      <span className={catBadge}>{p.category?.name}</span>
                     </div>
-                    {!dec && (
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button onClick={() => decidePlace(i, 'ok')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border-none bg-[#a8d5a2] text-[#132a1f]">Батлах</button>
-                        <button onClick={() => decidePlace(i, 'no')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border border-[rgba(240,138,138,.5)] bg-transparent text-[#f08a8a]">Татгалзах</button>
-                      </div>
-                    )}
-                    {dec && <span className="flex-shrink-0 text-xs font-extrabold py-[7px] px-4 rounded-full" style={{ background: dec === 'ok' ? 'rgba(168,213,162,.15)' : 'rgba(240,138,138,.14)', color: dec === 'ok' ? '#a8d5a2' : '#f08a8a' }}>{dec === 'ok' ? 'Батлагдсан ✓' : 'Татгалзсан'}</span>}
+                    <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag?.name} · host: @{p.addedByUser?.username} · {new Date(p.createdAt).toLocaleDateString('mn-MN')}</div>
+                    <div className="text-xs text-[rgba(242,237,227,.45)] mt-[3px] whitespace-nowrap overflow-hidden text-ellipsis">{p.description || '—'}</div>
                   </div>
-                );
-              })}
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={() => decidePlace(p.id, 'approved')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border-none bg-[#a8d5a2] text-[#132a1f]">Батлах</button>
+                    <button onClick={() => decidePlace(p.id, 'rejected')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border border-[rgba(240,138,138,.5)] bg-transparent text-[#f08a8a]">Татгалзах</button>
+                  </div>
+                </div>
+              ))}
+              {pendingPlaceRows.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Хүлээгдэж буй хүсэлт алга</div>}
             </div>
           </>
         )}
 
         {tab === 'scenic' && (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-            {scenicList.filter((s) => matches(s.name)).map((s, i) => (
-              <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
-                <div className="relative aspect-[16/9] bg-cover bg-center" style={{ backgroundImage: thumb(s.img) }}>
-                  <span className="absolute left-2.5 top-2.5 text-[18px] w-[34px] h-[34px] flex items-center justify-center rounded-[10px] bg-[rgba(0,0,0,.55)] backdrop-blur-[8px] border border-[rgba(255,255,255,.24)]">{s.icon}</span>
-                  <span className="absolute right-2.5 top-2.5 text-[10px] font-extrabold tracking-[.05em] py-[3px] px-2.5 rounded-full bg-[rgba(168,213,162,.85)] text-[#132a1f]">Нийтлэгдсэн</span>
-                </div>
+            {scenicList.filter((s) => matches(s.name)).map((s) => (
+              <div key={s.id} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                <div className="relative aspect-[16/9] bg-cover bg-center" style={{ backgroundImage: itemThumbOf(s.image || '') }}></div>
                 <div className="pt-[13px] px-[15px] pb-[15px]">
-                  <div className="text-sm font-extrabold">{s.name}</div>
-                  <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{s.aimag} · {s.desc}</div>
+                  <div className="flex items-center gap-2">
+                    <span className={catBadge}>{s.type}</span>
+                  </div>
+                  <div className="text-sm font-extrabold mt-1.5">{s.name}</div>
+                  <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{s.aimag?.name} · {s.description || '—'}</div>
                 </div>
               </div>
             ))}
+            {scenicList.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Одоогоор үзэсгэлэнт газар алга</div>}
           </div>
         )}
 
         {tab === 'events' && (
-          <>
-            {adminEvents.length > 0 && (
-              <div className="mb-[22px]">
-                <div className={rowLabel}>Админаас үүсгэсэн эвентүүд</div>
-                <div className="flex flex-col gap-3">
-                  {adminEvents.filter((ev) => matches(ev.name)).map((ev, i) => (
-                    <div key={i} className="flex gap-4 items-center border border-[rgba(232,184,75,.28)] rounded-2xl p-3.5 bg-[rgba(232,184,75,.05)]">
-                      <div className="w-24 h-16 rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(ev.img) }}></div>
-                      <div className="w-14 flex-shrink-0 text-center py-2 px-0 rounded-[11px] bg-[rgba(232,184,75,.14)] border border-[rgba(232,184,75,.35)]">
-                        <div className="text-xl font-extrabold text-[var(--accent,#E8B84B)] leading-none">{ev.day}</div>
-                        <div className="text-[10px] font-bold tracking-[.1em] uppercase text-[rgba(242,237,227,.6)] mt-[3px]">{ev.mon}</div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-[15px] font-extrabold">{ev.name}</span>
-                          <span className={catBadge}>{ev.tag}</span>
-                        </div>
-                        <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{ev.aimag} · {ev.meta}</div>
-                      </div>
-                      <span className="flex-shrink-0 text-[11.5px] font-extrabold py-1.5 px-[15px] rounded-full bg-[rgba(168,213,162,.15)] text-[#a8d5a2]">Нийтлэгдсэн ✓</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className={rowLabel}>Host-уудын илгээсэн хүсэлт</div>
-            <div className="flex flex-col gap-3.5">
-              {EVENT_REQS.map((ev, i) => ({ ev, i })).filter(({ ev }) => matches(ev.name)).map(({ ev, i }) => {
-                const dec = eventDecisions[i];
-                return (
-                  <div key={i} className="flex gap-4 items-center border border-[rgba(255,255,255,.1)] rounded-2xl p-3.5 bg-[rgba(255,255,255,.03)] transition-colors duration-200 hover:border-[rgba(242,237,227,.28)]">
-                    <div className="w-14 flex-shrink-0 text-center py-2 px-0 rounded-[11px] bg-[rgba(232,184,75,.12)] border border-[rgba(232,184,75,.3)]">
-                      <div className="text-xl font-extrabold text-[var(--accent,#E8B84B)] leading-none">{ev.day}</div>
-                      <div className="text-[10px] font-bold tracking-[.1em] uppercase text-[rgba(242,237,227,.6)] mt-[3px]">{ev.mon}</div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[15px] font-extrabold">{ev.name}</span>
-                        <span className={catBadge}>{ev.tag}</span>
-                      </div>
-                      <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{ev.aimag} · {ev.host} · {ev.meta}</div>
-                    </div>
-                    {!dec && (
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button onClick={() => decideEvent(i, 'ok')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border-none bg-[#a8d5a2] text-[#132a1f]">Зөвшөөрөх</button>
-                        <button onClick={() => decideEvent(i, 'no')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border border-[rgba(240,138,138,.5)] bg-transparent text-[#f08a8a]">Татгалзах</button>
-                      </div>
-                    )}
-                    {dec && <span className="flex-shrink-0 text-xs font-extrabold py-[7px] px-4 rounded-full" style={{ background: dec === 'ok' ? 'rgba(168,213,162,.15)' : 'rgba(240,138,138,.14)', color: dec === 'ok' ? '#a8d5a2' : '#f08a8a' }}>{dec === 'ok' ? 'Зөвшөөрсөн ✓' : 'Татгалзсан'}</span>}
+          <div className="flex flex-col gap-3">
+            {adminEvents.filter((ev) => matches(ev.name)).map((ev) => {
+              const d = new Date(ev.startDate);
+              const day = String(d.getDate()).padStart(2, '0');
+              const mon = String(d.getMonth() + 1) + '-р сар';
+              return (
+                <div key={ev.id} className="flex gap-4 items-center border border-[rgba(255,255,255,.1)] rounded-2xl p-3.5 bg-[rgba(255,255,255,.03)]">
+                  <div className="w-24 h-16 rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(ev.image || '') }}></div>
+                  <div className="w-14 flex-shrink-0 text-center py-2 px-0 rounded-[11px] bg-[rgba(232,184,75,.14)] border border-[rgba(232,184,75,.35)]">
+                    <div className="text-xl font-extrabold text-[var(--accent,#E8B84B)] leading-none">{day}</div>
+                    <div className="text-[10px] font-bold tracking-[.1em] uppercase text-[rgba(242,237,227,.6)] mt-[3px]">{mon}</div>
                   </div>
-                );
-              })}
-            </div>
-          </>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[15px] font-extrabold">{ev.name}</span>
+                      {ev.tag && <span className={catBadge}>{ev.tag}</span>}
+                      {ev.featured && <span className="text-[10.5px] font-extrabold py-1 px-[11px] rounded-full bg-[rgba(232,184,75,.2)] text-[var(--accent,#E8B84B)]">Онцлох</span>}
+                    </div>
+                    <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{ev.aimag?.name} · {ev.meta || '—'}</div>
+                  </div>
+                </div>
+              );
+            })}
+            {adminEvents.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Одоогоор эвент алга</div>}
+          </div>
         )}
 
         {tab === 'suggests' && (

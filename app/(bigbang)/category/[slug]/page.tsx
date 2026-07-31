@@ -5,7 +5,7 @@ import React, { useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Accessibility, Heart } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { CATS, ratingOf, isAccessible, thumbOf, catBgOf, aimagName, isVideoUrl, U } from '@/components/bigbang/data';
+import { ratingOf, catBgOf, itemThumbOf, aimagName, isVideoUrl } from '@/components/bigbang/data';
 import { BgMedia } from '@/components/bigbang/ui';
 
 export default function CategoryPage() {
@@ -16,7 +16,8 @@ export default function CategoryPage() {
 
   React.useEffect(() => { setSub('Бүгд'); }, [slug]);
 
-  const cat = CATS.find((c) => c.slug === slug) || CATS[0];
+  const cats: any[] = V.cats || [];
+  const cat: any = cats.find((c: any) => c.slug === slug) || cats[0] || { slug: '', num: '', name: '', nameEn: '', desc: '', descEn: '', hero: '', pool: [], subs: [], items: [] };
   const accent = V.accent;
   const L = V.L;
 
@@ -30,19 +31,19 @@ export default function CategoryPage() {
   );
 
   const gridItems = cat.items
-    .filter((it) => (sub === 'Бүгд' || it.sub === sub) && (V.aimag === 'Бүгд' || (it.aimag || 'Улаанбаатар') === V.aimag))
-    .map((it, i) => {
+    .filter((it: any) => (sub === 'Бүгд' || it.sub === sub) && (V.aimag === 'Бүгд' || (it.aimag || 'Улаанбаатар') === V.aimag))
+    .map((it: any, i: number) => {
       const key = 'p:' + cat.slug + ':' + it.name;
-      const acc = isAccessible(it.name);
+      const acc = !!it.access;
       return {
         ...it, rating: ratingOf(it.name), access: acc, accShow: acc ? 'flex' : 'none',
         openPlace: () => { router.push('/category/' + cat.slug + '/place/' + i); try { window.scrollTo(0, 0); } catch (err) { /* ignore */ } },
         toggleFav: V.toggleFav(key), favOn: !!V.favs[key], heartColor: V.favs[key] ? accent : 'rgba(242,237,227,.9)',
-        thumb: i === 0 ? ('linear-gradient(rgba(0,0,0,.06), rgba(0,0,0,.18)), url("' + U('1500534623283-312aade485b7', 640) + '")') : thumbOf(cat, i).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
+        thumb: itemThumbOf(it.img).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
         displayMeta: it.meta + ' · ' + aimagName(it.aimag || 'Улаанбаатар', V.lang),
       };
     })
-    .sort((a, b) => { if (V.spNeeds && a.access !== b.access) return a.access ? -1 : 1; return +b.rating - +a.rating; });
+    .sort((a: any, b: any) => { if (V.spNeeds && a.access !== b.access) return a.access ? -1 : 1; return +b.rating - +a.rating; });
 
   const catBgOverride = V.catBgOverride[cat.slug] || '';
   // The background video (uploaded separately from the photo above) only

@@ -50,6 +50,7 @@ model User {
   profile    Profile?
   places     Place[]     @relation("PlaceAddedBy")
   scenicPins ScenicPin[] @relation("ScenicPinAddedBy")
+  events     Event[]     @relation("EventAddedBy")
   favorites  Favorite[]
 
   @@map("users")
@@ -135,6 +136,12 @@ model Place {
   openTime     String?
   closeTime    String?
   googleMapUrl String?
+  // Sub-category label (from the owning Category's subCategories list) and
+  // contact/accessibility info — collected by the add-place form but had no
+  // column to land in until now.
+  subCategory  String?
+  phone        String?
+  accessible   Boolean     @default(false)
   addedBy      Int
   addedByUser  User        @relation("PlaceAddedBy", fields: [addedBy], references: [id])
   status       PlaceStatus @default(pending)
@@ -208,6 +215,8 @@ model Event {
   lat       Float?
   lng       Float?
   featured  Boolean   @default(false)
+  addedBy     Int
+  addedByUser User    @relation("EventAddedBy", fields: [addedBy], references: [id])
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

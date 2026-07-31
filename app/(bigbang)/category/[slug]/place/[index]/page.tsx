@@ -6,7 +6,7 @@ import React, { useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Accessibility, Heart, MapPin, Phone, Star } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { CATS, U, ratingOf, isAccessible, aimagName, mapsUrlFor, FCRIT } from '@/components/bigbang/data';
+import { imgUrl, ratingOf, aimagName, mapsUrlFor, FCRIT } from '@/components/bigbang/data';
 import { BgMedia } from '@/components/bigbang/ui';
 
 export default function PlaceDetail() {
@@ -21,24 +21,26 @@ export default function PlaceDetail() {
   const L = V.L;
   const lang = V.lang;
 
-  const cat = CATS.find((c) => c.slug === slug) || CATS[0];
+  const cats = V.cats || [];
+  const cat = cats.find((c: any) => c.slug === slug) || cats[0] || { slug: '', name: '', nameEn: '', pool: [], items: [] };
   const i = Math.max(0, Math.min(Number(index) || 0, cat.items.length - 1));
   const it = cat.items[i];
 
   if (!it) return null;
 
-  const access = isAccessible(it.name) || !!(it as any).access;
-  const pool = cat.pool;
-  const gallery = [0, 1, 2, 3].map((k) => pool[(i + k) % pool.length]);
+  const access = !!it.access;
+  // Place only carries one real photo — a single-item "gallery" so the
+  // existing thumbnail-strip layout below still renders sensibly.
+  const gallery = [it.img || ''];
   const favKey = 'p:' + cat.slug + ':' + it.name;
   const favOn = !!V.favs[favKey];
   const myRating = V.myRatings[favKey] || 0;
   const sel = Math.min(pdImgIdx, Math.max(0, gallery.length - 1));
-  const mainImg = 'linear-gradient(rgba(0,0,0,.06), rgba(0,0,0,.2)), url("' + U(gallery[sel], 1200) + '")';
+  const mainImg = 'linear-gradient(rgba(0,0,0,.06), rgba(0,0,0,.2)), url("' + imgUrl(gallery[sel], 1200) + '")';
   const aimag = it.aimag || 'Улаанбаатар';
   const rating = ratingOf(it.name);
-  const hours = it.hours || '10:00–22:00';
-  const phone = it.phone || '7000-0000';
+  const hours = it.hours || '—';
+  const phone = it.phone || '—';
   const desc = it.desc || it.meta;
   const catName = lang === 'en' ? cat.nameEn : cat.name;
 
@@ -67,7 +69,7 @@ export default function PlaceDetail() {
                 className={`relative aspect-[4/3] max-h-24 flex-1 cursor-pointer overflow-hidden rounded-xl p-0 ${k === sel ? 'opacity-100' : 'opacity-60'}`}
                 style={{ border: `1.5px solid ${k === sel ? accent : 'rgba(255,255,255,.14)'}` }}
               >
-                <BgMedia bg={`url("${U(id, 300)}")`} className="absolute inset-0" imgClassName="bg-cover bg-center" />
+                <BgMedia bg={`url("${imgUrl(id, 300)}")`} className="absolute inset-0" imgClassName="bg-cover bg-center" />
               </button>
             ))}
           </div>
