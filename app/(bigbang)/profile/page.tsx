@@ -158,7 +158,10 @@ export default function ProfilePage() {
                     <div className="text-sm font-extrabold text-cream-2">{p.name}</div>
                     <span
                       className="flex-shrink-0 text-[9.5px] font-extrabold py-0.5 px-2 rounded-full whitespace-nowrap"
-                      style={{ background: p.pending ? 'rgba(232,184,75,.15)' : 'rgba(168,213,162,.15)', color: p.pending ? 'var(--accent,#E8B84B)' : '#a8d5a2' }}
+                      style={{
+                        background: p.pending ? 'rgba(232,184,75,.15)' : p.rejected ? 'rgba(240,138,138,.15)' : 'rgba(168,213,162,.15)',
+                        color: p.pending ? 'var(--accent,#E8B84B)' : p.rejected ? '#f08a8a' : '#a8d5a2',
+                      }}
                     >
                       {p.statusLabel}
                     </span>

@@ -15,7 +15,6 @@ import { createPlace, createScenicPin, createEvent, updatePlace, updateScenicPin
 
 type Tab = 'dash' | 'places' | 'scenic' | 'events' | 'suggests' | 'bg' | 'ads';
 
-interface Ad { title: string; desc: string; img: string; from: string; to: string; views: number; active: boolean; }
 // `id` is the backend row id (category/aimag) once fetched — needed to PATCH the right row.
 // Absent for the 'about'/'home'/'flag'/'suggest' kinds, which PUT the singleton
 // settings row instead; `slug` is the SUGGESTS card key used there since that
@@ -29,12 +28,6 @@ interface BgItem { id?: number; slug?: string; name: string; type: 'image' | 'vi
 // than repeated inline at each of the state, lookup and handler sites, so
 // adding a kind is one edit here plus its own branches.
 type BgKind = 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps' | 'login';
-
-const INITIAL_ADS: Ad[] = [
-  { title: 'Шинэ жилийн онцгой санал', desc: '', img: '1477959858617-67f85cf4f1df', from: '2026-07-01', to: '2026-07-31', views: 1240, active: true },
-  { title: 'Хосын багц — 2 хүн', desc: '', img: '1533105079780-92b9be482077', from: '2026-07-05', to: '2026-07-15', views: 862, active: true },
-  { title: 'Түүхэнд амьдарсан түдэглэл', desc: '', img: '1519681393784-d120267933ba', from: '2026-06-20', to: '2026-07-10', views: 430, active: false },
-];
 
 const NAV: { key: Tab; icon: LucideIcon; label: string }[] = [
   { key: 'dash', icon: LayoutDashboard, label: 'Хяналтын самбар' },
@@ -94,13 +87,19 @@ export default function AdminPanel() {
   const [placeActionErr, setPlaceActionErr] = useState('');
   const [scenicActionErr, setScenicActionErr] = useState('');
   const [eventActionErr, setEventActionErr] = useState('');
-  const [ads, setAds] = useState<Ad[]>(INITIAL_ADS);
+  const [adActionErr, setAdActionErr] = useState('');
+  // Real Ad rows from the backend (see refetchContent below).
+  const [ads, setAds] = useState<any[]>([]);
   const [adFormOpen, setAdFormOpen] = useState(false);
-  const [adEditIdx, setAdEditIdx] = useState(-1);
+  // null while adding a new ad; the row's db id while editing one.
+  const [adEditId, setAdEditId] = useState<number | null>(null);
   const [adTitle, setAdTitle] = useState('');
   const [adDesc, setAdDesc] = useState('');
   const [adFrom, setAdFrom] = useState('');
   const [adTo, setAdTo] = useState('');
+  const [adImg, setAdImg] = useState('');
+  const [adImgFile, setAdImgFile] = useState<File | null>(null);
+  const [adSaving, setAdSaving] = useState(false);
 
   // Real place/scenic/event rows — approvedPlaces + pendingPlaceRows both come
   // from Place (status 'approved' vs 'pending'); scenic pins and events have
@@ -119,12 +118,14 @@ export default function AdminPanel() {
       apiGet<any[]>('/scenic-pins'),
       apiGet<any[]>('/events'),
       apiGet<any[]>('/suggest-cards'),
-    ]).then(([places, pending, pins, events, suggestCardRows]) => {
+      apiGetAuthed<any[]>('/ads'),
+    ]).then(([places, pending, pins, events, suggestCardRows, adRows]) => {
       setApprovedPlaces(places);
       setPendingPlaceRows(pending);
       setScenicList(pins);
       setAdminEvents(events);
       setSuggestCards(suggestCardRows);
+      setAds(adRows);
     }).catch(() => setContentSyncError('Газар/эвент/үзэсгэлэнт газрын мэдээлэл татахад алдаа гарлаа.'));
   }, []);
   useEffect(() => { refetchContent(); }, [refetchContent]);
@@ -379,7 +380,7 @@ export default function AdminPanel() {
     const f = ev.target.files && ev.target.files[0]; if (!f) return;
     setBgUploading(true);
     try {
-      const url = await uploadImage(f, 'backgrounds');
+      const url = await uploadImage(f, 'bigbang/backgrounds');
       // A category keeps its photo and video as two independent slots — the
       // video button fills bgDraftVideoSrc instead of replacing bgDraftSrc.
       if (bgEditKind === 'cat' && asVideo) { setBgDraftVideoSrc(url); return; }
@@ -392,15 +393,44 @@ export default function AdminPanel() {
     }
   };
 
-  const openAdForm = () => { setAdEditIdx(-1); setAdTitle(''); setAdDesc(''); setAdFrom(''); setAdTo(''); setAdFormOpen(true); };
-  const editAd = (i: number) => { const a = ads[i]; setAdEditIdx(i); setAdTitle(a.title); setAdDesc(a.desc); setAdFrom(a.from); setAdTo(a.to); setAdFormOpen(true); };
-  const saveAd = () => {
-    if (!adTitle.trim()) { setAdFormOpen(false); return; }
-    if (adEditIdx >= 0) setAds((arr) => arr.map((a, i) => (i === adEditIdx ? { ...a, title: adTitle, desc: adDesc, from: adFrom, to: adTo } : a)));
-    else setAds((arr) => [{ title: adTitle, desc: adDesc, img: '1441974231531-c6227db76b6e', from: adFrom, to: adTo, views: 0, active: true }, ...arr]);
-    setAdFormOpen(false);
+  const openAdForm = () => { setAdEditId(null); setAdTitle(''); setAdDesc(''); setAdFrom(''); setAdTo(''); setAdImg(''); setAdImgFile(null); setAdFormOpen(true); };
+  const editAd = (a: any) => {
+    setAdEditId(a.id); setAdTitle(a.title); setAdDesc(a.description || ''); setAdFrom(a.startDate ? a.startDate.slice(0, 10) : ''); setAdTo(a.endDate ? a.endDate.slice(0, 10) : '');
+    setAdImg(a.image || ''); setAdImgFile(null); setAdFormOpen(true);
   };
-  const toggleAd = (i: number) => setAds((arr) => arr.map((a, k) => (k === i ? { ...a, active: !a.active } : a)));
+  // No token passed — falls back to AdminPanel's own bootstrapped admin
+  // token (see lib/api.ts), same as every other write this screen does.
+  const saveAd = async () => {
+    if (!adTitle.trim()) { setAdFormOpen(false); return; }
+    setAdSaving(true);
+    setAdActionErr('');
+    try {
+      const image = adImgFile ? await uploadImage(adImgFile, 'bigbang/ads') : adImg || undefined;
+      const payload = { title: adTitle.trim(), description: adDesc.trim() || undefined, image, startDate: adFrom || undefined, endDate: adTo || undefined };
+      if (adEditId != null) await apiPatch(`/ads/${adEditId}`, payload);
+      else await apiPost('/ads', payload);
+      setAdFormOpen(false); setAdEditId(null); setAdTitle(''); setAdDesc(''); setAdFrom(''); setAdTo(''); setAdImg(''); setAdImgFile(null);
+      refetchContent();
+    } catch (err) {
+      alert('Хадгалахад алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setAdSaving(false);
+    }
+  };
+  const toggleAd = (a: any) => {
+    setAdActionErr('');
+    apiPatch(`/ads/${a.id}`, { active: !a.active }).then(() => refetchContent()).catch((err) => setAdActionErr(err instanceof Error ? err.message : String(err)));
+  };
+  const deleteAd = (a: any) => {
+    if (!confirm(`"${a.title}" зарыг устгах уу?`)) return;
+    setAdActionErr('');
+    apiDelete(`/ads/${a.id}`).then(() => refetchContent()).catch((err) => setAdActionErr(err instanceof Error ? err.message : String(err)));
+  };
+  const onAdImg = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const f = ev.target.files && ev.target.files[0]; if (!f) return;
+    setAdImgFile(f);
+    const r = new FileReader(); r.onload = () => setAdImg(String(r.result)); r.readAsDataURL(f);
+  };
 
   const openSuggestForm = () => { setSgEditId(null); setSgName(''); setSgDesc(''); setSgImg(''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true); };
   const openSuggestEditForm = (card: any) => {
@@ -438,7 +468,10 @@ export default function AdminPanel() {
     const r = new FileReader(); r.onload = () => setSgImg(String(r.result)); r.readAsDataURL(f);
   };
 
-  const fmtD = (d: string) => (d ? d.slice(5).replace('-', '/') : '—');
+  // `d` is either a plain 'YYYY-MM-DD' (the <input type="date"> drafts below)
+  // or a full ISO datetime string (Ad rows straight from the API) — slicing a
+  // fixed 5-char window instead of an open-ended one keeps both cases correct.
+  const fmtD = (d: string) => (d ? d.slice(5, 10).replace('-', '/') : '—');
 
   const stats = [
     { label: 'Нийт газар', value: String(approvedPlaces.length), sub: 'батлагдсан', color: '#f2ede3' },
@@ -599,9 +632,9 @@ export default function AdminPanel() {
               </div>
               <div className="border border-[rgba(255,255,255,.1)] rounded-2xl bg-[rgba(255,255,255,.03)] overflow-hidden">
                 <div className="py-3.5 px-[18px] border-b border-[rgba(255,255,255,.08)] text-[13.5px] font-extrabold">Идэвхтэй зарууд</div>
-                {activeAds.map((a, i) => (
-                  <div key={i} className="flex items-center gap-3 py-[11px] px-[18px] border-b border-[rgba(255,255,255,.05)] text-[12.5px] hover:bg-[rgba(255,255,255,.04)]">
-                    <div className="w-11 h-[30px] rounded-md bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(a.img) }}></div>
+                {activeAds.map((a) => (
+                  <div key={a.id} className="flex items-center gap-3 py-[11px] px-[18px] border-b border-[rgba(255,255,255,.05)] text-[12.5px] hover:bg-[rgba(255,255,255,.04)]">
+                    <div className="w-11 h-[30px] rounded-md bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(a.image || '') }}></div>
                     <span className="font-bold">{a.title}</span>
                     <span className="ml-auto text-[var(--accent,#E8B84B)] font-extrabold text-[11.5px]">{a.views.toLocaleString()} үзэлт</span>
                   </div>
@@ -671,15 +704,15 @@ export default function AdminPanel() {
             {scenicActionErr && <div className="mb-4 text-xs font-bold text-[#f08a8a]">{scenicActionErr}</div>}
             <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
               {scenicList.filter((s) => matches(s.name)).map((s) => (
-                <div key={s.id} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                <div key={s.id} className="flex flex-col border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
                   <div className="relative aspect-[16/9] bg-cover bg-center" style={{ backgroundImage: itemThumbOf(s.image || '') }}></div>
-                  <div className="pt-[13px] px-[15px] pb-[15px]">
+                  <div className="flex flex-1 flex-col pt-[13px] px-[15px] pb-[15px]">
                     <div className="flex items-center gap-2">
                       <span className={catBadge}>{s.type}</span>
                     </div>
                     <div className="text-sm font-extrabold mt-1.5">{s.name}</div>
                     <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{s.aimag?.name} · {s.description || '—'}</div>
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex gap-2 mt-auto pt-3">
                       <button onClick={() => openEditForm('scenic', editInitialFor('scenic', s))} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={12} />Засах</button>
                       <button onClick={() => deleteContentRow('scenic', s.id, `"${s.name}" газрыг устгах уу?`)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={12} />Устгах</button>
                     </div>
@@ -751,12 +784,12 @@ export default function AdminPanel() {
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
               {suggestCards.filter((c) => c.collectionSlug === suggestActiveSlug && matches(c.name)).map((c) => (
-                <div key={c.id} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                <div key={c.id} className="flex flex-col border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
                   <div className="relative aspect-[16/10] bg-cover bg-center" style={{ backgroundImage: thumb(c.image || '') }}></div>
-                  <div className="pt-[13px] px-[15px] pb-[15px]">
+                  <div className="flex flex-1 flex-col pt-[13px] px-[15px] pb-[15px]">
                     <div className="text-sm font-extrabold">{c.name}</div>
                     <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{c.description || '—'}</div>
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex gap-2 mt-auto pt-3">
                       <button onClick={() => openSuggestEditForm(c)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={12} />Засах</button>
                       <button onClick={() => deleteSuggestCard(c)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={12} />Устгах</button>
                     </div>
@@ -821,23 +854,28 @@ export default function AdminPanel() {
         )}
 
         {tab === 'ads' && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-[18px]">
-            {ads.map((a, i) => ({ a, i })).filter(({ a }) => matches(a.title)).map(({ a, i }) => (
-              <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
-                <div className="relative aspect-[16/8] bg-cover bg-center" style={{ backgroundImage: thumb(a.img) }}>
-                  <span className="absolute left-2.5 top-2.5 text-[10px] font-extrabold tracking-[.06em] uppercase py-[3px] px-2.5 rounded-full" style={{ background: a.active ? 'rgba(168,213,162,.85)' : 'rgba(120,120,120,.8)', color: a.active ? '#132a1f' : '#fff' }}>{a.active ? 'Идэвхтэй' : 'Идэвхгүй'}</span>
-                </div>
-                <div className="pt-3.5 px-4 pb-4">
-                  <div className="text-[14.5px] font-extrabold">{a.title}</div>
-                  <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{fmtD(a.from)} – {fmtD(a.to)} · {a.views.toLocaleString()} үзэлт</div>
-                  <div className="flex gap-2 mt-3">
-                    <button onClick={() => editAd(i)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">Засах</button>
-                    <button onClick={() => toggleAd(i)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border-none bg-[rgba(255,255,255,.08)] text-[rgba(242,237,227,.85)] transition-all duration-200 hover:bg-[rgba(255,255,255,.14)]">{a.active ? 'Идэвхгүй болгох' : 'Идэвхжүүлэх'}</button>
+          <>
+            {adActionErr && <div className="mb-4 text-xs font-bold text-[#f08a8a]">{adActionErr}</div>}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-[18px]">
+              {ads.filter((a) => matches(a.title)).map((a) => (
+                <div key={a.id} className="flex flex-col border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                  <div className="relative aspect-[16/8] bg-cover bg-center" style={{ backgroundImage: thumb(a.image || '') }}>
+                    <span className="absolute left-2.5 top-2.5 text-[10px] font-extrabold tracking-[.06em] uppercase py-[3px] px-2.5 rounded-full" style={{ background: a.active ? 'rgba(168,213,162,.85)' : 'rgba(120,120,120,.8)', color: a.active ? '#132a1f' : '#fff' }}>{a.active ? 'Идэвхтэй' : 'Идэвхгүй'}</span>
+                  </div>
+                  <div className="flex flex-1 flex-col pt-3.5 px-4 pb-4">
+                    <div className="text-[14.5px] font-extrabold">{a.title}</div>
+                    <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{fmtD(a.startDate)} – {fmtD(a.endDate)} · {a.views.toLocaleString()} үзэлт</div>
+                    <div className="flex gap-2 mt-auto pt-3 flex-wrap">
+                      <button onClick={() => editAd(a)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">Засах</button>
+                      <button onClick={() => toggleAd(a)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border-none bg-[rgba(255,255,255,.08)] text-[rgba(242,237,227,.85)] transition-all duration-200 hover:bg-[rgba(255,255,255,.14)]">{a.active ? 'Идэвхгүй болгох' : 'Идэвхжүүлэх'}</button>
+                      <button onClick={() => deleteAd(a)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]">Устгах</button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+              {ads.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Одоогоор зар алга</div>}
+            </div>
+          </>
         )}
       </main>
 
@@ -884,7 +922,7 @@ export default function AdminPanel() {
         <div onClick={() => setAdFormOpen(false)} className="fixed inset-0 z-[60] bg-[rgba(6,8,12,.7)] backdrop-blur-[6px] flex items-center justify-center box-border animate-[bbFadeUp_0.25s_ease_both]" style={{ padding: isMobile ? '14px' : '40px' }}>
           <div onClick={(e) => e.stopPropagation()} className="w-[480px] max-w-full max-h-[86vh] overflow-auto bg-[#171410] border border-[rgba(255,255,255,.12)] rounded-[18px] box-border shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '24px 26px 26px' }}>
             <div className="flex items-center justify-between mb-[18px]">
-              <div className="text-[17px] font-extrabold">{adEditIdx >= 0 ? 'Зар засах' : 'Шинэ зар оруулах'}</div>
+              <div className="text-[17px] font-extrabold">{adEditId != null ? 'Зар засах' : 'Шинэ зар оруулах'}</div>
               <button onClick={() => setAdFormOpen(false)} className="cursor-pointer font-[inherit] text-[17px] leading-none w-[30px] h-[30px] rounded-full border border-[rgba(242,237,227,.2)] bg-transparent text-[rgba(242,237,227,.75)]">×</button>
             </div>
             <div className="flex flex-col gap-3.5">
@@ -896,6 +934,19 @@ export default function AdminPanel() {
                 <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Тайлбар</span>
                 <textarea value={adDesc} onChange={(e) => setAdDesc(e.target.value)} rows={3} placeholder="Зарын дэлгэрэнгүй..." className="font-[inherit] text-cream bg-[rgba(255,255,255,.05)] border border-[rgba(255,255,255,.14)] rounded-[10px] px-[13px] py-2.5 outline-none resize-y" style={{ fontSize: isMobile ? '16px' : '13px' }}></textarea>
               </label>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Зураг</span>
+                <div className="relative aspect-[16/8] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink">
+                  <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(adImg || '1441974231531-c6227db76b6e', 700)}")` }}></div>
+                  {adSaving && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
+                  )}
+                </div>
+                <label className="flex items-center justify-center gap-2 h-[46px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                  <ImageIcon size={15} /> {adImg ? 'Зураг солих' : 'Зураг оруулах'}
+                  <input type="file" accept="image/*" onChange={onAdImg} className="hidden" />
+                </label>
+              </div>
               <div className="grid gap-3" style={{ gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Эхлэх огноо</span>
@@ -906,7 +957,7 @@ export default function AdminPanel() {
                   <input type="date" value={adTo} onChange={(e) => setAdTo(e.target.value)} className="font-[inherit] text-cream bg-[rgba(255,255,255,.05)] border border-[rgba(255,255,255,.14)] rounded-[10px] py-[9px] px-[13px] outline-none [color-scheme:dark]" style={{ fontSize: isMobile ? '16px' : '13px' }} />
                 </label>
               </div>
-              <button onClick={saveAd} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1">{adEditIdx >= 0 ? 'Хадгалах' : 'Зар нийтлэх'}</button>
+              <button onClick={saveAd} disabled={adSaving} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1 disabled:opacity-60">{adSaving ? '...' : adEditId != null ? 'Хадгалах' : 'Зар нийтлэх'}</button>
             </div>
           </div>
         </div>

@@ -71,6 +71,16 @@ const SUGGEST_CARDS: { collectionSlug: string; name: string; description: string
   { collectionSlug: 'boardgame', name: 'Тоглоомын дүрэм', description: 'Тоглоом бүрийн заавар, дүрмийн товч тайлбар', image: '1529699211952-734e80c4d42b' },
 ];
 
+// Same starter rows the admin panel's "Зар сурталчилгаа" tab used to hardcode
+// in a local INITIAL_ADS constant before ads moved to the database (see Ad
+// model) — seeded once on an empty table so the tab isn't blank on a fresh
+// database; the admin panel manages real rows from here on.
+const ADS: { title: string; image: string; startDate: string; endDate: string; views: number; active: boolean }[] = [
+  { title: 'Шинэ жилийн онцгой санал', image: '1477959858617-67f85cf4f1df', startDate: '2026-07-01', endDate: '2026-07-31', views: 1240, active: true },
+  { title: 'Хосын багц — 2 хүн', image: '1533105079780-92b9be482077', startDate: '2026-07-05', endDate: '2026-07-15', views: 862, active: true },
+  { title: 'Түүхэнд амьдарсан түдэглэл', image: '1519681393784-d120267933ba', startDate: '2026-06-20', endDate: '2026-07-10', views: 430, active: false },
+];
+
 async function main() {
   for (const [name, nameEn] of AIMAGS) {
     await prisma.aimag.upsert({
@@ -100,9 +110,9 @@ async function main() {
     create: { id: 1 },
   });
 
-  // No natural unique key on SuggestCard — only seed the starter set once,
-  // on a database that has none yet, so re-running this script never
-  // duplicates or clobbers cards an admin has since created/edited.
+  // No natural unique key on SuggestCard/Ad — only seed the starter sets
+  // once, on a database that has none yet, so re-running this script never
+  // duplicates or clobbers rows an admin has since created/edited.
   const suggestCardCount = await prisma.suggestCard.count();
   if (suggestCardCount === 0) {
     await prisma.suggestCard.createMany({
@@ -110,7 +120,14 @@ async function main() {
     });
   }
 
-  console.log(`Seeded ${AIMAGS.length} aimags, ${CATEGORIES.length} categories, 1 admin user, site settings, ${suggestCardCount === 0 ? SUGGEST_CARDS.length : 0} suggest cards.`);
+  const adCount = await prisma.ad.count();
+  if (adCount === 0) {
+    await prisma.ad.createMany({
+      data: ADS.map((a) => ({ ...a, startDate: new Date(a.startDate), endDate: new Date(a.endDate), addedBy: admin.id })),
+    });
+  }
+
+  console.log(`Seeded ${AIMAGS.length} aimags, ${CATEGORIES.length} categories, 1 admin user, site settings, ${suggestCardCount === 0 ? SUGGEST_CARDS.length : 0} suggest cards, ${adCount === 0 ? ADS.length : 0} ads.`);
 }
 
 main()

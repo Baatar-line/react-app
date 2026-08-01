@@ -1046,7 +1046,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const mySession = getSession();
     const myPlaceItems = (st.myPlaces || []).map((p: any) => ({
       name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.image),
-      pending: p.status === 'pending', statusLabel: p.status === 'approved' ? 'Батлагдсан ✓' : p.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
+      pending: p.status === 'pending', rejected: p.status === 'rejected',
+      statusLabel: p.status === 'approved' ? 'Батлагдсан ✓' : p.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
     }));
     const myScenicItems = mySession
       ? (this.state.liveScenicPins || []).filter((p: any) => p.addedBy === mySession.user.id)

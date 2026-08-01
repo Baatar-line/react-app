@@ -59,6 +59,7 @@ model User {
   scenicPins   ScenicPin[]   @relation("ScenicPinAddedBy")
   events       Event[]       @relation("EventAddedBy")
   suggestCards SuggestCard[] @relation("SuggestCardAddedBy")
+  ads          Ad[]          @relation("AdAddedBy")
   favorites    Favorite[]
 
   @@map("users")
@@ -273,4 +274,24 @@ model SuggestCard {
   updatedAt      DateTime @updatedAt
 
   @@map("suggest_cards")
+}
+
+// Admin panel's "Зар сурталчилгаа" tab — like SuggestCard, admin-only content
+// with no public-facing display yet, but still a real table so it persists
+// across sessions/refreshes instead of living only in that tab's React state.
+model Ad {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  image       String?
+  startDate   DateTime?
+  endDate     DateTime?
+  active      Boolean   @default(true)
+  views       Int       @default(0)
+  addedBy     Int
+  addedByUser User      @relation("AdAddedBy", fields: [addedBy], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("ads")
 }
