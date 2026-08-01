@@ -8,9 +8,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, Film, Search, PanelLeftClose, PanelLeftOpen, Pencil, Trash2, type LucideIcon } from 'lucide-react';
 import { useIsMobile } from '@/components/bigbang/ui';
-import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, TRAVEL_APPS, U, imgUrl, isVideoUrl, itemThumbOf } from '@/components/bigbang/data';
+import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, TRAVEL_APPS, U, imgUrl, isVideoUrl, itemThumbOf } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
-import { apiGet, apiGetAuthed, apiPatch, apiPost, apiPut, uploadImage } from '@/lib/api';
+import { apiGet, apiGetAuthed, apiPatch, apiPost, apiPut, apiDelete, uploadImage } from '@/lib/api';
 import { createPlace, createScenicPin, createEvent, updatePlace, updateScenicPin, updateEvent, deletePlace, deleteScenicPin, deleteEvent } from '@/lib/userContent';
 
 type Tab = 'dash' | 'places' | 'scenic' | 'events' | 'suggests' | 'bg' | 'ads';
@@ -109,6 +109,7 @@ export default function AdminPanel() {
   const [pendingPlaceRows, setPendingPlaceRows] = useState<any[]>([]);
   const [scenicList, setScenicList] = useState<any[]>([]);
   const [adminEvents, setAdminEvents] = useState<any[]>([]);
+  const [suggestCards, setSuggestCards] = useState<any[]>([]);
   const [contentSyncError, setContentSyncError] = useState('');
 
   const refetchContent = React.useCallback(() => {
@@ -117,11 +118,13 @@ export default function AdminPanel() {
       apiGetAuthed<any[]>('/places/pending'),
       apiGet<any[]>('/scenic-pins'),
       apiGet<any[]>('/events'),
-    ]).then(([places, pending, pins, events]) => {
+      apiGet<any[]>('/suggest-cards'),
+    ]).then(([places, pending, pins, events, suggestCardRows]) => {
       setApprovedPlaces(places);
       setPendingPlaceRows(pending);
       setScenicList(pins);
       setAdminEvents(events);
+      setSuggestCards(suggestCardRows);
     }).catch(() => setContentSyncError('Газар/эвент/үзэсгэлэнт газрын мэдээлэл татахад алдаа гарлаа.'));
   }, []);
   useEffect(() => { refetchContent(); }, [refetchContent]);
@@ -131,16 +134,24 @@ export default function AdminPanel() {
   const [sharedFormMode, setSharedFormMode] = useState<'create' | 'edit'>('create');
   const [sharedFormInitial, setSharedFormInitial] = useState<Partial<CreateFormData> | undefined>(undefined);
 
-  // Suggest sub-collections (the cards shown when a "Санал болгох" card is opened
-  // on the main app) — one list per SUGGESTS category, manageable here.
+  // Suggest sub-cards (shown when a "Санал болгох" card is opened on the main
+  // app) — real SuggestCard rows from the backend (see refetchContent above),
+  // one collectionSlug per SUGGESTS category.
   const [suggestActiveSlug, setSuggestActiveSlug] = useState(SUGGESTS[0].slug);
-  const [suggestCollections, setSuggestCollections] = useState<Record<string, SuggestCollectionItem[]>>(() => ({ ...SUGGEST_COLLECTIONS }));
+  const [suggestActionErr, setSuggestActionErr] = useState('');
   const [suggestFormOpen, setSuggestFormOpen] = useState(false);
-  // -1 while adding a new card; the card's index within its collection while editing one.
-  const [sgEditIdx, setSgEditIdx] = useState(-1);
+  // null while adding a new card; the row's db id while editing one.
+  const [sgEditId, setSgEditId] = useState<number | null>(null);
   const [sgName, setSgName] = useState('');
   const [sgDesc, setSgDesc] = useState('');
+  // Preview value (may be the existing raw image, or a fresh data: URI while
+  // a newly-picked file hasn't finished uploading yet).
   const [sgImg, setSgImg] = useState('');
+  // Set only when the admin picks a new file — saveSuggestCard uploads this
+  // to Cloudinary and uses the resulting URL instead of `sgImg`. Left null
+  // when editing without touching the photo, so the existing image survives.
+  const [sgImgFile, setSgImgFile] = useState<File | null>(null);
+  const [sgSaving, setSgSaving] = useState(false);
   const [sgErr, setSgErr] = useState(false);
 
   const [bgSub, setBgSub] = useState<BgKind>('cat');
@@ -391,28 +402,39 @@ export default function AdminPanel() {
   };
   const toggleAd = (i: number) => setAds((arr) => arr.map((a, k) => (k === i ? { ...a, active: !a.active } : a)));
 
-  const openSuggestForm = () => { setSgEditIdx(-1); setSgName(''); setSgDesc(''); setSgImg(''); setSgErr(false); setSuggestFormOpen(true); };
-  const openSuggestEditForm = (idx: number) => {
-    const it = (suggestCollections[suggestActiveSlug] || [])[idx];
-    if (!it) return;
-    setSgEditIdx(idx); setSgName(it.name); setSgDesc(it.desc === '—' ? '' : it.desc); setSgImg(it.img); setSgErr(false); setSuggestFormOpen(true);
+  const openSuggestForm = () => { setSgEditId(null); setSgName(''); setSgDesc(''); setSgImg(''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true); };
+  const openSuggestEditForm = (card: any) => {
+    setSgEditId(card.id); setSgName(card.name); setSgDesc(card.description || ''); setSgImg(card.image || ''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true);
   };
-  const saveSuggestCard = () => {
+  // No token passed — falls back to AdminPanel's own bootstrapped admin
+  // token (see lib/api.ts), same as every other write this screen does.
+  const saveSuggestCard = async () => {
     if (!sgName.trim()) { setSgErr(true); return; }
-    const card: SuggestCollectionItem = { name: sgName.trim(), desc: sgDesc.trim() || '—', img: sgImg || '1489599849927-2ee91cede3ba' };
-    setSuggestCollections((sc) => {
-      const list = sc[suggestActiveSlug] || [];
-      return { ...sc, [suggestActiveSlug]: sgEditIdx >= 0 ? list.map((it, i) => (i === sgEditIdx ? card : it)) : [card, ...list] };
-    });
-    setSuggestFormOpen(false); setSgEditIdx(-1); setSgName(''); setSgDesc(''); setSgImg(''); setSgErr(false);
+    setSgSaving(true);
+    setSuggestActionErr('');
+    try {
+      const image = sgImgFile ? await uploadImage(sgImgFile, 'bigbang/suggests') : sgImg || undefined;
+      const payload = { collectionSlug: suggestActiveSlug, name: sgName.trim(), description: sgDesc.trim() || undefined, image };
+      if (sgEditId != null) await apiPatch(`/suggest-cards/${sgEditId}`, payload);
+      else await apiPost('/suggest-cards', payload);
+      setSuggestFormOpen(false); setSgEditId(null); setSgName(''); setSgDesc(''); setSgImg(''); setSgImgFile(null); setSgErr(false);
+      refetchContent();
+    } catch (err) {
+      alert('Хадгалахад алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSgSaving(false);
+    }
   };
-  const deleteSuggestCard = (idx: number) => {
-    const it = (suggestCollections[suggestActiveSlug] || [])[idx];
-    if (!it || !confirm(`"${it.name}" картыг устгах уу?`)) return;
-    setSuggestCollections((sc) => ({ ...sc, [suggestActiveSlug]: (sc[suggestActiveSlug] || []).filter((_, i) => i !== idx) }));
+  const deleteSuggestCard = (card: any) => {
+    if (!confirm(`"${card.name}" картыг устгах уу?`)) return;
+    setSuggestActionErr('');
+    apiDelete(`/suggest-cards/${card.id}`)
+      .then(() => refetchContent())
+      .catch((err) => setSuggestActionErr(err instanceof Error ? err.message : String(err)));
   };
   const onSgImg = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const f = ev.target.files && ev.target.files[0]; if (!f) return;
+    setSgImgFile(f);
     const r = new FileReader(); r.onload = () => setSgImg(String(r.result)); r.readAsDataURL(f);
   };
 
@@ -718,28 +740,30 @@ export default function AdminPanel() {
             <div className="text-xs text-[rgba(242,237,227,.5)] mb-4 max-w-[640px] leading-[1.5]">
               Гол апп дээрх "Санал болгох" карт бүрийг дарахад доор харагдах дэд картуудыг ангилал тус бүрээр удирдана.
             </div>
+            {suggestActionErr && <div className="mb-4 text-xs font-bold text-[#f08a8a]">{suggestActionErr}</div>}
             <div className="flex gap-2 mb-5 flex-wrap">
               {SUGGESTS.map((s) => {
                 const on = suggestActiveSlug === s.slug;
                 return (
-                  <button key={s.slug} onClick={() => setSuggestActiveSlug(s.slug)} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-[18px] rounded-full transition-all duration-200" style={{ border: `1px solid ${on ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: on ? 'var(--accent,#E8B84B)' : 'transparent', color: on ? '#132a1f' : 'rgba(242,237,227,.8)' }}>{s.title} · {(suggestCollections[s.slug] || []).length}</button>
+                  <button key={s.slug} onClick={() => setSuggestActiveSlug(s.slug)} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-[18px] rounded-full transition-all duration-200" style={{ border: `1px solid ${on ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: on ? 'var(--accent,#E8B84B)' : 'transparent', color: on ? '#132a1f' : 'rgba(242,237,227,.8)' }}>{s.title} · {suggestCards.filter((c) => c.collectionSlug === s.slug).length}</button>
                 );
               })}
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-              {(suggestCollections[suggestActiveSlug] || []).map((it, i) => ({ it, i })).filter(({ it }) => matches(it.name)).map(({ it, i }) => (
-                <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
-                  <div className="relative aspect-[16/10] bg-cover bg-center" style={{ backgroundImage: thumb(it.img) }}></div>
+              {suggestCards.filter((c) => c.collectionSlug === suggestActiveSlug && matches(c.name)).map((c) => (
+                <div key={c.id} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                  <div className="relative aspect-[16/10] bg-cover bg-center" style={{ backgroundImage: thumb(c.image || '') }}></div>
                   <div className="pt-[13px] px-[15px] pb-[15px]">
-                    <div className="text-sm font-extrabold">{it.name}</div>
-                    <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{it.desc}</div>
+                    <div className="text-sm font-extrabold">{c.name}</div>
+                    <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{c.description || '—'}</div>
                     <div className="flex gap-2 mt-3">
-                      <button onClick={() => openSuggestEditForm(i)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={12} />Засах</button>
-                      <button onClick={() => deleteSuggestCard(i)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={12} />Устгах</button>
+                      <button onClick={() => openSuggestEditForm(c)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={12} />Засах</button>
+                      <button onClick={() => deleteSuggestCard(c)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={12} />Устгах</button>
                     </div>
                   </div>
                 </div>
               ))}
+              {suggestCards.filter((c) => c.collectionSlug === suggestActiveSlug).length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Одоогоор дэд карт алга</div>}
             </div>
           </>
         )}
@@ -823,7 +847,7 @@ export default function AdminPanel() {
         <div onClick={() => setSuggestFormOpen(false)} className="fixed inset-0 z-[60] bg-[rgba(6,8,12,.7)] backdrop-blur-[6px] flex items-center justify-center box-border animate-[bbFadeUp_0.25s_ease_both]" style={{ padding: isMobile ? '14px' : '40px' }}>
           <div onClick={(e) => e.stopPropagation()} className="w-[480px] max-w-full max-h-[86vh] overflow-auto bg-[#171410] border border-[rgba(255,255,255,.12)] rounded-[18px] box-border shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '24px 26px 26px' }}>
             <div className="flex items-center justify-between mb-1">
-              <div className="text-[17px] font-extrabold">{sgEditIdx >= 0 ? 'Дэд карт засах' : 'Дэд карт нэмэх'}</div>
+              <div className="text-[17px] font-extrabold">{sgEditId != null ? 'Дэд карт засах' : 'Дэд карт нэмэх'}</div>
               <button onClick={() => setSuggestFormOpen(false)} className="cursor-pointer font-[inherit] text-[17px] leading-none w-[30px] h-[30px] rounded-full border border-[rgba(242,237,227,.2)] bg-transparent text-[rgba(242,237,227,.75)]">×</button>
             </div>
             <div className="text-xs text-[rgba(242,237,227,.5)] mb-[18px]">{SUGGESTS.find((s) => s.slug === suggestActiveSlug)?.title}</div>
@@ -840,6 +864,9 @@ export default function AdminPanel() {
                 <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Зураг</span>
                 <div className="relative aspect-[16/10] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink">
                   <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(sgImg || '1489599849927-2ee91cede3ba', 700)}")` }}></div>
+                  {sgSaving && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
+                  )}
                 </div>
                 <label className="flex items-center justify-center gap-2 h-[46px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
                   <ImageIcon size={15} /> {sgImg ? 'Зураг солих' : 'Зураг оруулах'}
@@ -847,7 +874,7 @@ export default function AdminPanel() {
                 </label>
               </div>
               {sgErr && <span className="text-[11.5px] font-bold text-[#f08a8a]">Нэр оруулна уу</span>}
-              <button onClick={saveSuggestCard} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1">{sgEditIdx >= 0 ? 'Хадгалах' : 'Нийтлэх'}</button>
+              <button onClick={saveSuggestCard} disabled={sgSaving} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1 disabled:opacity-60">{sgSaving ? '...' : sgEditId != null ? 'Хадгалах' : 'Нийтлэх'}</button>
             </div>
           </div>
         </div>

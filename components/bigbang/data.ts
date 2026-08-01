@@ -138,26 +138,9 @@ export const SUGGESTS = [
   { slug: 'boardgame', title: 'Гэр бүлээрээ тоглох board game', count: '7 тоглоом', tag: 'Тоглоом', img: '1529699211952-734e80c4d42b' },
 ];
 
-// Sub-collections shown when a suggest card is opened — manageable per-category from Admin Panel.
-export interface SuggestCollectionItem { name: string; desc: string; img: string; }
-
-export const SUGGEST_COLLECTIONS: Record<string, SuggestCollectionItem[]> = {
-  games: [
-    { name: 'PC тоглоом', desc: 'Компьютер дээр хамт тоглох тоглоомууд', img: '1550745165-9bc0b252726f' },
-    { name: 'Утасны тоглоом', desc: 'Гар утсаараа хамт тоглох хурдан тоглоомууд', img: '1511512578047-dfb367046420' },
-    { name: 'Хамгийн хөгжилтэй тоглоомнууд', desc: 'Хамтдаа наргиж тоглох шилдэг сонголтууд', img: '1493711662062-fa541adb3fc8' },
-  ],
-  movies: [
-    { name: 'Хосоороо үзэх кино', desc: 'Хайр дурлалын сэдэвтэй шилдэг кинонууд', img: '1489599849927-2ee91cede3ba' },
-    { name: 'Найзуудтайгаа үзэх кино', desc: 'Инээдтэй, адал явдалт кинонууд', img: '1517604931442-7e0c8ed2963c' },
-    { name: 'Гэр бүлээрээ үзэх кино', desc: 'Насны ялгаагүй хамт үзэх кинонууд', img: '1489599849927-2ee91cede3ba' },
-  ],
-  boardgame: [
-    { name: 'Хосоороо тоглох board game', desc: '2 хүнд тохирсон ширээний тоглоом', img: '1529699211952-734e80c4d42b' },
-    { name: 'Найзуудтайгаа тоглох board game', desc: 'Олон хүний зугаа цэнгэлийн тоглоом', img: '1610890716171-6b1bb98ffd09' },
-    { name: 'Тоглоомын дүрэм', desc: 'Тоглоом бүрийн заавар, дүрмийн товч тайлбар', img: '1529699211952-734e80c4d42b' },
-  ],
-};
+// Sub-cards shown when a suggest card is opened now live in the database
+// (see the SuggestCard Prisma model + /api/suggest-cards) — managed from
+// Admin Panel, fetched live by app/(bigbang)/suggest/[slug]/page.tsx.
 
 export const FAMOUS_SITES: Record<string, [string, string][]> = {
   'Mongolia': [['Говь цөл', 'nature'], ['Хөвсгөл нуур', 'nature'], ['Эрдэнэ Зуу хийд', 'sacred']],

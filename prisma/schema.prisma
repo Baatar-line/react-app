@@ -54,11 +54,12 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  profile    Profile?
-  places     Place[]     @relation("PlaceAddedBy")
-  scenicPins ScenicPin[] @relation("ScenicPinAddedBy")
-  events     Event[]     @relation("EventAddedBy")
-  favorites  Favorite[]
+  profile      Profile?
+  places       Place[]       @relation("PlaceAddedBy")
+  scenicPins   ScenicPin[]   @relation("ScenicPinAddedBy")
+  events       Event[]       @relation("EventAddedBy")
+  suggestCards SuggestCard[] @relation("SuggestCardAddedBy")
+  favorites    Favorite[]
 
   @@map("users")
 }
@@ -251,4 +252,25 @@ model Event {
   updatedAt DateTime  @updatedAt
 
   @@map("events")
+}
+
+// Sub-cards shown when a "Санал болгох" card (SUGGESTS in bigbang/data.ts —
+// games/movies/boardgame, a small fixed set defined in code, not this table)
+// is opened. Admin-panel-only content — there's no public submission flow
+// for these like there is for places/scenic pins/events, so creation is
+// gated to admin in the API route rather than any signed-in account.
+model SuggestCard {
+  id             Int      @id @default(autoincrement())
+  // Matches one of SUGGESTS' static slugs (games/movies/boardgame) — not a
+  // foreign key since that list lives in code, not a db table.
+  collectionSlug String
+  name           String
+  description    String?
+  image          String?
+  addedBy        Int
+  addedByUser    User     @relation("SuggestCardAddedBy", fields: [addedBy], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("suggest_cards")
 }
