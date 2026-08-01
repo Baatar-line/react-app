@@ -84,6 +84,14 @@ export async function apiPut<T>(path: string, body: unknown, token?: string): Pr
   return res.json();
 }
 
+export async function apiDelete(path: string, token?: string): Promise<void> {
+  const res = await authedFetch(path, { method: 'DELETE' }, token);
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => null);
+    throw new Error(errBody?.error || `DELETE ${path} failed: ${res.status}`);
+  }
+}
+
 // Phone camera photos routinely land at 8-15MB+ (or 30-50MP), well past Cloudinary's
 // 10MB free-plan upload cap — that showed up as a raw "Upload failed: 500" with no
 // indication of why. Downscale + re-encode before it ever leaves the browser so

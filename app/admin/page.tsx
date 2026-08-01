@@ -6,12 +6,12 @@
 // criteria, image URL builder) instead of redefining them, and shares the
 // place/scenic/event creation modal with HostProfile via shared/CreateForm.
 import React, { useEffect, useRef, useState } from 'react';
-import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, Film, Search, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
+import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, Film, Search, PanelLeftClose, PanelLeftOpen, Pencil, Trash2, type LucideIcon } from 'lucide-react';
 import { useIsMobile } from '@/components/bigbang/ui';
 import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, TRAVEL_APPS, U, imgUrl, isVideoUrl, itemThumbOf } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
 import { apiGet, apiGetAuthed, apiPatch, apiPost, apiPut, uploadImage } from '@/lib/api';
-import { createPlace, createScenicPin, createEvent } from '@/lib/userContent';
+import { createPlace, createScenicPin, createEvent, updatePlace, updateScenicPin, updateEvent, deletePlace, deleteScenicPin, deleteEvent } from '@/lib/userContent';
 
 type Tab = 'dash' | 'places' | 'scenic' | 'events' | 'suggests' | 'bg' | 'ads';
 
@@ -92,6 +92,8 @@ export default function AdminPanel() {
   useEffect(() => { setQuery(''); }, [tab]);
 
   const [placeActionErr, setPlaceActionErr] = useState('');
+  const [scenicActionErr, setScenicActionErr] = useState('');
+  const [eventActionErr, setEventActionErr] = useState('');
   const [ads, setAds] = useState<Ad[]>(INITIAL_ADS);
   const [adFormOpen, setAdFormOpen] = useState(false);
   const [adEditIdx, setAdEditIdx] = useState(-1);
@@ -126,12 +128,16 @@ export default function AdminPanel() {
 
   const [sharedFormOpen, setSharedFormOpen] = useState(false);
   const [sharedFormKind, setSharedFormKind] = useState<CreateKind>('place');
+  const [sharedFormMode, setSharedFormMode] = useState<'create' | 'edit'>('create');
+  const [sharedFormInitial, setSharedFormInitial] = useState<Partial<CreateFormData> | undefined>(undefined);
 
   // Suggest sub-collections (the cards shown when a "Санал болгох" card is opened
   // on the main app) — one list per SUGGESTS category, manageable here.
   const [suggestActiveSlug, setSuggestActiveSlug] = useState(SUGGESTS[0].slug);
   const [suggestCollections, setSuggestCollections] = useState<Record<string, SuggestCollectionItem[]>>(() => ({ ...SUGGEST_COLLECTIONS }));
   const [suggestFormOpen, setSuggestFormOpen] = useState(false);
+  // -1 while adding a new card; the card's index within its collection while editing one.
+  const [sgEditIdx, setSgEditIdx] = useState(-1);
   const [sgName, setSgName] = useState('');
   const [sgDesc, setSgDesc] = useState('');
   const [sgImg, setSgImg] = useState('');
@@ -242,20 +248,81 @@ export default function AdminPanel() {
       .catch((err) => setPlaceActionErr(err instanceof Error ? err.message : String(err)));
   };
 
-  const openSharedForm = (kind: CreateKind) => { setSharedFormKind(kind); setSharedFormOpen(true); };
+  // Only one event can be featured at a time (it's the single home-page
+  // banner slot) — unfeature whichever one currently holds it before setting
+  // the new one, so admins don't have to remember to do that themselves.
+  const toggleFeaturedEvent = (id: number, featured: boolean) => {
+    setEventActionErr('');
+    const prevFeatured = featured ? adminEvents.find((ev) => ev.featured && ev.id !== id) : null;
+    Promise.all([
+      apiPatch(`/events/${id}`, { featured }),
+      prevFeatured ? apiPatch(`/events/${prevFeatured.id}`, { featured: false }) : Promise.resolve(),
+    ])
+      .then(() => refetchContent())
+      .catch((err) => setEventActionErr(err instanceof Error ? err.message : String(err)));
+  };
+
+  const openSharedForm = (kind: CreateKind) => { setSharedFormKind(kind); setSharedFormMode('create'); setSharedFormInitial(undefined); setSharedFormOpen(true); };
+  const openEditForm = (kind: CreateKind, initial: Partial<CreateFormData>) => { setSharedFormKind(kind); setSharedFormMode('edit'); setSharedFormInitial(initial); setSharedFormOpen(true); };
+
+  // Row → CreateFormData shape shared by the edit-open handlers below. Only
+  // the fields CreateForm actually has inputs for get carried over — the rest
+  // (contact info, times, accessibility) are handled per-kind at the call site.
+  const editInitialFor = (kind: CreateKind, row: any): Partial<CreateFormData> => ({
+    id: row.id,
+    name: row.name,
+    aimag: row.aimag?.name || 'Улаанбаатар',
+    lat: row.lat ?? null,
+    lng: row.lng ?? null,
+    images: row.image ? [imgUrl(row.image, 500)] : [],
+    existingImage: row.image || undefined,
+    ...(kind === 'place' ? {
+      desc: row.description || '',
+      catSlug: row.category?.slug,
+      sub: row.subCategory || undefined,
+      phone: row.phone || '', instagram: row.instagramUrl || '', facebook: row.facebookUrl || '', contactEmail: row.contactEmail || '',
+      openTime: row.openTime || '', closeTime: row.closeTime || '',
+      access: !!row.accessible,
+    } : kind === 'scenic' ? {
+      desc: row.description || '',
+      scenicType: row.type || '',
+    } : {
+      // Event — see updateEvent's note on why `desc` carries the raw meta text
+      // instead of trying to re-split it into time/desc/max.
+      desc: row.meta || '',
+      date: row.startDate ? new Date(row.startDate).toISOString().slice(0, 10) : '',
+      time: row.startDate ? new Date(row.startDate).toISOString().slice(11, 16) : '',
+    }),
+  });
 
   // No token passed — falls back to AdminPanel's own bootstrapped admin
   // token (see lib/api.ts), same as every other write this screen already does.
   const onSharedSubmit = async (data: CreateFormData) => {
     try {
-      if (data.kind === 'place') await createPlace(undefined, data);
-      else if (data.kind === 'scenic') await createScenicPin(undefined, data);
-      else await createEvent(undefined, data);
+      if (data.id) {
+        if (data.kind === 'place') await updatePlace(undefined, data.id, data);
+        else if (data.kind === 'scenic') await updateScenicPin(undefined, data.id, data);
+        else await updateEvent(undefined, data.id, data);
+      } else {
+        if (data.kind === 'place') await createPlace(undefined, data);
+        else if (data.kind === 'scenic') await createScenicPin(undefined, data);
+        else await createEvent(undefined, data);
+      }
       setSharedFormOpen(false);
       refetchContent();
     } catch (err) {
-      alert('Үүсгэхэд алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
+      alert((data.id ? 'Хадгалахад' : 'Үүсгэхэд') + ' алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
     }
+  };
+
+  const deleteContentRow = (kind: CreateKind, id: number, confirmMsg: string) => {
+    if (!confirm(confirmMsg)) return;
+    setPlaceActionErr(''); setScenicActionErr(''); setEventActionErr('');
+    const del = kind === 'place' ? deletePlace(undefined, id) : kind === 'scenic' ? deleteScenicPin(undefined, id) : deleteEvent(undefined, id);
+    del.then(() => refetchContent()).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (kind === 'place') setPlaceActionErr(msg); else if (kind === 'scenic') setScenicActionErr(msg); else setEventActionErr(msg);
+    });
   };
 
   const bgArrFor = (kind: BgKind) => (kind === 'aimag' ? aimagBg : kind === 'about' ? aboutBg : kind === 'home' ? homeBg : kind === 'flag' ? flagBg : kind === 'suggest' ? suggestBg : kind === 'loader' ? loaderBg : kind === 'travelApps' ? travelAppsBg : kind === 'login' ? loginBg : catBg);
@@ -324,14 +391,25 @@ export default function AdminPanel() {
   };
   const toggleAd = (i: number) => setAds((arr) => arr.map((a, k) => (k === i ? { ...a, active: !a.active } : a)));
 
-  const openSuggestForm = () => { setSgName(''); setSgDesc(''); setSgImg(''); setSgErr(false); setSuggestFormOpen(true); };
+  const openSuggestForm = () => { setSgEditIdx(-1); setSgName(''); setSgDesc(''); setSgImg(''); setSgErr(false); setSuggestFormOpen(true); };
+  const openSuggestEditForm = (idx: number) => {
+    const it = (suggestCollections[suggestActiveSlug] || [])[idx];
+    if (!it) return;
+    setSgEditIdx(idx); setSgName(it.name); setSgDesc(it.desc === '—' ? '' : it.desc); setSgImg(it.img); setSgErr(false); setSuggestFormOpen(true);
+  };
   const saveSuggestCard = () => {
     if (!sgName.trim()) { setSgErr(true); return; }
-    setSuggestCollections((sc) => ({
-      ...sc,
-      [suggestActiveSlug]: [{ name: sgName.trim(), desc: sgDesc.trim() || '—', img: sgImg || '1489599849927-2ee91cede3ba' }, ...(sc[suggestActiveSlug] || [])],
-    }));
-    setSuggestFormOpen(false); setSgName(''); setSgDesc(''); setSgImg(''); setSgErr(false);
+    const card: SuggestCollectionItem = { name: sgName.trim(), desc: sgDesc.trim() || '—', img: sgImg || '1489599849927-2ee91cede3ba' };
+    setSuggestCollections((sc) => {
+      const list = sc[suggestActiveSlug] || [];
+      return { ...sc, [suggestActiveSlug]: sgEditIdx >= 0 ? list.map((it, i) => (i === sgEditIdx ? card : it)) : [card, ...list] };
+    });
+    setSuggestFormOpen(false); setSgEditIdx(-1); setSgName(''); setSgDesc(''); setSgImg(''); setSgErr(false);
+  };
+  const deleteSuggestCard = (idx: number) => {
+    const it = (suggestCollections[suggestActiveSlug] || [])[idx];
+    if (!it || !confirm(`"${it.name}" картыг устгах уу?`)) return;
+    setSuggestCollections((sc) => ({ ...sc, [suggestActiveSlug]: (sc[suggestActiveSlug] || []).filter((_, i) => i !== idx) }));
   };
   const onSgImg = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const f = ev.target.files && ev.target.files[0]; if (!f) return;
@@ -531,6 +609,10 @@ export default function AdminPanel() {
                         <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag?.name} · {p.description || '—'}</div>
                       </div>
                       <span className="flex-shrink-0 text-[11.5px] font-extrabold py-1.5 px-[15px] rounded-full bg-[rgba(168,213,162,.15)] text-[#a8d5a2]">Нийтлэгдсэн ✓</span>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => openEditForm('place', editInitialFor('place', p))} title="Засах" className="cursor-pointer font-[inherit] flex items-center justify-center w-8 h-8 rounded-full border border-[rgba(242,237,227,.22)] bg-transparent text-[rgba(242,237,227,.75)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={13} /></button>
+                        <button onClick={() => deleteContentRow('place', p.id, `"${p.name}" газрыг устгах уу?`)} title="Устгах" className="cursor-pointer font-[inherit] flex items-center justify-center w-8 h-8 rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={13} /></button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -552,6 +634,8 @@ export default function AdminPanel() {
                   <div className="flex gap-2 flex-shrink-0">
                     <button onClick={() => decidePlace(p.id, 'approved')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border-none bg-[#a8d5a2] text-[#132a1f]">Батлах</button>
                     <button onClick={() => decidePlace(p.id, 'rejected')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border border-[rgba(240,138,138,.5)] bg-transparent text-[#f08a8a]">Татгалзах</button>
+                    <button onClick={() => openEditForm('place', editInitialFor('place', p))} title="Засах" className="cursor-pointer font-[inherit] flex items-center justify-center w-8 h-8 rounded-full border border-[rgba(242,237,227,.22)] bg-transparent text-[rgba(242,237,227,.75)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={13} /></button>
+                    <button onClick={() => deleteContentRow('place', p.id, `"${p.name}" хүсэлтийг устгах уу?`)} title="Устгах" className="cursor-pointer font-[inherit] flex items-center justify-center w-8 h-8 rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={13} /></button>
                   </div>
                 </div>
               ))}
@@ -561,25 +645,33 @@ export default function AdminPanel() {
         )}
 
         {tab === 'scenic' && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-            {scenicList.filter((s) => matches(s.name)).map((s) => (
-              <div key={s.id} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
-                <div className="relative aspect-[16/9] bg-cover bg-center" style={{ backgroundImage: itemThumbOf(s.image || '') }}></div>
-                <div className="pt-[13px] px-[15px] pb-[15px]">
-                  <div className="flex items-center gap-2">
-                    <span className={catBadge}>{s.type}</span>
+          <>
+            {scenicActionErr && <div className="mb-4 text-xs font-bold text-[#f08a8a]">{scenicActionErr}</div>}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+              {scenicList.filter((s) => matches(s.name)).map((s) => (
+                <div key={s.id} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                  <div className="relative aspect-[16/9] bg-cover bg-center" style={{ backgroundImage: itemThumbOf(s.image || '') }}></div>
+                  <div className="pt-[13px] px-[15px] pb-[15px]">
+                    <div className="flex items-center gap-2">
+                      <span className={catBadge}>{s.type}</span>
+                    </div>
+                    <div className="text-sm font-extrabold mt-1.5">{s.name}</div>
+                    <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{s.aimag?.name} · {s.description || '—'}</div>
+                    <div className="flex gap-2 mt-3">
+                      <button onClick={() => openEditForm('scenic', editInitialFor('scenic', s))} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={12} />Засах</button>
+                      <button onClick={() => deleteContentRow('scenic', s.id, `"${s.name}" газрыг устгах уу?`)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={12} />Устгах</button>
+                    </div>
                   </div>
-                  <div className="text-sm font-extrabold mt-1.5">{s.name}</div>
-                  <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{s.aimag?.name} · {s.description || '—'}</div>
                 </div>
-              </div>
-            ))}
-            {scenicList.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Одоогоор үзэсгэлэнт газар алга</div>}
-          </div>
+              ))}
+              {scenicList.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Одоогоор үзэсгэлэнт газар алга</div>}
+            </div>
+          </>
         )}
 
         {tab === 'events' && (
           <div className="flex flex-col gap-3">
+            {eventActionErr && <div className="mb-1 text-xs font-bold text-[#f08a8a]">{eventActionErr}</div>}
             {adminEvents.filter((ev) => matches(ev.name)).map((ev) => {
               const d = new Date(ev.startDate);
               const day = String(d.getDate()).padStart(2, '0');
@@ -598,6 +690,21 @@ export default function AdminPanel() {
                       {ev.featured && <span className="text-[10.5px] font-extrabold py-1 px-[11px] rounded-full bg-[rgba(232,184,75,.2)] text-[var(--accent,#E8B84B)]">Онцлох</span>}
                     </div>
                     <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{ev.aimag?.name} · {ev.meta || '—'}</div>
+                  </div>
+                  <button
+                    onClick={() => toggleFeaturedEvent(ev.id, !ev.featured)}
+                    className={`cursor-pointer font-[inherit] flex-shrink-0 flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-full border transition-transform duration-200 hover:-translate-y-0.5 ${
+                      ev.featured
+                        ? 'bg-[var(--accent,#E8B84B)] text-[#132a1f] border-transparent'
+                        : 'bg-transparent text-[rgba(242,237,227,.7)] border-[rgba(255,255,255,.16)]'
+                    }`}
+                  >
+                    <Star size={13} fill={ev.featured ? '#132a1f' : 'none'} />
+                    {ev.featured ? 'Онцлохоос хасах' : 'Онцлох болгох'}
+                  </button>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={() => openEditForm('event', editInitialFor('event', ev))} title="Засах" className="cursor-pointer font-[inherit] flex items-center justify-center w-8 h-8 rounded-full border border-[rgba(242,237,227,.22)] bg-transparent text-[rgba(242,237,227,.75)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={13} /></button>
+                    <button onClick={() => deleteContentRow('event', ev.id, `"${ev.name}" эвентийг устгах уу?`)} title="Устгах" className="cursor-pointer font-[inherit] flex items-center justify-center w-8 h-8 rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={13} /></button>
                   </div>
                 </div>
               );
@@ -620,12 +727,16 @@ export default function AdminPanel() {
               })}
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
-              {(suggestCollections[suggestActiveSlug] || []).filter((it) => matches(it.name)).map((it, i) => (
+              {(suggestCollections[suggestActiveSlug] || []).map((it, i) => ({ it, i })).filter(({ it }) => matches(it.name)).map(({ it, i }) => (
                 <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
                   <div className="relative aspect-[16/10] bg-cover bg-center" style={{ backgroundImage: thumb(it.img) }}></div>
                   <div className="pt-[13px] px-[15px] pb-[15px]">
                     <div className="text-sm font-extrabold">{it.name}</div>
                     <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{it.desc}</div>
+                    <div className="flex gap-2 mt-3">
+                      <button onClick={() => openSuggestEditForm(i)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={12} />Засах</button>
+                      <button onClick={() => deleteSuggestCard(i)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={12} />Устгах</button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -706,13 +817,13 @@ export default function AdminPanel() {
         )}
       </main>
 
-      {sharedFormOpen && <CreateForm kind={sharedFormKind} onClose={() => setSharedFormOpen(false)} onSubmit={onSharedSubmit} />}
+      {sharedFormOpen && <CreateForm kind={sharedFormKind} mode={sharedFormMode} initial={sharedFormInitial} onClose={() => setSharedFormOpen(false)} onSubmit={onSharedSubmit} />}
 
       {suggestFormOpen && (
         <div onClick={() => setSuggestFormOpen(false)} className="fixed inset-0 z-[60] bg-[rgba(6,8,12,.7)] backdrop-blur-[6px] flex items-center justify-center box-border animate-[bbFadeUp_0.25s_ease_both]" style={{ padding: isMobile ? '14px' : '40px' }}>
           <div onClick={(e) => e.stopPropagation()} className="w-[480px] max-w-full max-h-[86vh] overflow-auto bg-[#171410] border border-[rgba(255,255,255,.12)] rounded-[18px] box-border shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '24px 26px 26px' }}>
             <div className="flex items-center justify-between mb-1">
-              <div className="text-[17px] font-extrabold">Дэд карт нэмэх</div>
+              <div className="text-[17px] font-extrabold">{sgEditIdx >= 0 ? 'Дэд карт засах' : 'Дэд карт нэмэх'}</div>
               <button onClick={() => setSuggestFormOpen(false)} className="cursor-pointer font-[inherit] text-[17px] leading-none w-[30px] h-[30px] rounded-full border border-[rgba(242,237,227,.2)] bg-transparent text-[rgba(242,237,227,.75)]">×</button>
             </div>
             <div className="text-xs text-[rgba(242,237,227,.5)] mb-[18px]">{SUGGESTS.find((s) => s.slug === suggestActiveSlug)?.title}</div>
@@ -725,12 +836,18 @@ export default function AdminPanel() {
                 <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Тайлбар</span>
                 <input value={sgDesc} onChange={(e) => setSgDesc(e.target.value)} placeholder="Энэ картын тайлбар" className={inputClass} style={inputStyle} />
               </label>
-              <label className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5">
                 <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Зураг</span>
-                <input type="file" accept="image/*" onChange={onSgImg} className="font-[inherit] text-[rgba(242,237,227,.7)]" style={{ fontSize: isMobile ? '14px' : '12px' }} />
-              </label>
+                <div className="relative aspect-[16/10] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink">
+                  <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(sgImg || '1489599849927-2ee91cede3ba', 700)}")` }}></div>
+                </div>
+                <label className="flex items-center justify-center gap-2 h-[46px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                  <ImageIcon size={15} /> {sgImg ? 'Зураг солих' : 'Зураг оруулах'}
+                  <input type="file" accept="image/*" onChange={onSgImg} className="hidden" />
+                </label>
+              </div>
               {sgErr && <span className="text-[11.5px] font-bold text-[#f08a8a]">Нэр оруулна уу</span>}
-              <button onClick={saveSuggestCard} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1">Нийтлэх</button>
+              <button onClick={saveSuggestCard} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1">{sgEditIdx >= 0 ? 'Хадгалах' : 'Нийтлэх'}</button>
             </div>
           </div>
         </div>

@@ -25,6 +25,9 @@ export default function EventPage() {
           </div>
         </div>
       )}
+      {V.events.length === 0 && !V.hasFeaturedEvent && (
+        <div className="p-[22px] border border-dashed border-[rgba(242,237,227,.22)] rounded-[14px] text-[13px] text-[rgba(242,237,227,.45)]">{V.L.eventsEmpty}</div>
+      )}
       <div className={`grid gap-[18px] ${V.isMobile ? 'grid-cols-1' : V.isTablet ? 'grid-cols-2' : 'grid-cols-4'}`}>
         {V.events.map((ev: any, i: number) => (
           <div
