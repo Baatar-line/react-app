@@ -2,9 +2,10 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Shared "add place / scenic spot / event" modal — used by both AdminPanel and
-// HostProfile so the map-pin-picker + image-upload + accessibility-criteria logic
-// (already implemented once, inline, in BigBang's own add-place form) isn't duplicated
-// a third and fourth time. Reuses the same static data as BigBang (bigbang/data.ts).
+// BigBangLayout (Profile page's add-content flow) so the map-pin-picker +
+// image-upload + accessibility-criteria logic isn't duplicated a second time.
+// Reuses the same static data as BigBang (bigbang/data.ts). No "host" tier —
+// place submissions from any signed-in account land pending admin approval.
 import React, { useCallback, useRef, useState } from 'react';
 import { Accessibility } from 'lucide-react';
 import { useIsMobile } from './bigbang/ui';
@@ -27,7 +28,9 @@ export interface CreateFormData {
   sub?: string;
   access?: boolean;
   phone?: string;
-  social?: string;
+  instagram?: string;
+  facebook?: string;
+  contactEmail?: string;
   openTime?: string;
   closeTime?: string;
   icon?: string;
@@ -63,7 +66,9 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
   const [desc, setDesc] = useState('');
   const [aimag, setAimag] = useState('Улаанбаатар');
   const [phone, setPhone] = useState('');
-  const [social, setSocial] = useState('');
+  const [instagram, setInstagram] = useState('');
+  const [facebook, setFacebook] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
   const [catSlug, setCatSlug] = useState(CATS[0].slug);
   const [sub, setSub] = useState(CATS[0].subs[0]);
   const [openTime, setOpenTime] = useState('');
@@ -181,13 +186,25 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
 
   const curCat = CATS.find((c) => c.slug === catSlug) || CATS[0];
 
+  // Place is the one kind with mandatory contact info — admin has no other
+  // way to reach whoever's asking to be listed before approving them (see
+  // app/api/places/route.ts, which requires + format-checks these too).
+  const PHONE_RE = /^\d{8}$/;
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const placeContactMissing = kind === 'place' && (!phone.trim() || !instagram.trim() || !facebook.trim() || !contactEmail.trim());
+  const placePhoneInvalid = kind === 'place' && !!phone.trim() && !PHONE_RE.test(phone.trim());
+  const placeEmailInvalid = kind === 'place' && !!contactEmail.trim() && !EMAIL_RE.test(contactEmail.trim());
+  const placeContactInvalid = placeContactMissing || placePhoneInvalid || placeEmailInvalid;
+
   const submit = () => {
     if (!name.trim()) { setErr(true); return; }
     if (kind === 'scenic' && !scenicType.trim()) { setErr(true); return; }
+    if (placeContactInvalid) { setErr(true); return; }
     const data: CreateFormData = { kind, name: name.trim(), desc: desc.trim(), aimag, images, imageFiles, lat, lng };
     if (kind === 'place') {
       data.catName = curCat.name; data.catSlug = curCat.slug; data.sub = sub; data.access = access && crit.every(Boolean);
-      data.phone = phone.trim(); data.social = social.trim(); data.openTime = openTime; data.closeTime = closeTime;
+      data.phone = phone.trim(); data.instagram = instagram.trim(); data.facebook = facebook.trim(); data.contactEmail = contactEmail.trim();
+      data.openTime = openTime; data.closeTime = closeTime;
     } else if (kind === 'scenic') {
       data.icon = icon; data.scenicType = scenicType.trim();
     } else {
@@ -218,14 +235,36 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
 
           {kind === 'place' && (
             <>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Утасны дугаар</span>
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="99112233" inputMode="numeric" className={`${inputClass} ${inputFontClass}`} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Instagram / Facebook</span>
-                <input value={social} onChange={(e) => setSocial(e.target.value)} placeholder="Ж: instagram.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
-              </label>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Утасны дугаар <span className="text-[#f08a8a]">*</span></span>
+                  <input
+                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    className={`${inputClass} ${inputFontClass}`}
+                    style={{ borderColor: err && placePhoneInvalid ? '#f08a8a' : undefined }}
+                  />
+                  {err && placePhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Имэйл хаяг <span className="text-[#f08a8a]">*</span></span>
+                  <input
+                    value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="tanii@email.mn" inputMode="email"
+                    className={`${inputClass} ${inputFontClass}`}
+                    style={{ borderColor: err && placeEmailInvalid ? '#f08a8a' : undefined }}
+                  />
+                  {err && placeEmailInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">Имэйл хаяг буруу байна — жишээ: tanii@email.mn</span>}
+                </label>
+              </div>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Instagram <span className="text-[#f08a8a]">*</span></span>
+                  <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="instagram.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Facebook <span className="text-[#f08a8a]">*</span></span>
+                  <input value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="facebook.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
+                </label>
+              </div>
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Ангилал</span>
@@ -363,7 +402,17 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
           <div className="mt-1 flex items-center gap-3">
             <button onClick={submit} className="cursor-pointer rounded-full border-none bg-[var(--accent,#E8B84B)] px-7 py-[11px] font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5">Үүсгэх →</button>
             <button onClick={onClose} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-5 py-2.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.7)]">Болих</button>
-            {err && <span className="text-[11.5px] font-bold text-[#f08a8a]">{!name.trim() ? 'Нэр оруулна уу' : 'Төрлөө оруулна уу'}</span>}
+            {err && (
+              <span className="text-[11.5px] font-bold text-[#f08a8a]">
+                {!name.trim()
+                  ? 'Нэр оруулна уу'
+                  : placePhoneInvalid || placeEmailInvalid
+                  ? 'Дээрх талбаруудыг зөв бөглөнө үү'
+                  : placeContactMissing
+                  ? 'Утас, имэйл, Instagram, Facebook-оо бөглөнө үү'
+                  : 'Төрлөө оруулна уу'}
+              </span>
+            )}
           </div>
         </div>
       </div>

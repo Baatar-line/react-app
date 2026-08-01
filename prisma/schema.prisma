@@ -25,9 +25,11 @@ datasource db {
   provider = "postgresql"
 }
 
+// No 'host' tier — every signed-in account is a plain 'user' and can create
+// scenic pins/events freely and submit places (which need admin approval);
+// 'admin' is only ever assigned via the seed script, never self-service.
 enum Role {
   user
-  host
   admin
 }
 
@@ -39,10 +41,15 @@ enum PlaceStatus {
 
 model User {
   id          Int      @id @default(autoincrement())
-  email       String   @unique
-  password    String
+  // Regular accounts sign up/in via OTP (see OtpCode below) with either a
+  // phone or an email as their one identifying "contact" — so only one of
+  // the two is guaranteed to be set, not both. `password` stays for the
+  // seeded admin account only (see prisma/seed.ts), which logs in the old
+  // email+password way (POST /api/auth/login) rather than via OTP.
+  email       String?  @unique
+  password    String?
   username    String   @unique
-  phoneNumber String?
+  phoneNumber String?  @unique
   role        Role     @default(user)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -54,6 +61,25 @@ model User {
   favorites  Favorite[]
 
   @@map("users")
+}
+
+// One-time login codes for the OTP flow (see /api/auth/request-otp,
+// /api/auth/verify-otp). `contact` is a raw phone number or email — DB-backed
+// (not in-memory) since Vercel serverless functions don't share process
+// memory across invocations. `codeHash` so a DB read alone can't leak a
+// still-valid code; `attempts` caps guessing per issued code.
+model OtpCode {
+  id        Int      @id @default(autoincrement())
+  contact   String
+  method    String
+  codeHash  String
+  attempts  Int      @default(0)
+  consumed  Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([contact])
+  @@map("otp_codes")
 }
 
 model Profile {
@@ -136,11 +162,15 @@ model Place {
   openTime     String?
   closeTime    String?
   googleMapUrl String?
-  // Sub-category label (from the owning Category's subCategories list) and
-  // contact/accessibility info — collected by the add-place form but had no
-  // column to land in until now.
+  // Sub-category label (from the owning Category's subCategories list).
   subCategory  String?
-  phone        String?
+  // Contact info — required at submission time (enforced in the POST /places
+  // route, not just here) so admin has a real way to reach whoever's asking
+  // to be listed before approving them.
+  phone        String
+  instagramUrl String
+  facebookUrl  String
+  contactEmail String
   accessible   Boolean     @default(false)
   addedBy      Int
   addedByUser  User        @relation("PlaceAddedBy", fields: [addedBy], references: [id])

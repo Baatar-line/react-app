@@ -11,7 +11,7 @@ import { useIsMobile } from '@/components/bigbang/ui';
 import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, TRAVEL_APPS, U, imgUrl, isVideoUrl, itemThumbOf } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
 import { apiGet, apiGetAuthed, apiPatch, apiPost, apiPut, uploadImage } from '@/lib/api';
-import { createPlace, createScenicPin, createEvent } from '@/lib/hostContent';
+import { createPlace, createScenicPin, createEvent } from '@/lib/userContent';
 
 type Tab = 'dash' | 'places' | 'scenic' | 'events' | 'suggests' | 'bg' | 'ads';
 
@@ -156,8 +156,7 @@ export default function AdminPanel() {
   const [suggestBg, setSuggestBg] = useState<BgItem[]>(() => SUGGESTS.map((s) => ({ slug: s.slug, name: s.title, type: 'image' as const, src: U(s.img, 900) })));
   // Full-bleed photo behind the Marauder's-map loading screen shown on first load.
   const [loaderBg, setLoaderBg] = useState<BgItem[]>(() => [{ name: 'Ачаалж буй дэлгэцийн фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1800) }]);
-  // Full-bleed photo/video behind the /login screen (both the user OTP and the
-  // host signup flows — it's one screen).
+  // Full-bleed photo/video behind the /login (OTP sign-in) screen.
   const [loginBg, setLoginBg] = useState<BgItem[]>(() => [{ name: 'Нэвтрэх хуудасны фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1800) }]);
   // Background photo/video behind the "Аяллын апп" card on the Suggest page.
   const [travelAppsBg, setTravelAppsBg] = useState<BgItem[]>(() => TRAVEL_APPS.map((a) => ({ slug: a.slug, name: a.name, type: 'image' as const, src: U('1470071459604-3b5ec3a7fe05', 900) })));
@@ -547,7 +546,7 @@ export default function AdminPanel() {
                       <span className="text-[15px] font-extrabold">{p.name}</span>
                       <span className={catBadge}>{p.category?.name}</span>
                     </div>
-                    <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag?.name} · host: @{p.addedByUser?.username} · {new Date(p.createdAt).toLocaleDateString('mn-MN')}</div>
+                    <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag?.name} · илгээсэн: @{p.addedByUser?.username} · {new Date(p.createdAt).toLocaleDateString('mn-MN')}</div>
                     <div className="text-xs text-[rgba(242,237,227,.45)] mt-[3px] whitespace-nowrap overflow-hidden text-ellipsis">{p.description || '—'}</div>
                   </div>
                   <div className="flex gap-2 flex-shrink-0">

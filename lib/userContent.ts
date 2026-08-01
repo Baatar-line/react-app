@@ -1,9 +1,9 @@
 // Turns a CreateForm submission into a real Place/Event/ScenicPin row —
-// shared by BigBangLayout's Profile-page "Host болох" flow, app/host's own
-// dashboard, and AdminPanel, so the categoryId/aimagId lookup + image upload
-// + POST sequence isn't implemented three times. `token` is optional — when
-// omitted, apiPost/uploadImage fall back to AdminPanel's bootstrapped admin
-// token (see lib/api.ts); Host/Profile flows always pass their real session token.
+// shared by BigBangLayout (Profile page's add-content flow) and AdminPanel,
+// so the categoryId/aimagId lookup + image upload + POST sequence isn't
+// implemented twice. `token` is optional — when omitted, apiPost/uploadImage
+// fall back to AdminPanel's bootstrapped admin token (see lib/api.ts); the
+// Profile-page flow always passes the visitor's real OTP session token.
 import { apiGet, apiPost, uploadImage } from './api';
 import type { CreateFormData } from '../components/CreateForm';
 
@@ -30,6 +30,11 @@ async function firstImageUrl(data: CreateFormData, token: string | undefined, fo
   return uploadImage(file, folder, token);
 }
 
+// Place is the one kind with mandatory contact info (phone/Instagram/
+// Facebook/email) — see app/api/places/route.ts, which 400s without them.
+// There's no "host" tier: anyone signed in can submit one, it just lands
+// `pending` until an admin approves it (unlike scenic pins/events, which
+// publish immediately for any signed-in account).
 export async function createPlace(token: string | undefined, data: CreateFormData): Promise<void> {
   const [categoryId, aimagId, image] = await Promise.all([
     resolveCategoryId(data.catSlug),
@@ -48,6 +53,9 @@ export async function createPlace(token: string | undefined, data: CreateFormDat
     closeTime: data.closeTime || undefined,
     subCategory: data.sub || undefined,
     phone: data.phone || undefined,
+    instagramUrl: data.instagram || undefined,
+    facebookUrl: data.facebook || undefined,
+    contactEmail: data.contactEmail || undefined,
     accessible: !!data.access,
   }, token);
 }

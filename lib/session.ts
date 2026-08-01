@@ -1,16 +1,18 @@
-// Real per-user session (host/admin self-serve login), separate from
-// lib/api.ts's bootstrapped dev-admin token. Stored under its own key so the
-// two never collide, and read directly from localStorage rather than React
-// context/state since the "Host болох" flow (inside BigBangLayout, under the
-// (bigbang) route group) and /host (its own top-level page, not wrapped by
-// that layout) don't share a component tree to pass state through.
+// Real per-user session (OTP sign-in — see /api/auth/request-otp,
+// verify-otp), separate from lib/api.ts's bootstrapped dev-admin token.
+// Stored under its own key so the two never collide. Read directly from
+// localStorage (not React context/state) since every page that needs it —
+// BigBangLayout, /login, the in-flow UserAuthForm modal — reads/writes
+// independently rather than sharing one component tree.
 import type { Role } from '../types';
 
 const SESSION_KEY = 'bb_session';
 
 export interface SessionUser {
   id: number;
-  email: string;
+  // Only one of email/phoneNumber is ever guaranteed set — an OTP account
+  // only has whichever contact method (phone or email) it signed up with.
+  email: string | null;
   username: string;
   phoneNumber: string | null;
   role: Role;

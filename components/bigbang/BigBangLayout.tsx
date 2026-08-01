@@ -13,15 +13,16 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { Target, Users, Zap, Globe } from 'lucide-react';
 import CreateForm, { CreateFormData } from '../CreateForm';
+import UserAuthForm from '../UserAuthForm';
 import {
   ratingOf, STR, CATS, TEAM, SUGGESTS, TRAVEL_APPS, sitesFor, AIMAGS, AIMAG_MN_SCRIPT,
   GEO_MN, LABEL_OFF, AIMAG_BG,
   catBgOf, itemThumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, xyToLonLat, mapsUrlFor,
   type Pin, type CatItem, type Cat,
 } from './data';
-import { apiGet, apiPost } from '../../lib/api';
-import { getSession, saveSession } from '../../lib/session';
-import { createScenicPin, createEvent } from '../../lib/hostContent';
+import { apiGet, apiGetAuthed } from '../../lib/api';
+import { getSession, saveSession, clearSession } from '../../lib/session';
+import { createPlace, createScenicPin, createEvent } from '../../lib/userContent';
 import { BgMedia } from './ui';
 
 // Replaces react-router's <Outlet context={V}/> + useOutletContext() pair —
@@ -82,6 +83,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
   _bgOk: any = {};
   _bgLd: any = {};
   _lastAimagBg: any = null;
+  // A place/scenic/event submission made while signed out — held here (not
+  // React state, since it carries raw File objects from CreateForm) so it
+  // can be replayed automatically once UserAuthForm produces a session.
+  _pendingCreate: { kind: 'place' | 'scenic' | 'event'; data: CreateFormData } | null = null;
   globeEngine: any = null;
   _globeEl: any = null;
   _globeTimer: any = null;
@@ -107,15 +112,17 @@ export default class BigBangLayout extends React.Component<Props, any> {
     globeQuery: '', globeReady: false,
     showScenicForm: false,
     showEventForm: false,
+    showPlaceForm: false,
+    // Prompted when a place/scenic pin/event is submitted without a session
+    // — there's no "host" tier, any signed-in account can create all three.
+    showUserAuthForm: false,
     // Real place/event/scenic-pin rows fetched from the backend (see
     // fetchLiveContent) — replaces the old static PINS/EVENTS/CATS[].items
     // mock arrays as the single source of truth for content everywhere below.
     livePlaces: [], liveEvents: [], liveScenicPins: [],
-    // "Host болох" — becoming a host is the same account gaining host
-    // capability (User.role: user -> host in the schema), not a separate
-    // signup; see the Profile page section this drives.
-    isHost: false, showHostForm: false, hostSubmitted: false,
-    hEmail: '', hPhone: '', hPass: '', hInstagram: '', hFacebook: '', hErr: '',
+    // This session's own place submissions (pending/approved), fetched once
+    // signed in — see fetchMyPlaces. Shown on the Profile page.
+    myPlaces: [],
     pinMode: 'scenic', heroHover: null,
     // Seeded from the last successful /settings fetch (see fetchSettings below) so a
     // refresh shows the real saved photo immediately instead of flashing the built-in
@@ -158,11 +165,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
     try {
       this.setState({ spNeeds: localStorage.getItem('bb_sp') === '1', bigText: localStorage.getItem('bb_big') === '1' });
     } catch (err) { /* ignore */ }
-    // Restores "Host болох" state across a refresh — today's session is read
-    // straight from localStorage (see lib/session.ts) rather than kept only
-    // in this component's own memory.
+    // Session is read straight from localStorage on each use (see
+    // lib/session.ts), not kept in this component's own state — this just
+    // loads this session's own place submissions once, on mount.
     const session = getSession();
-    if (session) this.setState({ isHost: session.user.role === 'host' || session.user.role === 'admin', hostSubmitted: true });
+    if (session) this.fetchMyPlaces(session.token);
     this._mnVertResize = () => { this.updateHeroVertPos(); };
     window.addEventListener('resize', this._mnVertResize);
     this._vwResize = () => { if (this.state.vw !== window.innerWidth) this.setState({ vw: window.innerWidth }); };
@@ -285,6 +292,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
     ]).then(([livePlaces, liveEvents, liveScenicPins]) => {
       this.setState({ livePlaces, liveEvents, liveScenicPins });
     }).catch(() => {});
+  };
+
+  // This session's own place submissions, pending or approved — shown on the
+  // Profile page's "Миний нэмсэн газрууд" section (mirrors myScenic/myEvents,
+  // which don't need their own fetch since they're just this user's rows
+  // filtered out of the already-fetched public liveScenicPins/liveEvents —
+  // Place is filtered server-side instead since only approved ones are public).
+  fetchMyPlaces = (token: string) => {
+    apiGetAuthed<any[]>('/places/mine', token).then((myPlaces) => this.setState({ myPlaces })).catch(() => {});
   };
 
   // CATS shell (slug/name/subs/hero/pool/...) with real Place rows grouped
@@ -907,17 +923,30 @@ export default class BigBangLayout extends React.Component<Props, any> {
     } : false;
 
     const st = this.state;
-    const setF = (k: string) => (ev: any) => this.setState({ [k]: ev.target.value });
 
-    // Same shared "add place/scenic/event" modal Host and Admin use (map picker +
-    // what3words + satellite tiles included) instead of this layout's own hand-rolled
-    // scenic/event forms — see CreateForm.tsx. Adding a place is host business (see
-    // the Profile page's "Контент нэмэх" section) — only scenic pins and events are
-    // offered here to a plain logged-in visitor.
-    const openScenicForm = () => this.setState({ showScenicForm: true, hErr: '' });
+    // Same shared "add place/scenic/event" modal Admin uses too (map picker +
+    // what3words + satellite tiles included) — see CreateForm.tsx. No "host"
+    // tier: any signed-in account can submit all three (a place just lands
+    // `pending` until an admin approves it — see app/api/places/route.ts). A
+    // signed-out visitor is prompted with the lightweight OTP UserAuthForm,
+    // and the submission is replayed automatically once they're signed in.
+    const openPlaceForm = () => this.setState({ showPlaceForm: true });
+    const onPlaceSubmit = async (data: CreateFormData) => {
+      const session = getSession();
+      if (!session) { this._pendingCreate = { kind: 'place', data }; this.setState({ showPlaceForm: false, showUserAuthForm: true }); return; }
+      try {
+        await createPlace(session.token, data);
+        this.setState({ showPlaceForm: false });
+        this.fetchLiveContent();
+        this.fetchMyPlaces(session.token);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
+    };
+    const openScenicForm = () => this.setState({ showScenicForm: true });
     const onScenicSubmit = async (data: CreateFormData) => {
       const session = getSession();
-      if (!session) { this.setState({ showScenicForm: false, showHostForm: true, hErr: L.hErrRequired }); return; }
+      if (!session) { this._pendingCreate = { kind: 'scenic', data }; this.setState({ showScenicForm: false, showUserAuthForm: true }); return; }
       try {
         await createScenicPin(session.token, data);
         this.setState({ showScenicForm: false });
@@ -926,10 +955,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
         alert(err instanceof Error ? err.message : String(err));
       }
     };
-    const openEventForm = () => this.setState({ showEventForm: true, hErr: '' });
+    const openEventForm = () => this.setState({ showEventForm: true });
     const onEventSubmit = async (data: CreateFormData) => {
       const session = getSession();
-      if (!session) { this.setState({ showEventForm: false, showHostForm: true, hErr: L.hErrRequired }); return; }
+      if (!session) { this._pendingCreate = { kind: 'event', data }; this.setState({ showEventForm: false, showUserAuthForm: true }); return; }
       try {
         await createEvent(session.token, data);
         this.setState({ showEventForm: false });
@@ -938,28 +967,36 @@ export default class BigBangLayout extends React.Component<Props, any> {
         alert(err instanceof Error ? err.message : String(err));
       }
     };
-    const openHostForm = () => this.setState({ showHostForm: true, hErr: '' });
-    const closeHostForm = () => this.setState({ showHostForm: false });
-    // Real signup — POSTs to /api/auth/register with role: 'host' (self-serve,
-    // no admin-approval queue — see the plan this shipped under) and stores
-    // the resulting session (lib/session.ts) so it survives a refresh and so
-    // onScenicSubmit/onEventSubmit/CreateForm on /host can act as this user.
-    const submitHost = async () => {
-      const email = st.hEmail.trim(), phone = st.hPhone.trim(), pass = st.hPass.trim();
-      if (!email || !phone || !pass) { this.setState({ hErr: L.hErrRequired }); return; }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { this.setState({ hErr: L.hErrEmail }); return; }
-      if (!/^\d{8}$/.test(phone)) { this.setState({ hErr: L.hErrPhone }); return; }
-      if (pass.length < 8) { this.setState({ hErr: L.hErrPass }); return; }
-      const username = email.split('@')[0];
+    const closeUserAuthForm = () => { this._pendingCreate = null; this.setState({ showUserAuthForm: false }); };
+    // UserAuthForm already did the OTP verify — this just stores the
+    // resulting session and replays whatever place/scenic/event submission
+    // triggered the prompt in the first place, so the visitor doesn't have
+    // to refill the form.
+    const onUserAuthed = async (token: string, user: any) => {
+      saveSession(token, user);
+      this.setState({ showUserAuthForm: false });
+      this.fetchMyPlaces(token);
+      const pending = this._pendingCreate;
+      this._pendingCreate = null;
+      if (!pending) return;
       try {
-        const res = await apiPost<{ token: string; user: any }>('/auth/register', {
-          email, password: pass, username, phoneNumber: phone, role: 'host',
-        });
-        saveSession(res.token, res.user);
-        this.setState({ isHost: true, hostSubmitted: true, showHostForm: false, hErr: '' });
+        if (pending.kind === 'place') await createPlace(token, pending.data);
+        else if (pending.kind === 'scenic') await createScenicPin(token, pending.data);
+        else await createEvent(token, pending.data);
+        this.fetchLiveContent();
+        this.fetchMyPlaces(token);
       } catch (err) {
-        this.setState({ hErr: err instanceof Error ? err.message : String(err) });
+        alert(err instanceof Error ? err.message : String(err));
       }
+    };
+    // Clears the session (lib/session.ts) and this session's own fetched
+    // place list — myScenic/myEvents don't need clearing since they're
+    // re-derived from getSession() fresh on every render (see mySession
+    // below), but myPlaces is state fetched once via fetchMyPlaces and would
+    // otherwise keep showing the logged-out account's places until a refresh.
+    const logout = () => {
+      clearSession();
+      this.setState({ myPlaces: [] });
     };
     const evThumb = (img: any) => img ? 'url("' + img + '")' : 'linear-gradient(135deg, rgba(232, 184, 75,.25), rgba(120,200,170,.15))';
     const liveEvents: any[] = this.state.liveEvents || [];
@@ -1001,9 +1038,16 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const aimagImg = aimag !== 'Бүгд' ? (this.state.aimagBgOverride[aimag] || AIMAG_BG[aimag] || null) : null;
     if (aimagImg && this.bgReady(aimagImg, 1800)) this._lastAimagBg = aimagImg;
 
-    // "Миний нэмсэн..." on the Profile page — this session's own submissions,
-    // filtered out of the same live-fetched lists everyone else sees.
+    // "Миний нэмсэн..." on the Profile page — this session's own submissions.
+    // Places come pre-filtered from the server (GET /places/mine, see
+    // fetchMyPlaces) since only approved ones are public in the first place;
+    // scenic pins/events are filtered out of the same live-fetched lists
+    // everyone else sees, since those have no separate "mine" endpoint.
     const mySession = getSession();
+    const myPlaceItems = (st.myPlaces || []).map((p: any) => ({
+      name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.image),
+      pending: p.status === 'pending', statusLabel: p.status === 'approved' ? 'Батлагдсан ✓' : p.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
+    }));
     const myScenicItems = mySession
       ? (this.state.liveScenicPins || []).filter((p: any) => p.addedBy === mySession.user.id)
         .map((p: any) => ({ name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.image) }))
@@ -1051,16 +1095,14 @@ export default class BigBangLayout extends React.Component<Props, any> {
       bigSwBg: st.bigText ? accent : 'rgba(255,255,255,.2)', bigSwKnob: st.bigText ? '23px' : '3px',
       spCardBg: st.spNeeds ? 'rgba(120,200,170,.1)' : 'rgba(255,255,255,.03)', spCardBorder: st.spNeeds ? 'rgba(120,200,170,.6)' : 'rgba(255,255,255,.1)',
       spSwBg: st.spNeeds ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.2)', spSwKnob: st.spNeeds ? '23px' : '3px',
+      openPlaceForm, closePlaceForm: () => this.setState({ showPlaceForm: false }),
       openScenicForm, closeScenicForm: () => this.setState({ showScenicForm: false }),
       openEventForm, closeEventForm: () => this.setState({ showEventForm: false }),
-      showScenicForm: st.showScenicForm, showEventForm: st.showEventForm, onScenicSubmit, onEventSubmit,
-      isHost: st.isHost, hostSubmitted: st.hostSubmitted, showHostForm: st.showHostForm,
-      openHostForm, closeHostForm, submitHost,
-      hEmail: st.hEmail, onHEmail: setF('hEmail'),
-      hPhone: st.hPhone, onHPhone: setF('hPhone'),
-      hPass: st.hPass, onHPass: setF('hPass'),
-      hInstagram: st.hInstagram, onHInstagram: setF('hInstagram'),
-      hFacebook: st.hFacebook, onHFacebook: setF('hFacebook'), hErr: st.hErr,
+      showPlaceForm: st.showPlaceForm, showScenicForm: st.showScenicForm, showEventForm: st.showEventForm,
+      onPlaceSubmit, onScenicSubmit, onEventSubmit,
+      showUserAuthForm: st.showUserAuthForm, closeUserAuthForm, onUserAuthed,
+      loggedIn: !!mySession, logout,
+      hasMyPlaces: myPlaceItems.length > 0, myPlaceItems,
       hasMyScenic: myScenicItems.length > 0, myScenicItems,
       hasMyEvents: myEventItems.length > 0, myEventItems,
       aboutNavColor: route === 'about' ? accent : 'rgba(242,237,227,.75)',
@@ -1219,8 +1261,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
                         <button onClick={V.setMn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold" style={{ background: V.mnBg, color: V.mnColor }}>MN</button>
                         <button onClick={V.setEn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold" style={{ background: V.enBg, color: V.enColor }}>EN</button>
                       </div>
-                      <Link href="/login" onClick={V.closeMobileMenu} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-[15px] py-1.5 font-[inherit] text-[12.5px] font-semibold text-cream no-underline">{V.L.signin}</Link>
-                      <button onClick={() => { V.openProfile(); V.closeMobileMenu(); }} title={V.L.profile} className="flex h-[34px] w-[34px] flex-none cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
+                      {!V.loggedIn && (
+                        <Link href="/login" onClick={V.closeMobileMenu} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-[15px] py-1.5 font-[inherit] text-[12.5px] font-semibold text-cream no-underline">{V.L.signin}</Link>
+                      )}
+                      {V.loggedIn && (
+                        <button onClick={() => { V.openProfile(); V.closeMobileMenu(); }} title={V.L.profile} className="flex h-[34px] w-[34px] flex-none cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
+                      )}
                     </div>
                   </div>
                 </>
@@ -1269,11 +1315,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
                 <button onClick={V.setEn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold transition-all duration-250" style={{ background: V.enBg, color: V.enColor }}>EN</button>
               </div>
 
-              {!V.isTablet && (
+              {!V.isTablet && !V.loggedIn && (
                 <Link href="/login" className="cursor-pointer rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-4 py-1.5 font-[inherit] text-[13px] font-semibold text-cream no-underline transition-all duration-250">{V.L.signin}</Link>
               )}
 
-              <button onClick={V.openProfile} title={V.L.profile} className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-all duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
+              {V.loggedIn && (
+                <button onClick={V.openProfile} title={V.L.profile} className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-all duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
+              )}
             </div>
           )}
         </nav>
@@ -1281,8 +1329,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
         <BigBangContext.Provider value={V}>{this.props.children}</BigBangContext.Provider>
 
         {/* Same shared modal Host/Admin use — map picker, what3words, satellite tiles included. */}
+        {V.showPlaceForm && <CreateForm kind="place" onClose={V.closePlaceForm} onSubmit={V.onPlaceSubmit} />}
         {V.showScenicForm && <CreateForm kind="scenic" onClose={V.closeScenicForm} onSubmit={V.onScenicSubmit} />}
         {V.showEventForm && <CreateForm kind="event" onClose={V.closeEventForm} onSubmit={V.onEventSubmit} />}
+        {V.showUserAuthForm && <UserAuthForm onClose={V.closeUserAuthForm} onAuthed={V.onUserAuthed} />}
       </div>
     );
   }

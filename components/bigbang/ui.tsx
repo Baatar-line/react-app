@@ -99,7 +99,7 @@ export function useIsMobile(breakpoint = 640): boolean {
 // stand-in for a purchased 3D icon pack, built from polygons, not a rendered
 // asset. Richer pass: outlined edges, a soft ground glow, and a couple of
 // floating accent details so they read as more than a flat silhouette.
-export type Iso3DKind = 'scenic' | 'event' | 'chess' | 'gaming' | 'controller' | 'movie' | 'travel';
+export type Iso3DKind = 'place' | 'scenic' | 'event' | 'chess' | 'gaming' | 'controller' | 'movie' | 'travel';
 
 export function Isometric3DIcon({ kind, size = 56 }: { kind: Iso3DKind; size?: number }) {
   const accent = 'var(--accent,#E8B84B)';
@@ -198,6 +198,25 @@ export function Isometric3DIcon({ kind, size = 56 }: { kind: Iso3DKind; size?: n
         <path d="M37 40 A7 7 0 0 0 51 40 M44 33 A10 7 0 0 1 44 47 M44 33 A10 7 0 0 0 44 47" stroke="rgba(20,16,11,.5)" strokeWidth={0.7} fill="none" />
         {/* small paper plane */}
         <path d="M50 12 L58 15 L52 17 L50 22 L48 17 Z" fill="#f2ede3" stroke={outline} strokeWidth={0.6} strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (kind === 'place') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 64 66" style={{ overflow: 'visible' }}>
+        {glow(50)}
+        <ellipse cx="32" cy="52" rx="22" ry="8" fill="rgba(255,255,255,.05)" stroke={outline} strokeWidth={0.8} />
+        {/* map pin, isometric-ish teardrop with a flat base shadow */}
+        <path d="M32 6 C20 6 12 15 12 26 C12 38 32 54 32 54 C32 54 52 38 52 26 C52 15 44 6 32 6 Z" fill={accent} opacity={0.92} stroke={outline} strokeWidth={0.8} strokeLinejoin="round" />
+        <circle cx="32" cy="25" r="9.5" fill="rgba(20,16,11,.55)" stroke={outline} strokeWidth={0.7} />
+        {/* small building silhouette inside the pin's head */}
+        <rect x="27" y="21" width="10" height="9" fill="#f2ede3" opacity={0.9} />
+        <rect x="29" y="23.5" width="2" height="2" fill="rgba(20,16,11,.6)" />
+        <rect x="33" y="23.5" width="2" height="2" fill="rgba(20,16,11,.6)" />
+        <rect x="29" y="27" width="2" height="2" fill="rgba(20,16,11,.6)" />
+        <rect x="33" y="27" width="2" height="2" fill="rgba(20,16,11,.6)" />
+        <circle cx="10" cy="18" r="1.4" fill="#f2ede3" opacity={0.6} />
+        <circle cx="55" cy="30" r="1.6" fill={accent} opacity={0.85} />
       </svg>
     );
   }
