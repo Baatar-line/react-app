@@ -59,7 +59,7 @@ interface Props {
   // unchanged photo. Ignored when mode is 'create' (or omitted).
   initial?: Partial<CreateFormData>;
   onClose: () => void;
-  onSubmit: (data: CreateFormData) => void;
+  onSubmit: (data: CreateFormData) => void | Promise<void>;
 }
 
 const TITLES: Record<CreateKind, string> = {
@@ -108,6 +108,11 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const [lat, setLat] = useState<number | null>(initial?.lat ?? null);
   const [lng, setLng] = useState<number | null>(initial?.lng ?? null);
   const [err, setErr] = useState(false);
+  // Guards the create/save button against double-submits — a fast double
+  // click before the (async, image-upload-bearing) onSubmit resolves used to
+  // fire two separate creates, e.g. two identical scenic pins a couple
+  // seconds apart, each with its own freshly-uploaded Cloudinary image.
+  const [submitting, setSubmitting] = useState(false);
   const [w3w, setW3w] = useState('');
   const [w3wLoading, setW3wLoading] = useState(false);
   const [w3wErr, setW3wErr] = useState('');
@@ -229,7 +234,8 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const placeEmailInvalid = kind === 'place' && !!contactEmail.trim() && !EMAIL_RE.test(contactEmail.trim());
   const placeContactInvalid = placeContactMissing || placePhoneInvalid || placeEmailInvalid;
 
-  const submit = () => {
+  const submit = async () => {
+    if (submitting) return;
     if (!name.trim()) { setErr(true); return; }
     if (kind === 'scenic' && !scenicType.trim()) { setErr(true); return; }
     if (placeContactInvalid) { setErr(true); return; }
@@ -247,7 +253,12 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
     } else {
       data.date = date; data.time = time; data.max = max.trim() || '20';
     }
-    onSubmit(data);
+    setSubmitting(true);
+    try {
+      await onSubmit(data);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const stop = (ev: React.MouseEvent) => ev.stopPropagation();
@@ -437,8 +448,8 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
           )}
 
           <div className="mt-1 flex items-center gap-3">
-            <button onClick={submit} className="cursor-pointer rounded-full border-none bg-[var(--accent,#E8B84B)] px-7 py-[11px] font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5">{mode === 'edit' ? 'Хадгалах' : 'Үүсгэх →'}</button>
-            <button onClick={onClose} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-5 py-2.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.7)]">Болих</button>
+            <button onClick={submit} disabled={submitting} className="cursor-pointer rounded-full border-none bg-[var(--accent,#E8B84B)] px-7 py-[11px] font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:translate-y-0">{submitting ? 'Хадгалж байна…' : mode === 'edit' ? 'Хадгалах' : 'Үүсгэх →'}</button>
+            <button onClick={onClose} disabled={submitting} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-5 py-2.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.7)] disabled:cursor-not-allowed disabled:opacity-60">Болих</button>
             {err && (
               <span className="text-[11.5px] font-bold text-[#f08a8a]">
                 {!name.trim()
