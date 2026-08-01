@@ -61,6 +61,7 @@ model User {
   suggestCards SuggestCard[] @relation("SuggestCardAddedBy")
   ads          Ad[]          @relation("AdAddedBy")
   favorites    Favorite[]
+  ratings      Rating[]
 
   @@map("users")
 }
@@ -110,6 +111,24 @@ model Favorite {
 
   @@unique([userId, placeId])
   @@map("favorites")
+}
+
+// Generic 1-5 rating a signed-in user leaves on a place/scenic pin/event —
+// targetKey follows the same "<kind>:<id>" convention as Favorite.placeId
+// (e.g. "place:5", "scenic:12", "event:3") so one table covers all three
+// kinds instead of three near-identical ones. Unique per (user, target) so
+// re-rating updates the existing row instead of stacking duplicates.
+model Rating {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetKey String
+  score     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, targetKey])
+  @@map("ratings")
 }
 
 model Category {

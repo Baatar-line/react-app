@@ -6,8 +6,9 @@ import React, { useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Accessibility, Heart, MapPin, Phone, Star } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { imgUrl, ratingOf, aimagName, mapsUrlFor, FCRIT } from '@/components/bigbang/data';
+import { imgUrl, aimagName, mapsUrlFor, FCRIT } from '@/components/bigbang/data';
 import { BgMedia } from '@/components/bigbang/ui';
+import { getRatingSummary, ratingTargetKey, submitRating, type RatingSummary } from '@/lib/ratings';
 
 export default function PlaceDetail() {
   const V: any = useContext(BigBangContext);
@@ -16,6 +17,7 @@ export default function PlaceDetail() {
   const [pdImgIdx, setPdImgIdx] = React.useState(0);
   React.useEffect(() => { setPdImgIdx(0); }, [slug, index]);
   const [hoverStar, setHoverStar] = React.useState(0);
+  const [ratingSummary, setRatingSummary] = React.useState<RatingSummary>({ average: null, count: 0, mine: null });
 
   const accent = V.accent;
   const L = V.L;
@@ -34,11 +36,28 @@ export default function PlaceDetail() {
   const gallery = [it.img || ''];
   const favKey = 'p:' + cat.slug + ':' + it.name;
   const favOn = !!V.favs[favKey];
-  const myRating = V.myRatings[favKey] || 0;
+  const targetKey = ratingTargetKey('place', it.id);
+  React.useEffect(() => {
+    let cancelled = false;
+    getRatingSummary(targetKey, V.mySessionToken).then((s) => { if (!cancelled) setRatingSummary(s); }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetKey, V.mySessionToken]);
+  const rateThis = async (score: number) => {
+    if (!V.loggedIn) { V.openUserAuth(); return; }
+    try {
+      setRatingSummary((s) => ({ ...s, mine: score }));
+      const updated = await submitRating(V.mySessionToken, targetKey, score);
+      setRatingSummary(updated);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const myRating = ratingSummary.mine || 0;
   const sel = Math.min(pdImgIdx, Math.max(0, gallery.length - 1));
   const mainImg = 'linear-gradient(rgba(0,0,0,.06), rgba(0,0,0,.2)), url("' + imgUrl(gallery[sel], 1200) + '")';
   const aimag = it.aimag || 'Улаанбаатар';
-  const rating = ratingOf(it.name);
+  const rating = ratingSummary.average != null ? ratingSummary.average.toFixed(1) : '—';
   const hours = it.hours || '—';
   const phone = it.phone || '—';
   const desc = it.desc || it.meta;
@@ -87,7 +106,7 @@ export default function PlaceDetail() {
           <div className="mt-6 flex flex-wrap gap-[26px]">
             <div className="flex items-center gap-[11px]">
               <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[rgba(232,184,75,.4)] text-base text-[var(--accent,#E8B84B)]">★</span>
-              <span className="flex flex-col"><span className="text-[15px] font-extrabold text-cream">{rating}</span><span className="text-[11px] text-[rgba(242,237,227,.5)]">{L.pdRating}</span></span>
+              <span className="flex flex-col"><span className="text-[15px] font-extrabold text-cream">{rating}</span><span className="text-[11px] text-[rgba(242,237,227,.5)]">{L.pdRating}{ratingSummary.count > 0 ? ` · ${ratingSummary.count}` : ''}</span></span>
             </div>
             <div className="flex items-center gap-[11px]">
               <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[rgba(232,184,75,.4)] text-base text-[var(--accent,#E8B84B)]">◷</span>
@@ -129,7 +148,7 @@ export default function PlaceDetail() {
                 return (
                   <button
                     key={n}
-                    onClick={() => V.ratePlace(favKey)(n)}
+                    onClick={() => rateThis(n)}
                     onMouseEnter={() => setHoverStar(n)}
                     aria-label={String(n)}
                     className="cursor-pointer border-0 bg-transparent p-0 transition-transform duration-150 hover:scale-110"

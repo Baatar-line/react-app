@@ -107,7 +107,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   state: any = {
     active: -1, aimag: 'Бүгд', lang: 'mn', locOpen: false,
-    pin: -1, saved: {}, favs: {}, joined: {}, myRatings: {}, mapAimag: null, hoverAimag: null,
+    pin: -1, saved: {}, favs: {}, joined: {}, mapAimag: null, hoverAimag: null,
     spNeeds: false, bigText: false, globeCountry: null, globeHover: null, globeFilter: null,
     globeQuery: '', globeReady: false,
     showScenicForm: false,
@@ -876,12 +876,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const toggleFav = (key: string) => (ev: any) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState((s: any) => ({ favs: { ...s.favs, [key]: !s.favs[key] } })); };
     const heartOf = (on: boolean) => ({ favOn: on, heartColor: on ? accent : 'rgba(242,237,227,.9)' });
 
-    // Visitor-given star rating for a place's detail page — kept alongside
-    // favs/joined as plain in-memory state (not persisted server-side; this
-    // app has no review/rating backend), keyed the same way favs already are.
-    const myRatings = this.state.myRatings || {};
-    const ratePlace = (key: string) => (n: number) => this.setState((s: any) => ({ myRatings: { ...s.myRatings, [key]: n } }));
-
     const joined = this.state.joined || {};
     const toggleJoin = (key: string) => (ev: any) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState((s: any) => ({ joined: { ...s.joined, [key]: !s.joined[key] } })); };
     const joinOf = (on: boolean) => ({
@@ -1004,6 +998,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const fe = featuredEvent
       ? { name: featuredEvent.name, date: fmtEventDate(featuredEvent.startDate), meta: featuredEvent.meta || '', img: featuredEvent.image || '' }
       : { name: '', date: '', meta: '', img: '' };
+    // The featured card already shows this event up top — drop it from the
+    // grid below so it doesn't render a second time as a small card.
+    const gridEvents = featuredEvent ? liveEvents.filter((ev) => ev !== featuredEvent) : liveEvents;
 
     const topScenic = this.allPins().map((p) => ({ p, rating: ratingOf(p.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
       .map((o) => ({ name: o.p.name, sub: o.p.type, rating: o.rating, kind: L.favScenic, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.p.img, 500) + '")', onClick: () => { this.setState({ pinMode: 'scenic' }); go('pin'); } }));
@@ -1059,7 +1056,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       : [];
 
     return {
-      accent, driftAnim, L, lang, aimag, favs, toggleFav, myRatings, ratePlace, spNeeds: st.spNeeds,
+      accent, driftAnim, L, lang, aimag, favs, toggleFav, spNeeds: st.spNeeds,
       catBgOverride: st.catBgOverride, catVideoOverride: st.catVideoOverride, suggestBgOverride: st.suggestBgOverride,
       isHome: route === 'home', isMapsPage: route === 'pin',
       openPin: () => go('pin'), openEvent: () => go('event'), openSuggest: () => go('suggest'),
@@ -1102,7 +1099,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
       showPlaceForm: st.showPlaceForm, showScenicForm: st.showScenicForm, showEventForm: st.showEventForm,
       onPlaceSubmit, onScenicSubmit, onEventSubmit,
       showUserAuthForm: st.showUserAuthForm, closeUserAuthForm, onUserAuthed,
-      loggedIn: !!mySession, logout,
+      // Lets a page-level "rate this" widget (PlaceDetail/EventDetail) prompt
+      // sign-in on demand, same modal as place/scenic/event submission —
+      // unlike those, there's no pending-action replay after login here, so
+      // the visitor just taps their star rating again once signed in.
+      openUserAuth: () => this.setState({ showUserAuthForm: true }),
+      loggedIn: !!mySession, mySessionToken: mySession?.token, logout,
       hasMyPlaces: myPlaceItems.length > 0, myPlaceItems,
       hasMyScenic: myScenicItems.length > 0, myScenicItems,
       hasMyEvents: myEventItems.length > 0, myEventItems,
@@ -1161,10 +1163,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
       fevBg: 'linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.4)), url("' + imgUrl(fe.img, 1600) + '")',
       fevDate: fe.date, fevName: fe.name, fevMeta: fe.meta,
       openEventDetail: this.openEventDetail,
-      events: liveEvents.map((ev: any) => {
+      events: gridEvents.map((ev: any) => {
         const { day, mon } = eventDayMon(ev.startDate);
         return {
-          day, mon, name: ev.name, meta: ev.meta || '', tag: ev.tag || L.eTagFallback,
+          id: ev.id, day, mon, name: ev.name, meta: ev.meta || '', tag: ev.tag || L.eTagFallback,
           aimag: ev.aimag ? ev.aimag.name : undefined,
           thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + imgUrl(ev.image || '', 800) + '")',
         };
