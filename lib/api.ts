@@ -108,9 +108,17 @@ async function shrinkImage(file: File, maxDim: number, quality: number): Promise
   const ctx = canvas.getContext('2d');
   if (!ctx) return file;
   ctx.drawImage(bitmap, 0, 0, w, h);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+  // PNG/WebP can carry real transparency (a logo, an ad graphic meant to
+  // blend into dark UI chrome) — re-encoding those to JPEG unconditionally
+  // used to flatten every transparent pixel onto an opaque black fill. Only
+  // JPEG/HEIC-style sources (which never had alpha to begin with) still get
+  // the smaller JPEG re-encode; anything else keeps its alpha as PNG.
+  const keepsAlpha = file.type === 'image/png' || file.type === 'image/webp';
+  const outType = keepsAlpha ? 'image/png' : 'image/jpeg';
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, outType, keepsAlpha ? undefined : quality));
   if (!blob) return file;
-  return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+  const ext = keepsAlpha ? '.png' : '.jpg';
+  return new File([blob], file.name.replace(/\.\w+$/, '') + ext, { type: outType });
 }
 
 const CLOUDINARY_FREE_LIMIT = 10 * 1024 * 1024;
