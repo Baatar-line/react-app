@@ -6,20 +6,24 @@
 // settings, background-photo overrides, the globe engine, the add-place/scenic/event forms).
 // Each actual "page" (Home, Category, Place, Maps, Globe, Event, Suggest, About, Profile) is
 // its own routed component under app/(bigbang)/, rendered as `children` below and reading this
-// layout's computed values via useContext(BigBangContext). Dynamic per-element styling is kept
-// as inline style strings via css() — see ./ui.
+// layout's computed values via useContext(BigBangContext). Styling is Tailwind utility classes;
+// genuinely per-instance/runtime values (computed colors, positions, backgrounds) stay inline.
 import React from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { Target, Users, Zap, Globe } from 'lucide-react';
-import { css, Hover } from './ui';
 import CreateForm, { CreateFormData } from '../CreateForm';
+import UserAuthForm from '../UserAuthForm';
 import {
-  U, ratingOf, STR, CATS, PINS, TEAM, EVENTS, SUGGESTS, TRAVEL_APPS, sitesFor, FEATURED_EVENT, AIMAGS, AIMAG_MN_SCRIPT,
-  GEO_MN, LABEL_OFF, AIMAG_BG, PIN_OFFS, FCRIT, ACCESS_NAMES,
-  catBgOf, thumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, lonLatToXY, embedUrlFor, mapsUrlFor,
+  ratingOf, STR, CATS, TEAM, SUGGESTS, TRAVEL_APPS, sitesFor, AIMAGS, AIMAG_MN_SCRIPT,
+  GEO_MN, LABEL_OFF, AIMAG_BG,
+  catBgOf, itemThumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, xyToLonLat, mapsUrlFor,
+  type Pin, type CatItem, type Cat,
 } from './data';
-import { apiGet } from '../../lib/api';
+import { apiGet, apiGetAuthed } from '../../lib/api';
+import { getSession, saveSession, clearSession } from '../../lib/session';
+import { createPlace, createScenicPin, createEvent } from '../../lib/userContent';
+import { BgMedia } from './ui';
 
 // Replaces react-router's <Outlet context={V}/> + useOutletContext() pair —
 // Next.js layouts render `children`, not an Outlet, so the computed `V`
@@ -29,6 +33,25 @@ export const BigBangContext = React.createContext<any>(null);
 type Props = { accent?: string; motion?: boolean; navigate: (path: string) => void; pathname: string; children: React.ReactNode };
 
 const e = React.createElement;
+
+// Sunflower/phyllotaxis scatter angle — see syncMainMap's pin placement.
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+const EVENT_MONTHS_MN = ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар', '7-р сар', '8-р сар', '9-р сар', '10-р сар', '11-р сар', '12-р сар'];
+
+// A real Event's `startDate` (an ISO timestamp) shaped into the old
+// day/month display pair (EVENTS used to carry these as separate literal
+// fields) — used wherever an event's date needs to render as text.
+function eventDayMon(iso: string): { day: string; mon: string } {
+  const d = new Date(iso);
+  if (isNaN(+d)) return { day: '01', mon: EVENT_MONTHS_MN[0] };
+  return { day: String(d.getDate()).padStart(2, '0'), mon: EVENT_MONTHS_MN[d.getMonth()] };
+}
+
+function fmtEventDate(iso: string): string {
+  const { day, mon } = eventDayMon(iso);
+  return day + ', ' + mon;
+}
 
 // Last background settings fetched from the backend, read synchronously so the very
 // first render already shows the real photo instead of the placeholder for a beat.
@@ -57,41 +80,65 @@ function routeFromPathname(pathname: string): string {
 
 export default class BigBangLayout extends React.Component<Props, any> {
   geo: any = null;
-  _bg: any = null;
   _bgOk: any = {};
   _bgLd: any = {};
-  _lastPinBg: any = null;
   _lastAimagBg: any = null;
-  _pickMap: any = null;
-  _pickMarker: any = null;
+  // A place/scenic/event submission made while signed out — held here (not
+  // React state, since it carries raw File objects from CreateForm) so it
+  // can be replayed automatically once UserAuthForm produces a session.
+  _pendingCreate: { kind: 'place' | 'scenic' | 'event'; data: CreateFormData } | null = null;
   globeEngine: any = null;
   _globeEl: any = null;
   _globeTimer: any = null;
   _globeResize: any = null;
+  _mainMap: any = null;
+  _aimagPolyLayer: any = null;
+  _aimagLabelLayer: any = null;
+  _pinLayer: any = null;
+  _aimagLayers: any = {};
+  _aimagBuilt = false;
+  _fullBounds: any = null;
+  _wasZoomed = false;
+  _lastFlownAimag: any = null;
+  _enclaveHost: any = {};
   _pickerWrapEl: any = null;
   _mnVertResize: any = null;
   _vwResize: any = null;
 
   state: any = {
     active: -1, aimag: 'Бүгд', lang: 'mn', locOpen: false,
-    pin: -1, saved: {}, favs: {}, joined: {}, mapAimag: null, hoverAimag: null,
+    pin: -1, saved: {}, favs: {}, joined: {}, myRatings: {}, mapAimag: null, hoverAimag: null,
     spNeeds: false, bigText: false, globeCountry: null, globeHover: null, globeFilter: null,
-    globeQuery: '', globeReady: false, myScenic: [], myEvents: [],
+    globeQuery: '', globeReady: false,
     showScenicForm: false,
     showEventForm: false,
-    userPins: [], showAddForm: false,
-    fRole: 'host', fName: '', fCat: '', fSub: '', fAimag: 'Дорнод', fOpen: '', fClose: '',
-    fDesc: '', fMapUrl: '', fImg: '', fLat: null, fLng: null, fPhone: '',
-    fAccess: false, fCrit: [false, false, false, false, false], fMsg: '', fErr: false,
-    pinMode: 'scenic', mapView: false, heroHover: null,
+    showPlaceForm: false,
+    // Prompted when a place/scenic pin/event is submitted without a session
+    // — there's no "host" tier, any signed-in account can create all three.
+    showUserAuthForm: false,
+    // Real place/event/scenic-pin rows fetched from the backend (see
+    // fetchLiveContent) — replaces the old static PINS/EVENTS/CATS[].items
+    // mock arrays as the single source of truth for content everywhere below.
+    livePlaces: [], liveEvents: [], liveScenicPins: [],
+    // This session's own place submissions (pending/approved), fetched once
+    // signed in — see fetchMyPlaces. Shown on the Profile page.
+    myPlaces: [],
+    pinMode: 'scenic', heroHover: null,
     // Seeded from the last successful /settings fetch (see fetchSettings below) so a
     // refresh shows the real saved photo immediately instead of flashing the built-in
     // placeholder while the network round-trip to fetch it is still in flight.
     aboutBgOverride: cachedBg('bb_about_bg'), homeBgOverride: cachedBg('bb_home_bg'),
     mongoliaFlagOverride: cachedBg('bb_mn_flag'),
+    // Per-app background photo/video for each "Аяллын апп" tile on the
+    // Suggest page, keyed by TRAVEL_APPS slug.
+    travelAppsBgOverride: cachedMap('bb_travelapps_bg'),
     // Per-category (keyed by slug) and per-aimag (keyed by name) background photos
     // saved via Admin Panel → Фон зураг, so the live site shows them too.
     catBgOverride: cachedMap('bb_cat_bg'), aimagBgOverride: cachedMap('bb_aimag_bg'),
+    // Per-category background *video*, shown only once inside that category's own
+    // page (/category/:slug) — the Home screen's hover/selection preview always
+    // stays a still photo (catBgOverride above), even when a video is set here.
+    catVideoOverride: cachedMap('bb_cat_video_bg'),
     // Per-"Санал болгох" card background photo, keyed by SUGGESTS slug.
     suggestBgOverride: cachedMap('bb_suggest_bg'),
     heroVertPos: null,
@@ -105,17 +152,24 @@ export default class BigBangLayout extends React.Component<Props, any> {
   };
 
   componentDidMount() {
-    fetch('/assets/mn-aimags.json').then((r) => r.json()).then((g) => { this.geo = g; this.forceUpdate(); }).catch(() => {});
+    fetch('/assets/mn-aimags.json').then((r) => r.json()).then((g) => { this.geo = g; this.forceUpdate(); this.syncMainMap(); }).catch(() => {});
     this.fetchSettings();
     this.fetchContentBgs();
+    this.fetchLiveContent();
     // Admin Panel runs in a separate tab, so a tab already sitting open on this page
     // would otherwise never see a background change until manually reloaded — refetch
     // whenever this tab regains focus so it picks up the latest saved image.
     window.addEventListener('focus', this.fetchSettings);
     window.addEventListener('focus', this.fetchContentBgs);
+    window.addEventListener('focus', this.fetchLiveContent);
     try {
       this.setState({ spNeeds: localStorage.getItem('bb_sp') === '1', bigText: localStorage.getItem('bb_big') === '1' });
     } catch (err) { /* ignore */ }
+    // Session is read straight from localStorage on each use (see
+    // lib/session.ts), not kept in this component's own state — this just
+    // loads this session's own place submissions once, on mount.
+    const session = getSession();
+    if (session) this.fetchMyPlaces(session.token);
     this._mnVertResize = () => { this.updateHeroVertPos(); };
     window.addEventListener('resize', this._mnVertResize);
     this._vwResize = () => { if (this.state.vw !== window.innerWidth) this.setState({ vw: window.innerWidth }); };
@@ -124,6 +178,21 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   componentDidUpdate(_prevProps: Props, prevState: any) {
     if (prevState.aimag !== this.state.aimag) this.updateHeroVertPos();
+    if (this._mainMap) {
+      // hoverAimag alone only changes a border's fill wash — it fires on
+      // every mouseover/mouseout while the cursor crosses an aimag's outline
+      // (including incidentally while panning/zooming near one), so it must
+      // NOT also tear down and rebuild every pin marker each time. Doing so
+      // used to make the pins visibly flicker/jump during ordinary map use.
+      const pinsChanged =
+        prevState.pinMode !== this.state.pinMode || prevState.mapAimag !== this.state.mapAimag ||
+        prevState.pin !== this.state.pin || prevState.lang !== this.state.lang ||
+        prevState.bigText !== this.state.bigText || prevState.livePlaces !== this.state.livePlaces ||
+        prevState.liveEvents !== this.state.liveEvents || prevState.liveScenicPins !== this.state.liveScenicPins;
+      const hoverChanged = prevState.hoverAimag !== this.state.hoverAimag;
+      if (pinsChanged) this.syncMainMap();
+      else if (hoverChanged) this.syncMainMap(false);
+    }
   }
 
   // Measures the invisible marker circle both builders drop at the aimag's
@@ -156,8 +225,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   componentWillUnmount() {
     this.unmountGlobe();
+    this.unmountMainMap();
     window.removeEventListener('focus', this.fetchSettings);
     window.removeEventListener('focus', this.fetchContentBgs);
+    window.removeEventListener('focus', this.fetchLiveContent);
     if (this._mnVertResize) window.removeEventListener('resize', this._mnVertResize);
     if (this._vwResize) window.removeEventListener('resize', this._vwResize);
   }
@@ -165,7 +236,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Admin Panel can update these via the "Фон зураг" tab — if the backend isn't
   // running or hasn't been set up yet, this silently keeps the built-in placeholder.
   fetchSettings = () => {
-    apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null }>('/settings')
+    apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; travelAppsBackgroundImages: Record<string, string> | null }>('/settings')
       .then((s) => {
         if (s.aboutBackgroundImage) this.setState({ aboutBgOverride: s.aboutBackgroundImage });
         if (s.homeBackgroundImage) this.setState({ homeBgOverride: s.homeBackgroundImage });
@@ -174,11 +245,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
           if (this.globeEngine) this.globeEngine.setMongoliaFlag(s.mongoliaFlagImage);
         }
         if (s.suggestBackgroundImages) this.setState({ suggestBgOverride: s.suggestBackgroundImages });
+        if (s.travelAppsBackgroundImages) this.setState({ travelAppsBgOverride: s.travelAppsBackgroundImages });
         try {
           if (s.aboutBackgroundImage) localStorage.setItem('bb_about_bg', s.aboutBackgroundImage);
           if (s.homeBackgroundImage) localStorage.setItem('bb_home_bg', s.homeBackgroundImage);
           if (s.mongoliaFlagImage) localStorage.setItem('bb_mn_flag', s.mongoliaFlagImage);
           if (s.suggestBackgroundImages) localStorage.setItem('bb_suggest_bg', JSON.stringify(s.suggestBackgroundImages));
+          if (s.travelAppsBackgroundImages) localStorage.setItem('bb_travelapps_bg', JSON.stringify(s.travelAppsBackgroundImages));
         } catch (err) { /* ignore */ }
       })
       .catch(() => {});
@@ -187,80 +260,167 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Category/aimag background photos, same "Фон зураг" admin flow as fetchSettings.
   fetchContentBgs = () => {
     Promise.all([
-      apiGet<{ slug: string; image: string | null }[]>('/categories'),
+      apiGet<{ slug: string; image: string | null; videoImage: string | null }[]>('/categories'),
       apiGet<{ name: string; backgroundImage: string | null }[]>('/aimags'),
     ]).then(([cats, aimags]) => {
       const catBgOverride: Record<string, string> = {};
-      cats.forEach((c) => { if (c.image) catBgOverride[c.slug] = c.image; });
+      const catVideoOverride: Record<string, string> = {};
+      cats.forEach((c) => {
+        if (c.image) catBgOverride[c.slug] = c.image;
+        if (c.videoImage) catVideoOverride[c.slug] = c.videoImage;
+      });
       const aimagBgOverride: Record<string, string> = {};
       aimags.forEach((a) => { if (a.backgroundImage) aimagBgOverride[a.name] = a.backgroundImage; });
-      this.setState({ catBgOverride, aimagBgOverride });
+      this.setState({ catBgOverride, catVideoOverride, aimagBgOverride });
       try {
         localStorage.setItem('bb_cat_bg', JSON.stringify(catBgOverride));
+        localStorage.setItem('bb_cat_video_bg', JSON.stringify(catVideoOverride));
         localStorage.setItem('bb_aimag_bg', JSON.stringify(aimagBgOverride));
       } catch (err) { /* ignore */ }
     }).catch(() => {});
   };
 
+  // Real content — approved places, live events, scenic pins — replacing the
+  // old static PINS/EVENTS/CATS[].items mock arrays. Re-run after any
+  // successful create (see onScenicSubmit/onEventSubmit) so a new submission
+  // shows up immediately instead of waiting for the next focus/refresh.
+  fetchLiveContent = () => {
+    Promise.all([
+      apiGet<any[]>('/places'),
+      apiGet<any[]>('/events'),
+      apiGet<any[]>('/scenic-pins'),
+    ]).then(([livePlaces, liveEvents, liveScenicPins]) => {
+      this.setState({ livePlaces, liveEvents, liveScenicPins });
+    }).catch(() => {});
+  };
+
+  // This session's own place submissions, pending or approved — shown on the
+  // Profile page's "Миний нэмсэн газрууд" section (mirrors myScenic/myEvents,
+  // which don't need their own fetch since they're just this user's rows
+  // filtered out of the already-fetched public liveScenicPins/liveEvents —
+  // Place is filtered server-side instead since only approved ones are public).
+  fetchMyPlaces = (token: string) => {
+    apiGetAuthed<any[]>('/places/mine', token).then((myPlaces) => this.setState({ myPlaces })).catch(() => {});
+  };
+
+  // CATS shell (slug/name/subs/hero/pool/...) with real Place rows grouped
+  // into `.items`/`.previews` by category — every other place this file used
+  // to read CATS directly for content now reads this instead.
+  liveCats(): Cat[] {
+    const places: any[] = this.state.livePlaces || [];
+    return CATS.map((c) => {
+      const items: CatItem[] = places
+        .filter((p) => p.category && p.category.slug === c.slug)
+        .map((p) => {
+          const hours = p.openTime && p.closeTime ? `${p.openTime}–${p.closeTime}` : '';
+          return {
+            name: p.name,
+            meta: [p.subCategory, hours].filter(Boolean).join(' · ') || p.description || '',
+            sub: p.subCategory || c.subs[0],
+            aimag: p.aimag ? p.aimag.name : 'Улаанбаатар',
+            hours, phone: p.phone || '', desc: p.description || '',
+            access: !!p.accessible, img: p.image || '',
+            lat: p.lat ?? undefined, lng: p.lng ?? undefined, mapUrl: p.googleMapUrl || undefined,
+            id: p.id,
+          } as CatItem;
+        });
+      return { ...c, items, previews: items.slice(0, 3).map((it) => ({ name: it.name, meta: it.meta })) };
+    });
+  }
+
   // ── geometry ──
+  // Parses a shape's `d` (a series of `M x,y L x,y ... Z` subpaths, in the
+  // mn-aimags.json projected coordinate space) into plain point-ring arrays,
+  // caching the result on the shape object. Used both for the point-in-polygon
+  // test below and to draw the real aimag borders on the Leaflet map (see
+  // syncMainMap), so the two stay pixel-for-pixel consistent with each other.
+  polysOf(sh: any): number[][][] {
+    if (!sh._polys) sh._polys = sh.d.split('M').filter((s: string) => s.trim()).map((seg: string) =>
+      seg.replace(/Z/g, '').split('L').map((pt: string) => pt.trim().split(/[ ,]+/).map(Number)).filter((p: number[]) => p.length === 2 && !isNaN(p[0])));
+    return sh._polys;
+  }
+
+  pointInShape(sh: any, x: number, y: number): boolean {
+    if (x < sh.bx || x > sh.bx + sh.bw || y < sh.by || y > sh.by + sh.bh) return false;
+    let inside = false;
+    for (const poly of this.polysOf(sh)) {
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+        if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  // Single-ring point test (no even-odd hole subtraction against a shape's
+  // *other* rings, unlike pointInShape). Some aimags (see mn-aimags.json's
+  // Töv/Selenge entries) are drawn as their outer boundary with a hole cut
+  // out for a smaller aimag fully inside them — pointInShape correctly says
+  // "outside" for a point in that hole, which is right for hit-testing but
+  // wrong for figuring out which aimag geometrically *hosts* the small one
+  // (see syncMainMap's enclave-host detection).
+  pointInRing(ring: number[][], x: number, y: number): boolean {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+
   xyToAimag(x: number, y: number) {
     const geo = this.geo; if (!geo) return null;
     for (const sh of geo.shapes) {
-      if (x < sh.bx || x > sh.bx + sh.bw || y < sh.by || y > sh.by + sh.bh) continue;
-      if (!sh._polys) sh._polys = sh.d.split('M').filter((s: string) => s.trim()).map((seg: string) =>
-        seg.replace(/Z/g, '').split('L').map((pt) => pt.trim().split(/[ ,]+/).map(Number)).filter((p) => p.length === 2 && !isNaN(p[0])));
-      let inside = false;
-      for (const poly of sh._polys) {
-        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-          const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-          if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
-        }
-      }
-      if (inside) return GEO_MN[sh.name] || sh.name;
+      if (this.pointInShape(sh, x, y)) return GEO_MN[sh.name] || sh.name;
     }
     return null;
   }
 
-  pickMapRef = (node: any) => {
-    if (!node) {
-      if (this._pickMap) { this._pickMap.remove(); this._pickMap = null; this._pickMarker = null; }
-      return;
-    }
-    if (this._pickMap) return;
-    const init = () => {
-      if (!node.isConnected) return;
-      if (!window.L) { setTimeout(init, 150); return; }
-      const m = window.L.map(node, { attributionControl: false });
-      m.setView([46.9, 103.8], 5);
-      window.L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 19 }).addTo(m);
-      m.on('click', (ev: any) => this.pickLocation(ev.latlng.lat, ev.latlng.lng));
-      this._pickMap = m;
-      if (this.state.fLat != null) this.placePickMarker(this.state.fLat, this.state.fLng);
-      setTimeout(() => m.invalidateSize(), 120);
+  // Google's raw `mt{s}.google.com/vt` tile endpoint is undocumented/unofficial
+  // (no API key or referrer check) — some ad blockers/privacy extensions and
+  // networks block it outright (sometimes only for that one session/network,
+  // which is why this shows up as "sometimes the map's just blank" rather
+  // than consistently), which otherwise leaves the whole map blank with only
+  // our own borders/labels drawn on top.
+  //
+  // Two independent signals trigger a fallback, since either alone misses a
+  // failure mode the other catches:
+  //   - a burst of `tileerror` events — the source is reachable but actively
+  //     rejecting/erroring on tiles;
+  //   - a "nothing ever loaded" timeout — some blocks (an extension silently
+  //     dropping the request, a network blackholing the domain) never fire
+  //     `tileerror` at all, they just hang forever, which pure error-counting
+  //     would never catch and the map would stay blank indefinitely.
+  // Esri's World Imagery is the first fallback (a free, no-key satellite
+  // basemap that keeps the same look); on a network where that's *also*
+  // unreachable, it falls through again to OSM's standard tiles, which are
+  // about as widely reachable as a tile server gets.
+  addBasemap(m: any, primaryUrl: string, subdomains: string[]) {
+    const SOURCES = [
+      { url: primaryUrl, subdomains },
+      { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' },
+      { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' },
+    ];
+    // noWrap stops Leaflet from tiling repeated copies of the whole world
+    // side by side once the map is zoomed out (or panned) far enough that a
+    // single world's rendered width is narrower than the container — without
+    // it, zooming out shows several duplicate Earths instead of one.
+    const layer = window.L.tileLayer(SOURCES[0].url, { subdomains, maxZoom: 19, noWrap: true }).addTo(m);
+    let idx = 0, errors = 0, loaded = false, timer: any = null;
+    const armTimeout = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { if (!loaded) tryNext(); }, 3000);
     };
-    init();
-  };
-
-  placePickMarker(lat: number, lng: number) {
-    if (!this._pickMap || !window.L) return;
-    if (this._pickMarker) this._pickMarker.remove();
-    this._pickMarker = window.L.marker([lat, lng], {
-      icon: window.L.divIcon({
-        className: '',
-        html: '<div style="width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#E8B84B;border:2px solid #132a1f;box-shadow:0 3px 6px rgba(0,0,0,.5)"></div>',
-        iconSize: [22, 22], iconAnchor: [4, 21],
-      }),
-    }).addTo(this._pickMap);
-  }
-
-  pickLocation(lat: number, lng: number) {
-    this.placePickMarker(lat, lng);
-    const xy = lonLatToXY(lng, lat);
-    const aimag = this.xyToAimag(xy[0], xy[1]);
-    this.setState((s: any) => ({
-      fLat: lat, fLng: lng, fAimag: aimag || s.fAimag,
-      fMapUrl: 'https://www.google.com/maps/search/?api=1&query=' + lat.toFixed(5) + '%2C' + lng.toFixed(5),
-    }));
+    const tryNext = () => {
+      if (idx >= SOURCES.length - 1) return;
+      idx++; errors = 0; loaded = false;
+      layer.setUrl(SOURCES[idx].url);
+      armTimeout();
+    };
+    layer.on('tileload', () => { loaded = true; });
+    layer.on('tileerror', () => { errors++; if (errors >= 4) tryNext(); });
+    armTimeout();
+    return layer;
   }
 
   // ── globe ──
@@ -297,24 +457,229 @@ export default class BigBangLayout extends React.Component<Props, any> {
     if (this.globeEngine) { try { this.globeEngine.dispose(); } catch (err) { /* ignore */ } this.globeEngine = null; }
   }
 
-  allPins() { return PINS.concat(this.state.userPins || []); }
+  // ── real map (/maps) ──
+  // Replaces the old hand-drawn SVG outline with an actual Leaflet map on the
+  // same Google raster tiles the location-picker mini-map already used
+  // (pickMapRef, above) — so the "map" is a real, pannable/zoomable Google
+  // map instead of static art. Aimag borders and pin positions are derived
+  // from the exact same mn-aimags.json geometry the SVG used to draw, just
+  // run through xyToLonLat (the inverse of lonLatToXY) so they land on real
+  // coordinates instead of SVG pixels — nothing here is a second, separately
+  // guessed set of coordinates.
+  mainMapRef = (node: any) => {
+    if (!node) { this.unmountMainMap(); return; }
+    if (this._mainMap) return;
+    const init = () => {
+      if (!node.isConnected) return;
+      if (!window.L) { setTimeout(init, 150); return; }
+      const m = window.L.map(node, {
+        attributionControl: false, zoomControl: !this.state.isMobile, minZoom: 3,
+        maxBounds: [[-90, -180], [90, 180]], maxBoundsViscosity: 1,
+      });
+      m.setView([46.8, 103.8], 5);
+      // Plain satellite tiles (no baked-in place-name labels) — `lyrs=y` (hybrid)
+      // draws Google's own city/country labels straight into the raster image,
+      // which collided with our own aimag-name/pin labels drawn on top.
+      this.addBasemap(m, 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', ['0', '1', '2', '3']);
+      this._aimagPolyLayer = window.L.layerGroup().addTo(m);
+      this._aimagLabelLayer = window.L.layerGroup().addTo(m);
+      this._pinLayer = window.L.layerGroup().addTo(m);
+      this._aimagLayers = {};
+      this._aimagBuilt = false;
+      this._mainMap = m;
+      setTimeout(() => m.invalidateSize(), 120);
+      this.syncMainMap();
+    };
+    init();
+  };
+
+  unmountMainMap() {
+    if (this._mainMap) { try { this._mainMap.remove(); } catch (err) { /* ignore */ } }
+    this._mainMap = null; this._aimagPolyLayer = null; this._aimagLabelLayer = null; this._pinLayer = null;
+    this._aimagLayers = {}; this._aimagBuilt = false; this._fullBounds = null; this._wasZoomed = false; this._lastFlownAimag = null; this._enclaveHost = {};
+  }
+
+  // (Re)builds the aimag border layer once geo is available, then restyles
+  // it + the pin markers to match current state. Called after mount, after
+  // the mn-aimags.json fetch resolves, and from componentDidUpdate whenever
+  // a field that affects what the map shows changes (see componentDidUpdate).
+  syncMainMap(rebuildPins: boolean = true) {
+    const m = this._mainMap;
+    const geo = this.geo;
+    if (!m || !geo || !window.L) return;
+    const { lang, mapAimag, hoverAimag, pin, bigText } = this.state;
+    const accent = this.props.accent ?? '#E8B84B';
+    const mnOf = (n: string) => GEO_MN[n] || n;
+    const pins = this.mapPins();
+    const countByAimag: Record<string, number> = {};
+    pins.forEach((p) => { countByAimag[p.aimag] = (countByAimag[p.aimag] || 0) + 1; });
+
+    if (!this._aimagBuilt) {
+      this._aimagBuilt = true;
+      const allCorners: [number, number][] = [];
+      geo.shapes.forEach((sh: any) => {
+        const id = mnOf(sh.name);
+        const rings = this.polysOf(sh).map((ring) => ring.map(([x, y]) => xyToLonLat(x, y) as [number, number]));
+        const layers = rings.map((ring) => window.L.polygon(ring, {
+          color: 'rgba(255,255,255,.55)', weight: 1.1, fillColor: 'rgba(255,255,255,0.02)', fillOpacity: 1,
+        })
+          .on('mouseover', () => this.setState({ hoverAimag: id }))
+          .on('mouseout', () => this.setState({ hoverAimag: null }))
+          .on('click', () => this.setState((s: any) => ({ mapAimag: s.mapAimag === id ? null : id, pin: -1 })))
+          .addTo(this._aimagPolyLayer));
+        const [clat, clng] = xyToLonLat(sh.lx ?? sh.cx, sh.ly ?? sh.cy);
+        const label = window.L.marker([clat, clng], { icon: window.L.divIcon({ className: '', html: '', iconSize: [1, 1] }), interactive: false, opacity: 1 }).addTo(this._aimagLabelLayer);
+        this._aimagLayers[id] = { layers, label, sh };
+        allCorners.push(xyToLonLat(sh.bx, sh.by) as [number, number], xyToLonLat(sh.bx + sh.bw, sh.by + sh.bh) as [number, number]);
+      });
+      this._fullBounds = allCorners;
+
+      // Улаанбаатар/Дархан-Уул/Орхон/Говьсүмбэр sit fully enclosed inside a
+      // larger neighbor. SVG hit-testing goes by DOM order, not area, so
+      // whichever polygon the source GeoJSON happened to list last was
+      // swallowing clicks/hover meant for the small aimag underneath —
+      // bring the enclosed ones to front so they always win.
+      const ENCLAVE_AIMAGS = ['Orhon', 'Darhan-Uul', 'Gowisümber', 'Ulaanbaatar'];
+      geo.shapes.forEach((sh: any) => {
+        if (!ENCLAVE_AIMAGS.includes(sh.name)) return;
+        const entry = this._aimagLayers[mnOf(sh.name)];
+        if (entry) entry.layers.forEach((ly: any) => ly.bringToFront());
+      });
+
+      // Told/Сэлэнгэ's own `d` isn't just their outer boundary — it also has
+      // a second subpath tracing Улаанбаатар/Дархан-Уул's own outline as a
+      // literal hole (that's *why* their gold fill stopped exactly at the
+      // small aimag's edge even before any of the above). Detect that here
+      // (find each shape's *other* subpaths and check which neighbor's
+      // centroid falls inside one) so the styling pass below can make the
+      // enclave inherit its host's fill instead of standing out as a second,
+      // separately-selected patch when only the host is selected/hovered.
+      geo.shapes.forEach((hostSh: any) => {
+        const rings = this.polysOf(hostSh);
+        if (rings.length < 2) return;
+        const outer = rings.reduce((best: number[][], r: number[][]) => (r.length > best.length ? r : best));
+        rings.forEach((ring: number[][]) => {
+          if (ring === outer) return;
+          const enclaveSh = geo.shapes.find((o: any) => o !== hostSh && this.pointInRing(ring, o.cx, o.cy));
+          if (enclaveSh) this._enclaveHost[mnOf(enclaveSh.name)] = mnOf(hostSh.name);
+        });
+      });
+    }
+
+    Object.keys(this._aimagLayers).forEach((id) => {
+      const { layers, label } = this._aimagLayers[id];
+      const isSel = mapAimag === id, isHov = hoverAimag === id;
+      const hostId = this._enclaveHost[id];
+      // A selected aimag is now shown as an outline only (no fill wash) so
+      // the real satellite photo underneath stays fully visible — that also
+      // means an enclave no longer needs to borrow its host's fill to avoid
+      // looking separately selected (there's no fill left to clash with);
+      // it keeps its own normal boundary line instead, same as any other
+      // aimag. Hover still gets a light fill for discoverability, and an
+      // enclave still inherits *that* from its host so the hoverable region
+      // reads as one shape before you commit to a click — but only while
+      // it/its host *isn't* already the selected aimag. Without that guard,
+      // resting the cursor over an already-selected aimag (or the enclave
+      // inside it) re-washed it with the hover tint on top of its own
+      // outline, looking like it got re-selected.
+      const selfOrHostSelected = isSel || (!!hostId && mapAimag === hostId);
+      const hostHov = !isHov && !!hostId && hoverAimag === hostId;
+      const fill = (!selfOrHostSelected && (isHov || hostHov)) ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,0.02)';
+      layers.forEach((ly: any) => ly.setStyle({ fillColor: fill, fillOpacity: 1, color: isSel ? accent : 'rgba(255,255,255,.55)', weight: isSel ? 2.4 : 1.1 }));
+      const count = countByAimag[id] || 0;
+      const showCount = count > 0 && !mapAimag;
+      const visible = mapAimag ? isSel : true;
+      const html = !visible ? '' :
+        '<div style="transform:translate(-50%,-50%);text-align:center;pointer-events:none;font-family:Manrope,sans-serif">' +
+        '<div style="font-size:' + (bigText ? 15 : 12) + 'px;font-weight:700;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.9),0 0 3px rgba(0,0,0,.9)">' + aimagName(id, lang) + '</div>' +
+        (showCount ? '<div style="font-size:' + (bigText ? 12.5 : 10) + 'px;font-weight:800;color:' + accent + ';text-shadow:0 1px 4px rgba(0,0,0,.9)">' + count + ' пин</div>' : '') +
+        '</div>';
+      label.setIcon(window.L.divIcon({ className: '', html, iconSize: [1, 1] }));
+    });
+
+    if (!rebuildPins) return;
+
+    this._pinLayer.clearLayers();
+    if (mapAimag) {
+      const entry = this._aimagLayers[mapAimag];
+      const sh = entry && entry.sh;
+      const aimagPins = pins.map((p, i) => ({ p, i })).filter((o) => o.p.aimag === mapAimag);
+      // Places with no real lat/lng (most CATS items) need a made-up spot
+      // inside the aimag's shape — PIN_OFFS used to cycle through just 5
+      // fixed positions, so any aimag with more than 5 of them (Улаанбаатар
+      // alone can hold 30+) wrapped back over the same spots and stacked
+      // pins exactly on top of each other, making a 37-pin aimag look like
+      // only ~6 were there. A sunflower/phyllotaxis scatter instead gives
+      // every pin its own distinct spot no matter the count.
+      const autoTotal = aimagPins.reduce((n, o) => n + (o.p.lat == null ? 1 : 0), 0);
+      let autoIdx = 0;
+      aimagPins.forEach((o) => {
+        let latlng: [number, number];
+        if (o.p.lat != null) latlng = [o.p.lat, o.p.lng];
+        else {
+          const r = Math.sqrt((autoIdx + 0.5) / autoTotal) * 0.4;
+          const theta = autoIdx * GOLDEN_ANGLE;
+          autoIdx++;
+          latlng = xyToLonLat(sh.cx + Math.cos(theta) * r * sh.bw, sh.cy + Math.sin(theta) * r * sh.bh);
+        }
+        const on = pin === o.i;
+        const dot = on ? 15 : 11;
+        const html = '<div style="transform:translate(-50%,-100%);text-align:center;cursor:pointer;font-family:Manrope,sans-serif">' +
+          '<div style="width:' + dot + 'px;height:' + dot + 'px;margin:0 auto;border-radius:50%;background:' + (on ? accent : '#f0ebe1') + ';border:1.4px solid rgba(8,10,14,.85);box-shadow:0 0 0 6px rgba(232,184,75,' + (on ? '.3' : '.16') + ')"></div>' +
+          '<div style="margin-top:4px;font-size:' + (bigText ? 13 : 10.5) + 'px;font-weight:700;color:' + (on ? accent : '#fff') + ';text-shadow:0 1px 4px rgba(0,0,0,.9),0 0 3px rgba(0,0,0,.9);white-space:nowrap">' + o.p.name + '</div></div>';
+        window.L.marker(latlng, { icon: window.L.divIcon({ className: '', html, iconSize: [1, 1] }) })
+          .on('click', () => this.setState({ pin: on ? -1 : o.i }))
+          .addTo(this._pinLayer);
+      });
+      // Only fly the view when the *selection itself* changes — syncMainMap
+      // also re-runs on every hover/pin-click while an aimag stays selected,
+      // and re-flying then would snap the map back under the user's hands
+      // every time they'd tried to pan/zoom freely after selecting.
+      if (sh && this._lastFlownAimag !== mapAimag) {
+        const bounds = this.polysOf(sh).flat().map(([x, y]: number[]) => xyToLonLat(x, y));
+        // Asymmetric padding, not a plain [70,70] — a selected aimag also
+        // brings up the info panel (bottom-right) and the globe/pin-mode
+        // controls (top-right), so the fitted shape needs extra clearance
+        // on those two edges to land inside the space that's actually free,
+        // instead of ending up cropped/hidden under that chrome.
+        m.flyToBounds(bounds, { paddingTopLeft: [50, 145], paddingBottomRight: [385, 80], maxZoom: 11, duration: 0.9 });
+        this._lastFlownAimag = mapAimag;
+      }
+      this._wasZoomed = true;
+    } else if (this._wasZoomed) {
+      if (this._fullBounds) m.flyToBounds(this._fullBounds, { padding: [40, 40], duration: 0.9 });
+      this._wasZoomed = false;
+      this._lastFlownAimag = null;
+    }
+  }
+
+  // Real ScenicPin rows shaped into Pin[] — replaces PINS.concat(userPins).
+  allPins(): Pin[] {
+    return (this.state.liveScenicPins || []).map((p: any): Pin => ({
+      name: p.name, type: p.type, aimag: p.aimag ? p.aimag.name : 'Улаанбаатар',
+      img: p.image || '', desc: p.description || '',
+      mapUrl: p.googleMapUrl || undefined,
+      lat: p.lat ?? undefined, lng: p.lng ?? undefined,
+    }));
+  }
 
   mapPins(): any[] {
     const mode = this.state.pinMode || 'scenic';
     if (mode === 'places') {
       const out: any[] = [];
-      CATS.forEach((c) => c.items.forEach((it, i) => out.push({
+      this.liveCats().forEach((c) => c.items.forEach((it) => out.push({
         name: it.name, type: it.sub || c.name, aimag: it.aimag || 'Улаанбаатар',
-        img: c.pool[i % c.pool.length], desc: it.meta, cat: c.slug,
+        img: it.img || '', desc: it.meta, cat: c.slug,
+        lat: it.lat, lng: it.lng, mapUrl: it.mapUrl, hours: it.hours, access: it.access,
       })));
       return out;
     }
     if (mode === 'events') {
-      return [{ name: FEATURED_EVENT.name, type: 'Наадам', aimag: 'Төв', img: FEATURED_EVENT.img, desc: FEATURED_EVENT.date + ' · ' + FEATURED_EVENT.meta }]
-        .concat(EVENTS.map((ev) => ({
-          name: ev.name, type: ev.tag, aimag: (ev as any).aimag || 'Улаанбаатар',
-          img: ev.img || FEATURED_EVENT.img, desc: ev.day + ', ' + ev.mon + ' · ' + ev.meta,
-        })) as any);
+      return (this.state.liveEvents || []).map((ev: any) => ({
+        name: ev.name, type: ev.tag || 'Эвент', aimag: ev.aimag ? ev.aimag.name : 'Улаанбаатар',
+        img: ev.image || '', desc: [fmtEventDate(ev.startDate), ev.meta].filter(Boolean).join(' · '),
+        lat: ev.lat, lng: ev.lng,
+      }));
     }
     return this.allPins();
   }
@@ -380,95 +745,36 @@ export default class BigBangLayout extends React.Component<Props, any> {
         style: { paintOrder: 'stroke', pointerEvents: 'none' }, fontFamily: "'Manrope',sans-serif",
       }, aimagName(id, lang)));
     });
-    return e('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet', style: { width: '100%', height: '100%', display: 'block', overflow: 'visible' } }, kids);
-  }
-
-  buildMapSvg(accent: string, lang: any, sel: any, hover: any, pin: any, bigText?: any) {
-    const geo = this.geo;
-    const W = geo.W, H = geo.H;
-    const labelFs = bigText ? 15 : 10.5;
-    const countFs = bigText ? 12.5 : 9;
-    const pinLabelFs = bigText ? 14 : 10;
-    const mnOf = (n: string) => GEO_MN[n] || n;
-    // mapPins() rebuilds its list from CATS/EVENTS each call — compute it once
-    // per render instead of once per aimag shape (21x) as this used to.
-    const pins = this.mapPins();
-    const countByAimag: Record<string, number> = {};
-    pins.forEach((p) => { countByAimag[p.aimag] = (countByAimag[p.aimag] || 0) + 1; });
-    const selShape = sel ? geo.shapes.find((sh: any) => mnOf(sh.name) === sel) : null;
-    let s = 1, tx = 0, ty = 0;
-    if (selShape) {
-      s = Math.max(1, Math.min(0.8 * W / selShape.bw, 0.8 * H / selShape.bh, 9));
-      tx = W * 0.38 - s * selShape.cx;
-      ty = H / 2 - s * selShape.cy;
-    }
-    const kids: any[] = [];
-    kids.push(e('defs', { key: 'defs' }, e('clipPath', { id: 'mnClipAll' }, geo.shapes.map((sh: any, i: number) => e('path', { key: i, d: sh.d })))));
-    kids.push(e('rect', { key: 'tint', x: -100, y: -100, width: W + 200, height: H + 200, fill: 'rgba(255,255,255,.08)', clipPath: 'url(#mnClipAll)' }));
-    geo.shapes.forEach((sh: any) => {
-      const id = mnOf(sh.name);
-      const isSel = sel === id, isHov = hover === id;
-      kids.push(e('path', {
-        key: 'p-' + sh.name, d: sh.d, 'data-aimag': id,
-        fill: isSel ? 'rgba(232, 184, 75,.16)' : (isHov ? 'rgba(255,255,255,.13)' : 'rgba(255,255,255,0.001)'),
-        stroke: isSel ? accent : 'rgba(255,255,255,.55)',
-        strokeWidth: isSel ? 2 : 1.1, vectorEffect: 'non-scaling-stroke',
-        style: { cursor: 'pointer', transition: 'fill .25s' },
-        onMouseEnter: () => this.setState({ hoverAimag: id }),
-        onMouseLeave: () => this.setState({ hoverAimag: null }),
-        onClick: () => this.setState({ mapAimag: id, pin: -1 }),
-      }));
-    });
-    geo.shapes.forEach((sh: any) => {
-      const id = mnOf(sh.name);
-      const isSel = sel === id;
-      const count = countByAimag[id] || 0;
-      const off = LABEL_OFF[sh.name] || [0, 0];
-      const op = selShape ? (isSel ? 1 : 0) : 1;
-      const nameStr = aimagName(id, lang);
-      const hasCount = count > 0 && !selShape;
-      kids.push(e('g', {
-        key: 'l-' + sh.name,
-        style: {
-          transform: 'translate(' + ((sh.lx || sh.cx) + off[0]) + 'px,' + ((sh.ly || sh.cy) + off[1]) + 'px) scale(' + (1 / s) + ')',
-          transition: 'transform .9s cubic-bezier(.22,.8,.3,1), opacity .5s', opacity: op, pointerEvents: 'none',
-        },
-      },
-        e('text', { textAnchor: 'middle', fontSize: labelFs, fontWeight: 700, fill: 'rgba(255,255,255,.94)', stroke: 'rgba(6,9,14,.65)', strokeWidth: 2.5, style: { paintOrder: 'stroke' }, fontFamily: "'Manrope',sans-serif" }, nameStr),
-        hasCount ? e('text', { y: 13, textAnchor: 'middle', fontSize: countFs, fontWeight: 800, fill: accent, stroke: 'rgba(6,9,14,.7)', strokeWidth: 2, style: { paintOrder: 'stroke' }, fontFamily: "'Manrope',sans-serif" }, count + ' пин') : null,
-      ));
-    });
-    if (selShape) {
-      const aimagPins = pins.map((p, i) => ({ p, i })).filter((o) => o.p.aimag === sel);
-      aimagPins.forEach((o, j) => {
-        const off = PIN_OFFS[j % PIN_OFFS.length];
-        const exact = o.p.px != null;
-        const px = exact ? o.p.px : selShape.cx + off[0] * selShape.bw * 0.8;
-        const py = exact ? o.p.py : selShape.cy + off[1] * selShape.bh * 0.8;
-        const on = pin === o.i;
-        kids.push(e('g', {
-          key: 'pin-' + o.i,
-          style: { transform: 'translate(' + px + 'px,' + py + 'px) scale(' + (1 / s) + ')', transition: 'transform .9s cubic-bezier(.22,.8,.3,1)', cursor: 'pointer' },
-          onClick: () => this.setState({ pin: on ? -1 : o.i }),
-        },
-          e('circle', { r: 10, fill: accent, opacity: on ? 0.3 : 0.16 }),
-          e('circle', { r: 4.5, fill: on ? accent : '#f0ebe1', stroke: 'rgba(8,10,14,.85)', strokeWidth: 1.4 }),
-          e('text', { y: 20, textAnchor: 'middle', fontSize: pinLabelFs, fontWeight: 700, fill: on ? accent : 'rgba(240,243,248,.92)', stroke: 'rgba(6,9,14,.75)', strokeWidth: 2.5, style: { paintOrder: 'stroke', pointerEvents: 'none' }, fontFamily: "'Manrope',sans-serif" }, o.p.name),
-        ));
-      });
-    }
-    if (hover && !selShape) {
-      const hv = geo.shapes.find((sh: any) => mnOf(sh.name) === hover);
-      if (hv) {
-        const hc = countByAimag[hover] || 0;
-        const ttStr = aimagName(hover, lang) + ' · ' + hc + ' пин';
-        kids.push(e('g', { key: 'tt', style: { transform: 'translate(' + hv.cx + 'px,' + (hv.by - 8) + 'px) scale(' + (1 / s) + ')', pointerEvents: 'none' } },
-          e('text', { textAnchor: 'middle', fontSize: 13, fontWeight: 800, fill: '#ffffff', stroke: 'rgba(6,9,14,.8)', strokeWidth: 3, style: { paintOrder: 'stroke' }, fontFamily: "'Manrope',sans-serif" }, ttStr),
-        ));
+    // Selected aimag's pin total — just the count (matches the nav pill's
+    // "N пин"), not individual dots: at country-map scale, plotting every
+    // pin with its own name label made the shape too cluttered to read.
+    // Counts CATS place items (газрын пин — same "Газрууд" pins /maps shows),
+    // not the separate scenic-spot PINS array (vзэсгэлэнт газрын пин).
+    const selSh = sel ? geo.shapes.find((s: any) => mnOf(s.name) === sel) : null;
+    if (selSh) {
+      const pinCount = this.liveCats().reduce((n: number, c: any) => n + c.items.filter((it: any) => (it.aimag || 'Улаанбаатар') === sel).length, 0);
+      if (pinCount > 0) {
+        const off = LABEL_OFF[selSh.name] || [0, 0];
+        const countFs = mini ? 15 : (bigText ? 10.5 : 8);
+        const anchorX = (selSh.lx || selSh.cx) + off[0], anchorY = (selSh.ly || selSh.cy) + off[1];
+        // The vertical traditional-script overlay (rendered as HTML at
+        // heroVertPos, same anchor — a top-anchored column, not centered on
+        // it) sits to the right of/below this anchor point — so when it's
+        // showing, the count reads better beside it (левэside, vertically
+        // centered on the column) with a gap, instead of stacked underneath.
+        const scriptShowing = lang === 'mn' && AIMAG_MN_SCRIPT[sel];
+        const countX = scriptShowing ? anchorX - fs * 0.9 : anchorX;
+        const countY = scriptShowing ? anchorY + fs * 1.3 : anchorY + fs * 0.95;
+        kids.push(e('text', {
+          key: 'pincount', x: countX, y: countY,
+          textAnchor: scriptShowing ? 'end' : 'middle', dominantBaseline: scriptShowing ? 'middle' : 'auto',
+          fontSize: countFs, fontWeight: 800,
+          fill: accent, stroke: 'rgba(6,9,14,.8)', strokeWidth: countFs * 0.24,
+          style: { paintOrder: 'stroke', pointerEvents: 'none' }, fontFamily: "'Manrope',sans-serif",
+        }, pinCount + ' ' + STR[lang as 'mn' | 'en'].pinsLabel));
       }
     }
-    return e('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet', style: { width: '100%', height: '100%', display: 'block', overflow: 'visible' } },
-      e('g', { style: { transform: 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')', transformOrigin: '0 0', transition: 'transform .9s cubic-bezier(.22,.8,.3,1)' } }, kids));
+    return e('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet', style: { width: '100%', height: '100%', display: 'block', overflow: 'visible' } }, kids);
   }
 
   // Navigates to a category grid or a place detail page — routes now carry the
@@ -483,6 +789,16 @@ export default class BigBangLayout extends React.Component<Props, any> {
   openPlace = (cat: any, i: number) => {
     this.props.navigate('/category/' + cat.slug + '/place/' + i);
     this.setState({ locOpen: false });
+    try { window.scrollTo(0, 0); } catch (err) { /* ignore */ }
+  };
+
+  // Same index-in-the-URL approach as openPlace, but EventDetail reads the
+  // matching entry straight off V.events (via context) instead of rebuilding
+  // from a static data.ts array — myEvents (user-submitted, this-session-only)
+  // only exists on this layout's own state, not in any file EventDetail could
+  // import and rebuild from.
+  openEventDetail = (i: number) => {
+    this.props.navigate('/event/' + i);
     try { window.scrollTo(0, 0); } catch (err) { /* ignore */ }
   };
 
@@ -501,7 +817,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // allPins() concatenates PINS + userPins fresh each call — compute it once
     // instead of up to twice per category (14x total) as this used to.
     const allPinsOnce = this.allPins();
-    const navCats = CATS.map((c, i) => {
+    // Real Place rows grouped into CATS shape — computed once per render and
+    // reused below instead of reading the (now-empty) CATS[].items directly.
+    const cats = this.liveCats();
+    const navCats = cats.map((c, i) => {
       const isA = active === i;
       const catCount = aimag === 'Бүгд'
         ? c.items.length + allPinsOnce.filter((p) => p.cat === c.slug).length
@@ -514,12 +833,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
       };
     });
 
-    const bgLayers = CATS.map((c, i) => {
+    // Home's hover/selection preview always stays a still photo — even a
+    // category with an uploaded background *video* (shown once you're inside
+    // its own page) only shows its photo here.
+    const bgLayers = cats.map((c, i) => {
       const override = this.state.catBgOverride[c.slug] || '';
-      return { bg: catBgOf(c, override), opacity: active === i ? 1 : 0, isVideo: isVideoUrl(override), rawUrl: override };
+      return { bg: catBgOf(c, override), opacity: active === i ? 1 : 0 };
     });
 
-    const activeCat = active >= 0 ? CATS[active] : null;
+    const activeCat = active >= 0 ? cats[active] : null;
     const topItems = activeCat
       ? activeCat.items.map((it, idx) => ({ it, idx, rating: ratingOf(it.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
       : [];
@@ -528,7 +850,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         key: activeCat.slug + '-' + o.idx, onClick: () => this.openPlace(activeCat, o.idx), 'aria-label': o.it.name,
         style: { all: 'unset', cursor: 'pointer', width: '160px', height: '200px', boxSizing: 'border-box', position: 'relative', overflow: 'hidden', border: '1px solid rgba(255,255,255,.1)', borderRadius: '18px', animation: 'bbCardIn .55s cubic-bezier(.22,.8,.3,1) both', animationDelay: (i * 80) + 'ms' } as any,
       },
-        e('div', { style: { position: 'absolute', inset: 0, backgroundImage: thumbOf(activeCat, o.idx).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'), backgroundSize: 'cover', backgroundPosition: 'center' } }),
+        e(BgMedia, { bg: itemThumbOf(o.it.img).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'), className: 'absolute inset-0', imgClassName: 'bg-cover bg-center' }),
         e('div', { style: { position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.18) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.92) 100%)', pointerEvents: 'none' } }),
         e('div', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: '13px 15px', pointerEvents: 'none' } },
           e('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '7px' } },
@@ -537,8 +859,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
           e('div', { style: { fontSize: '14px', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.2, color: '#f6f1e7' } }, o.it.name),
           e('div', { style: { fontSize: '11.5px', color: 'rgba(242,237,227,.62)', marginTop: '4px' } }, o.it.meta))) as any) : null;
 
-    const placeCountFor = (a: string) => CATS.reduce((n, c) => n + c.items.filter((it) => (it.aimag || 'Улаанбаатар') === a).length, 0);
-    const totalPlaces = CATS.reduce((n, c) => n + c.items.length, 0);
+    const placeCountFor = (a: string) => cats.reduce((n, c) => n + c.items.filter((it) => (it.aimag || 'Улаанбаатар') === a).length, 0);
+    const totalPlaces = cats.reduce((n, c) => n + c.items.length, 0);
     const aimagOpts = ([['Бүгд', 'All']] as [string, string][]).concat(AIMAGS).map((a) => {
       const on = aimag === a[0];
       return {
@@ -554,6 +876,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const toggleFav = (key: string) => (ev: any) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState((s: any) => ({ favs: { ...s.favs, [key]: !s.favs[key] } })); };
     const heartOf = (on: boolean) => ({ favOn: on, heartColor: on ? accent : 'rgba(242,237,227,.9)' });
 
+    // Visitor-given star rating for a place's detail page — kept alongside
+    // favs/joined as plain in-memory state (not persisted server-side; this
+    // app has no review/rating backend), keyed the same way favs already are.
+    const myRatings = this.state.myRatings || {};
+    const ratePlace = (key: string) => (n: number) => this.setState((s: any) => ({ myRatings: { ...s.myRatings, [key]: n } }));
+
     const joined = this.state.joined || {};
     const toggleJoin = (key: string) => (ev: any) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState((s: any) => ({ joined: { ...s.joined, [key]: !s.joined[key] } })); };
     const joinOf = (on: boolean) => ({
@@ -563,12 +891,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
     });
 
     const favPlaces: any[] = [];
-    CATS.forEach((c) => c.items.forEach((it, i) => {
+    cats.forEach((c) => c.items.forEach((it) => {
       const key = 'p:' + c.slug + ':' + it.name;
       if (!favs[key]) return;
       favPlaces.push({
-        name: it.name, sub: it.sub, rating: ratingOf(it.name), accShow: isAccessible(it.name) ? 'flex' : 'none',
-        thumb: thumbOf(c, i).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
+        name: it.name, sub: it.sub, rating: ratingOf(it.name), accShow: it.access ? 'flex' : 'none',
+        thumb: itemThumbOf(it.img).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
         displayMeta: it.meta + ' · ' + aimagName(it.aimag || 'Улаанбаатар', lang), toggleFav: toggleFav(key), ...heartOf(true),
       });
     }));
@@ -585,22 +913,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
     const go = (r: string) => { navigate(ROUTE_PATH[r] || '/'); this.setState({ locOpen: false, active: -1 }); try { window.scrollTo(0, 0); } catch (err) { /* ignore */ } };
 
-    const hoverAimag = this.state.hoverAimag;
-    const mapSvg = this.geo ? this.buildMapSvg(accent, lang, mapAimag, hoverAimag, pin, this.state.bigText) : null;
-    const pinBgImg = mapAimag ? (this.state.aimagBgOverride[mapAimag] || AIMAG_BG[mapAimag] || '1470071459604-3b5ec3a7fe05') : null;
-    if (pinBgImg && this.bgReady(pinBgImg, 1800)) this._lastPinBg = pinBgImg;
-    this._bg = this._bg || { a: null, b: null, slot: 'a', shown: null };
-    const newReady = (pinBgImg && this._lastPinBg && this.bgReady(this._lastPinBg, 1800)) ? this._lastPinBg : null;
-    if (newReady && newReady !== this._bg.shown) {
-      const next = this._bg.slot === 'a' ? 'b' : 'a';
-      this._bg[next] = newReady; this._bg.slot = next; this._bg.shown = newReady;
-    }
-    const pinBgUrl = (id: any) => id ? ('linear-gradient(rgba(0,0,0,.82), rgba(0,0,0,.9)), url("' + imgUrl(id, 1800) + '")') : 'none';
-    const pinBgA = pinBgUrl(this._bg.a);
-    const pinBgB = pinBgUrl(this._bg.b);
-    const showPhoto = !!mapAimag;
-    const pinBgAOpacity = (showPhoto && this._bg.slot === 'a') ? 1 : 0;
-    const pinBgBOpacity = (showPhoto && this._bg.slot === 'b') ? 1 : 0;
     const selP = pin >= 0 ? this.mapPins()[pin] : null;
     const pinSel = selP ? {
       ...selP, rating: ratingOf(selP.name),
@@ -611,78 +923,96 @@ export default class BigBangLayout extends React.Component<Props, any> {
     } : false;
 
     const st = this.state;
-    const roleOpts = ([['host', L.roleHost], ['user', L.roleUser], ['admin', L.roleAdmin]] as [string, string][]).map((r) => {
-      const on = st.fRole === r[0];
-      return { label: r[1], pick: () => this.setState({ fRole: r[0] }), bg: on ? accent : 'rgba(255,255,255,.04)', color: on ? '#132a1f' : 'rgba(242,237,227,.8)', border: on ? accent : 'rgba(242,237,227,.18)' };
-    });
-    const catOpts = CATS.map((c) => ({ value: c.slug, label: lang === 'en' ? c.nameEn : c.name }));
-    const curCat = CATS.find((c) => c.slug === st.fCat) || CATS[0];
-    const subOpts = curCat.subs.map((s) => ({ value: s, label: s }));
-    const aimagFormOpts = AIMAGS.map((a) => ({ value: a[0], label: lang === 'en' ? a[1] : a[0] }));
-    const setF = (k: string) => (ev: any) => this.setState({ [k]: ev.target.value });
-    const onImg = (ev: any) => {
-      const f = ev.target.files && ev.target.files[0]; if (!f) return;
-      const rd = new FileReader(); rd.onload = () => this.setState({ fImg: rd.result }); rd.readAsDataURL(f);
-    };
-    const openAddForm = () => this.setState({ showAddForm: true, fMsg: '', fErr: false, fCat: st.fCat || CATS[0].slug, fSub: st.fSub || CATS[0].subs[0], fAimag: mapAimag || 'Дорнод' });
-    const submitPlace = () => {
-      if (!st.fName.trim()) { this.setState({ fMsg: L.errName, fErr: true }); return; }
-      const c = CATS.find((x) => x.slug === (st.fCat || CATS[0].slug)) || CATS[0];
-      const hrs = (st.fOpen && st.fClose) ? (st.fOpen + '–' + st.fClose) : '';
-      const pool = ['1470071459604-3b5ec3a7fe05', '1441974231531-c6227db76b6e', '1504280390367-361c6d9f38f4'];
-      const accessible = st.fAccess && st.fCrit.every(Boolean);
-      const newPin: any = {
-        name: st.fName.trim(), type: st.fSub || c.subs[0], aimag: st.fAimag,
-        img: st.fImg || pool[Math.floor(Math.random() * pool.length)],
-        desc: st.fDesc.trim() || '—', hours: hrs, mapUrl: st.fMapUrl.trim() || '',
-        phone: st.fPhone.trim() || '', access: accessible, cat: c.slug, addedBy: st.fRole,
-      };
-      if (accessible) ACCESS_NAMES[st.fName.trim()] = 1;
-      if (st.fLat != null) { newPin.lat = st.fLat; newPin.lng = st.fLng; const xy = lonLatToXY(st.fLng, st.fLat); newPin.px = xy[0]; newPin.py = xy[1]; }
-      this.setState((s: any) => ({
-        userPins: s.userPins.concat([newPin]), showAddForm: false, mapAimag: st.fAimag, pin: -1,
-        fName: '', fSub: '', fOpen: '', fClose: '', fDesc: '', fMapUrl: '', fImg: '', fLat: null, fLng: null,
-        fPhone: '', fAccess: false, fCrit: [false, false, false, false, false], fMsg: '', fErr: false,
-      }));
-    };
 
-    // Same shared "add place/scenic/event" modal Host and Admin use (map picker +
-    // what3words + satellite tiles included) instead of this layout's own hand-rolled
-    // scenic/event forms — see CreateForm.tsx.
+    // Same shared "add place/scenic/event" modal Admin uses too (map picker +
+    // what3words + satellite tiles included) — see CreateForm.tsx. No "host"
+    // tier: any signed-in account can submit all three (a place just lands
+    // `pending` until an admin approves it — see app/api/places/route.ts). A
+    // signed-out visitor is prompted with the lightweight OTP UserAuthForm,
+    // and the submission is replayed automatically once they're signed in.
+    const openPlaceForm = () => this.setState({ showPlaceForm: true });
+    const onPlaceSubmit = async (data: CreateFormData) => {
+      const session = getSession();
+      if (!session) { this._pendingCreate = { kind: 'place', data }; this.setState({ showPlaceForm: false, showUserAuthForm: true }); return; }
+      try {
+        await createPlace(session.token, data);
+        this.setState({ showPlaceForm: false });
+        this.fetchLiveContent();
+        this.fetchMyPlaces(session.token);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
+    };
     const openScenicForm = () => this.setState({ showScenicForm: true });
-    const onScenicSubmit = (data: CreateFormData) => {
-      this.setState((s: any) => ({
-        myScenic: [{
-          name: data.name.trim(),
-          aimag: data.lat != null ? data.lat.toFixed(3) + ', ' + data.lng!.toFixed(3) : data.aimag,
-          desc: data.desc.trim() || '—',
-          img: data.images[0] || '',
-        }].concat(s.myScenic),
-        showScenicForm: false,
-      }));
+    const onScenicSubmit = async (data: CreateFormData) => {
+      const session = getSession();
+      if (!session) { this._pendingCreate = { kind: 'scenic', data }; this.setState({ showScenicForm: false, showUserAuthForm: true }); return; }
+      try {
+        await createScenicPin(session.token, data);
+        this.setState({ showScenicForm: false });
+        this.fetchLiveContent();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
     };
     const openEventForm = () => this.setState({ showEventForm: true });
-    const onEventSubmit = (data: CreateFormData) => {
-      let day = '01', mon = L.eMonFallback;
-      if (data.date) { const d = new Date(data.date); if (!isNaN(+d)) { day = String(d.getDate()).padStart(2, '0'); mon = (d.getMonth() + 1) + (lang === 'en' ? '' : '-р сар'); } }
-      const meta = [data.time, data.desc.trim()].filter(Boolean).join(' · ') || '—';
-      this.setState((s: any) => ({
-        myEvents: [{ day, mon, name: data.name.trim(), meta, tag: L.eTagFallback, img: data.images[0] || '' }].concat(s.myEvents),
-        showEventForm: false,
-      }));
+    const onEventSubmit = async (data: CreateFormData) => {
+      const session = getSession();
+      if (!session) { this._pendingCreate = { kind: 'event', data }; this.setState({ showEventForm: false, showUserAuthForm: true }); return; }
+      try {
+        await createEvent(session.token, data);
+        this.setState({ showEventForm: false });
+        this.fetchLiveContent();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
     };
-    const readImg = (key: string) => (ev: any) => { const f = ev.target.files && ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => this.setState({ [key]: r.result }); r.readAsDataURL(f); };
+    const closeUserAuthForm = () => { this._pendingCreate = null; this.setState({ showUserAuthForm: false }); };
+    // UserAuthForm already did the OTP verify — this just stores the
+    // resulting session and replays whatever place/scenic/event submission
+    // triggered the prompt in the first place, so the visitor doesn't have
+    // to refill the form.
+    const onUserAuthed = async (token: string, user: any) => {
+      saveSession(token, user);
+      this.setState({ showUserAuthForm: false });
+      this.fetchMyPlaces(token);
+      const pending = this._pendingCreate;
+      this._pendingCreate = null;
+      if (!pending) return;
+      try {
+        if (pending.kind === 'place') await createPlace(token, pending.data);
+        else if (pending.kind === 'scenic') await createScenicPin(token, pending.data);
+        else await createEvent(token, pending.data);
+        this.fetchLiveContent();
+        this.fetchMyPlaces(token);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
+    };
+    // Clears the session (lib/session.ts) and this session's own fetched
+    // place list — myScenic/myEvents don't need clearing since they're
+    // re-derived from getSession() fresh on every render (see mySession
+    // below), but myPlaces is state fetched once via fetchMyPlaces and would
+    // otherwise keep showing the logged-out account's places until a refresh.
+    const logout = () => {
+      clearSession();
+      this.setState({ myPlaces: [] });
+    };
     const evThumb = (img: any) => img ? 'url("' + img + '")' : 'linear-gradient(135deg, rgba(232, 184, 75,.25), rgba(120,200,170,.15))';
-    const fe = FEATURED_EVENT;
+    const liveEvents: any[] = this.state.liveEvents || [];
+    const featuredEvent = liveEvents.find((ev) => ev.featured) || liveEvents[0] || null;
+    const fe = featuredEvent
+      ? { name: featuredEvent.name, date: fmtEventDate(featuredEvent.startDate), meta: featuredEvent.meta || '', img: featuredEvent.image || '' }
+      : { name: '', date: '', meta: '', img: '' };
 
     const topScenic = this.allPins().map((p) => ({ p, rating: ratingOf(p.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
       .map((o) => ({ name: o.p.name, sub: o.p.type, rating: o.rating, kind: L.favScenic, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.p.img, 500) + '")', onClick: () => { this.setState({ pinMode: 'scenic' }); go('pin'); } }));
     const flatPlaces: any[] = [];
-    CATS.forEach((c) => c.items.forEach((it, i) => flatPlaces.push({ it, cat: c, idx: i })));
+    cats.forEach((c) => c.items.forEach((it, i) => flatPlaces.push({ it, cat: c, idx: i })));
     const topPlaces = flatPlaces.map((o) => ({ ...o, rating: ratingOf(o.it.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
-      .map((o) => ({ name: o.it.name, sub: o.it.sub, rating: o.rating, kind: L.favPlaces, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + U(o.cat.pool[o.idx % o.cat.pool.length], 500) + '")', onClick: () => this.openPlace(o.cat, o.idx) }));
-    const topEvents = EVENTS.map((ev) => ({ ev, rating: ratingOf(ev.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
-      .map((o) => ({ name: o.ev.name, sub: o.ev.tag, rating: o.rating, kind: L.eventTitle, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + U(o.ev.img || fe.img, 500) + '")', onClick: () => go('event') }));
+      .map((o) => ({ name: o.it.name, sub: o.it.sub, rating: o.rating, kind: L.favPlaces, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.it.img || '', 500) + '")', onClick: () => this.openPlace(o.cat, o.idx) }));
+    const topEvents = liveEvents.map((ev) => ({ ev, rating: ratingOf(ev.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
+      .map((o) => ({ name: o.ev.name, sub: o.ev.tag || L.eTagFallback, rating: o.rating, kind: L.eventTitle, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.ev.image || '', 500) + '")', onClick: () => go('event') }));
     const topItems2: any[] = [];
     for (let i = 0; i < 3; i++) { topItems2.push(topScenic[i], topPlaces[i], topEvents[i]); }
 
@@ -708,10 +1038,29 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const aimagImg = aimag !== 'Бүгд' ? (this.state.aimagBgOverride[aimag] || AIMAG_BG[aimag] || null) : null;
     if (aimagImg && this.bgReady(aimagImg, 1800)) this._lastAimagBg = aimagImg;
 
+    // "Миний нэмсэн..." on the Profile page — this session's own submissions.
+    // Places come pre-filtered from the server (GET /places/mine, see
+    // fetchMyPlaces) since only approved ones are public in the first place;
+    // scenic pins/events are filtered out of the same live-fetched lists
+    // everyone else sees, since those have no separate "mine" endpoint.
+    const mySession = getSession();
+    const myPlaceItems = (st.myPlaces || []).map((p: any) => ({
+      name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.image),
+      pending: p.status === 'pending', statusLabel: p.status === 'approved' ? 'Батлагдсан ✓' : p.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
+    }));
+    const myScenicItems = mySession
+      ? (this.state.liveScenicPins || []).filter((p: any) => p.addedBy === mySession.user.id)
+        .map((p: any) => ({ name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.image) }))
+      : [];
+    const myEventItems = mySession
+      ? liveEvents.filter((ev: any) => ev.addedBy === mySession.user.id)
+        .map((ev: any) => { const { day, mon } = eventDayMon(ev.startDate); return { day, mon, name: ev.name, meta: ev.meta || '', tag: ev.tag || L.eTagFallback }; })
+      : [];
+
     return {
-      accent, driftAnim, L, lang, aimag, favs, toggleFav, spNeeds: st.spNeeds,
-      catBgOverride: st.catBgOverride, suggestBgOverride: st.suggestBgOverride,
-      isHome: route === 'home',
+      accent, driftAnim, L, lang, aimag, favs, toggleFav, myRatings, ratePlace, spNeeds: st.spNeeds,
+      catBgOverride: st.catBgOverride, catVideoOverride: st.catVideoOverride, suggestBgOverride: st.suggestBgOverride,
+      isHome: route === 'home', isMapsPage: route === 'pin',
       openPin: () => go('pin'), openEvent: () => go('event'), openSuggest: () => go('suggest'),
       openGlobe: () => go('globe'), globeMountRef: this.handleGlobeRef,
       travelMapRef: (el: any) => { if (el && window.renderTravelMap) window.renderTravelMap(el); },
@@ -746,11 +1095,16 @@ export default class BigBangLayout extends React.Component<Props, any> {
       bigSwBg: st.bigText ? accent : 'rgba(255,255,255,.2)', bigSwKnob: st.bigText ? '23px' : '3px',
       spCardBg: st.spNeeds ? 'rgba(120,200,170,.1)' : 'rgba(255,255,255,.03)', spCardBorder: st.spNeeds ? 'rgba(120,200,170,.6)' : 'rgba(255,255,255,.1)',
       spSwBg: st.spNeeds ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.2)', spSwKnob: st.spNeeds ? '23px' : '3px',
+      openPlaceForm, closePlaceForm: () => this.setState({ showPlaceForm: false }),
       openScenicForm, closeScenicForm: () => this.setState({ showScenicForm: false }),
       openEventForm, closeEventForm: () => this.setState({ showEventForm: false }),
-      showScenicForm: st.showScenicForm, showEventForm: st.showEventForm, onScenicSubmit, onEventSubmit,
-      hasMyScenic: st.myScenic.length > 0, myScenicItems: st.myScenic.map((s: any) => ({ ...s, thumb: evThumb(s.img) })),
-      hasMyEvents: st.myEvents.length > 0, myEventItems: st.myEvents,
+      showPlaceForm: st.showPlaceForm, showScenicForm: st.showScenicForm, showEventForm: st.showEventForm,
+      onPlaceSubmit, onScenicSubmit, onEventSubmit,
+      showUserAuthForm: st.showUserAuthForm, closeUserAuthForm, onUserAuthed,
+      loggedIn: !!mySession, logout,
+      hasMyPlaces: myPlaceItems.length > 0, myPlaceItems,
+      hasMyScenic: myScenicItems.length > 0, myScenicItems,
+      hasMyEvents: myEventItems.length > 0, myEventItems,
       aboutNavColor: route === 'about' ? accent : 'rgba(242,237,227,.75)',
       team: TEAM.map((t, i) => ({ name: t[0], role: lang === 'en' ? t[2] : t[1], initial: t[0].charAt(0), avatarBg: 'oklch(78% 0.1 ' + (30 + i * 34) + ')' })),
       abHeroFullBg: 'url("' + imgUrl(this.state.aboutBgOverride || '1470071459604-3b5ec3a7fe05', 1800) + '")',
@@ -777,61 +1131,55 @@ export default class BigBangLayout extends React.Component<Props, any> {
       aimagBg: 'linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78)), url("' + imgUrl(this._lastAimagBg || '1470071459604-3b5ec3a7fe05', 1800) + '")',
       aimagBgIsVideo: isVideoUrl(this._lastAimagBg || ''), aimagBgRawUrl: this._lastAimagBg || '',
       aimagBgOpacity: (aimagImg && this._lastAimagBg === aimagImg) ? 1 : 0,
+      // The moment an aimag's photo hasn't loaded yet, this shows a skeleton
+      // instead of the Home hero just sitting there under a flat black scrim.
+      aimagBgLoading: aimag !== 'Бүгд' && !(aimagImg && this._lastAimagBg === aimagImg),
       pickerSvg: this.buildPickerSvg(accent, lang, aimag === 'Бүгд' ? null : aimag, this.state.heroHover, false, this.state.bigText),
       pickerWrapRef: this.handlePickerWrapRef,
       heroAimagLabel: aimag === 'Бүгд' ? '' : aimagName(aimag, lang),
       // Traditional (vertical) Mongolian script for the selected aimag — see
       // AIMAG_MN_SCRIPT in data.ts for the accuracy caveat on this transliteration.
       heroAimagVert: aimag !== 'Бүгд' && lang === 'mn' ? AIMAG_MN_SCRIPT[aimag] || '' : '',
-      pinBgA, pinBgB, pinBgAOpacity, pinBgBOpacity,
       pinModeOpts: ([['scenic', lang === 'en' ? 'Scenic' : 'Үзэсгэлэнт'], ['places', lang === 'en' ? 'Places' : 'Газрууд'], ['events', lang === 'en' ? 'Events' : 'Эвент']] as [string, string][]).map((m) => {
         const on = (this.state.pinMode || 'scenic') === m[0];
         return { label: m[1], color: on ? '#132a1f' : 'rgba(255,255,255,.85)', pick: () => this.setState({ pinMode: m[0], pin: -1 }) };
       }),
       pinPillShift: 'calc(' + Math.max(0, ['scenic', 'places', 'events'].indexOf(this.state.pinMode || 'scenic')) + ' * 100%)',
-      mapSvg, pinSel, closePin: () => this.setState({ pin: -1 }),
+      mainMapRef: this.mainMapRef, pinSel, closePin: () => this.setState({ pin: -1 }),
       isMobile, isTablet,
       mobileMenuOpen: this.state.mobileMenuOpen,
       toggleMobileMenu: () => this.setState((s: any) => ({ mobileMenuOpen: !s.mobileMenuOpen })),
       closeMobileMenu: () => this.setState({ mobileMenuOpen: false }),
       heroVertLabel: aimag !== 'Бүгд' && lang === 'mn' ? AIMAG_MN_SCRIPT[aimag] || '' : '',
       heroVertPos: this.state.heroVertPos,
-      mapViewUrl: (this.state.mapView && selP) ? embedUrlFor(selP) : false,
-      mapViewName: selP ? selP.name : '',
-      openMapView: () => this.setState({ mapView: true }), closeMapView: () => this.setState({ mapView: false }),
       mapZoomed: !!mapAimag, resetMap: () => this.setState({ mapAimag: null, pin: -1, hoverAimag: null }),
-      aimagPanelShow: !!(mapAimag && !selP && !this.state.showAddForm),
+      aimagPanelShow: !!(mapAimag && !selP),
       panelName: mapAimag ? aimagName(mapAimag, lang) : '',
-      panelCount: mapAimag ? this.allPins().filter((p) => p.aimag === mapAimag).length : 0,
-      showAddForm: st.showAddForm, openAddForm, closeAddForm: () => this.setState({ showAddForm: false }),
-      stop: (ev: any) => ev.stopPropagation(),
-      roleOpts, catOpts, subOpts, aimagFormOpts,
-      formName: st.fName, formCat: st.fCat || CATS[0].slug, formSub: st.fSub || CATS[0].subs[0],
-      formAimag: st.fAimag, formOpen: st.fOpen, formClose: st.fClose, formDesc: st.fDesc, formMapUrl: st.fMapUrl,
-      onName: setF('fName'), onCat: (ev: any) => { const v = ev.target.value; const c = CATS.find((x) => x.slug === v) || CATS[0]; this.setState({ fCat: v, fSub: c.subs[0] }); },
-      onSub: setF('fSub'), onAimag: setF('fAimag'), onOpen: setF('fOpen'), onClose: setF('fClose'),
-      onDesc: setF('fDesc'), onMapUrl: setF('fMapUrl'), onImg, submitPlace,
-      formPhone: st.fPhone, onPhone: setF('fPhone'), formAccess: st.fAccess,
-      toggleFAccess: () => this.setState((s: any) => ({ fAccess: !s.fAccess })),
-      fAccBg: st.fAccess ? 'rgba(120,200,170,.1)' : 'rgba(255,255,255,.04)', fAccBorder: st.fAccess ? 'rgba(120,200,170,.5)' : 'rgba(242,237,227,.18)',
-      fAccSwBg: st.fAccess ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.2)', fAccKnob: st.fAccess ? '20px' : '3px',
-      accCriteria: FCRIT.map((label, i) => {
-        const on = st.fCrit[i];
-        return { label, toggle: () => this.setState((s: any) => { const c = s.fCrit.slice(); c[i] = !c[i]; return { fCrit: c }; }), mark: on ? '✓' : '', boxBg: on ? 'rgba(120,200,170,.9)' : 'transparent', boxBorder: on ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.3)', bg: on ? 'rgba(120,200,170,.08)' : 'transparent', border: on ? 'rgba(120,200,170,.4)' : 'rgba(255,255,255,.12)' };
-      }),
-      accAll: st.fAccess && st.fCrit.every(Boolean),
-      pickMapRef: this.pickMapRef, mapPickHint: st.fLat != null ? L.mapPicked : L.mapPick,
-      noImg: !st.fImg, imgPreviewBg: st.fImg ? 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.1)), url("' + st.fImg + '")' : 'rgba(255,255,255,.03)',
-      formMsg: st.fMsg, errColor: st.fErr ? '#e88a8a' : 'rgba(140,214,150,.9)',
-      fevBg: 'linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.4)), url("' + U(fe.img, 1600) + '")',
+      panelCount: mapAimag ? this.mapPins().filter((p) => p.aimag === mapAimag).length : 0,
+      hasFeaturedEvent: !!featuredEvent,
+      fevBg: 'linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.4)), url("' + imgUrl(fe.img, 1600) + '")',
       fevDate: fe.date, fevName: fe.name, fevMeta: fe.meta,
-      events: st.myEvents.concat(EVENTS.map((ev) => ({ ...ev, thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + U(ev.img, 800) + '")' }))).map((ev: any) => ({ ...ev, thumb: ev.thumb || evThumb(ev.img) }))
-        .map((ev: any) => {
-          const key = 'e:' + ev.name;
-          return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]) };
-        }),
-      suggests, navCats, bgLayers, previewCards, topItems: topItems2,
-      travelApps: TRAVEL_APPS.map((a) => ({ ...a, purpose: lang === 'en' ? a.en : a.mn })),
+      openEventDetail: this.openEventDetail,
+      events: liveEvents.map((ev: any) => {
+        const { day, mon } = eventDayMon(ev.startDate);
+        return {
+          day, mon, name: ev.name, meta: ev.meta || '', tag: ev.tag || L.eTagFallback,
+          aimag: ev.aimag ? ev.aimag.name : undefined,
+          thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + imgUrl(ev.image || '', 800) + '")',
+        };
+      }).map((ev: any, i: number) => {
+        const key = 'e:' + ev.name;
+        return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]), onClick: () => this.openEventDetail(i) };
+      }),
+      suggests, cats, navCats, bgLayers, previewCards, topItems: topItems2,
+      travelApps: TRAVEL_APPS.map((a) => {
+        const raw = (this.state.travelAppsBgOverride || {})[a.slug] || '';
+        return {
+          ...a, purpose: lang === 'en' ? a.en : a.mn,
+          hasBg: !!raw, bg: raw ? 'url("' + imgUrl(raw, 900) + '")' : 'none',
+          bgIsVideo: isVideoUrl(raw), bgRawUrl: raw,
+        };
+      }),
       clearActive: () => this.setState({ active: -1 }),
       goHome: () => { navigate('/'); this.setState({ active: -1, locOpen: false }); },
       locOpen, toggleLoc: () => this.setState({ locOpen: !locOpen }), closeLoc: () => this.setState({ locOpen: false }),
@@ -847,105 +1195,133 @@ export default class BigBangLayout extends React.Component<Props, any> {
   render() {
     const V: any = this.renderVals();
     const rootStyle: React.CSSProperties = {
-      ...css("min-height:100vh;background:#0b0a08;color:#f2ede3;font-family:'Manrope',system-ui,sans-serif"),
       ['--accent' as any]: V.accent, ['--drift' as any]: V.driftAnim,
     };
     return (
-      <div className={V.a11yClass} style={rootStyle}>
+      <div className={`min-h-screen bg-ink font-sans text-cream ${V.a11yClass}`} style={rootStyle}>
         {/* ══════════ NAV ══════════ */}
-        <nav style={css(`position:fixed;top:0;left:0;right:0;z-index:60;display:flex;align-items:center;justify-content:space-between;padding:${V.isMobile ? '14px 16px' : '18px 48px'};background:linear-gradient(180deg, rgba(8,7,6,.8) 0%, rgba(8,7,6,0) 100%)`)}>
-          <div className="bb-logo-group" style={{ flex: 'none', position: 'relative', display: 'flex', alignItems: 'center', gap: 18 }}>
-            <button onClick={V.goHome} style={css('all:unset;cursor:pointer;display:flex;align-items:center;position:relative;z-index:2')}>
-              <span style={{ ...css("font-family:'Playfair Display',serif;font-style:italic;font-weight:700;letter-spacing:-0.01em;color:#f2ede3"), fontSize: V.isMobile ? 19 : 23 }}>Big Bang</span>
+        <nav
+          className="fixed inset-x-0 top-0 z-[60] flex items-center justify-between bg-[linear-gradient(180deg,rgba(8,7,6,.8)_0%,rgba(8,7,6,0)_100%)]"
+          style={{ padding: V.isMobile ? '14px 16px' : '18px 48px' }}
+        >
+          <div className="bb-logo-group relative flex flex-none items-center gap-[18px]">
+            <button onClick={V.goHome} className="relative z-[2] flex cursor-pointer items-center border-0 bg-transparent p-0 font-inherit text-inherit">
+              <span className="font-display font-bold italic tracking-[-0.01em] text-cream" style={{ fontSize: V.isMobile ? 19 : 23 }}>Big Bang</span>
             </button>
           </div>
 
           {V.isMobile ? (
             <>
-              <Hover as="button" onClick={V.toggleMobileMenu} s="cursor:pointer;font-family:inherit;width:38px;height:38px;flex:none;border-radius:10px;border:1px solid rgba(242,237,227,.25);background:rgba(255,255,255,.06);color:#f2ede3;display:flex;align-items:center;justify-content:center;font-size:17px" h="border-color:var(--accent,#E8B84B)">{V.mobileMenuOpen ? '×' : '☰'}</Hover>
+              <button onClick={V.toggleMobileMenu} className="flex h-[38px] w-[38px] flex-none cursor-pointer items-center justify-center rounded-[10px] border border-[rgba(242,237,227,.25)] bg-[rgba(255,255,255,.06)] font-[inherit] text-[17px] text-cream transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">{V.mobileMenuOpen ? '×' : '☰'}</button>
               {V.mobileMenuOpen && (
                 <>
-                  <div onClick={V.closeMobileMenu} style={css('position:fixed;inset:0;z-index:40;cursor:default;background:rgba(0,0,0,.4)')}></div>
-                  <div style={css('position:fixed;left:12px;right:12px;top:66px;z-index:41;background:rgba(13,20,15,.97);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:14px;box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;gap:4px;max-height:80vh;overflow:auto')}>
-                    <Hover as="button" onClick={V.toggleLoc} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:rgba(242,237,227,.9);background:rgba(255,255,255,.05);border:1px solid rgba(242,237,227,.16);border-radius:11px;padding:11px 13px;text-align:left" h="border-color:var(--accent,#E8B84B)">
-                      <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent,#E8B84B)')}></span>
-                      <span style={css('flex:1')}>{V.aimagLabel}</span>
-                      <span style={css('font-size:10.5px;font-weight:800;color:var(--accent,#E8B84B)')}>{V.aimagCount}</span>
-                    </Hover>
-                    {V.locOpen && (
-                      <div style={css('display:flex;flex-wrap:wrap;gap:6px;padding:10px 2px')}>
-                        {V.aimagOpts.map((a: any, i: number) => (
-                          <Hover as="button" key={i} onClick={a.pick} s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid ${a.border};background:${a.bg};color:${a.color}`} h="border-color:rgba(242,237,227,.6)">
-                            <span>{a.label}</span>
-                            <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
-                          </Hover>
-                        ))}
+                  <div onClick={V.closeMobileMenu} className="fixed inset-0 z-40 cursor-default bg-[rgba(0,0,0,.4)]"></div>
+                  <div className="fixed top-[66px] right-3 left-3 z-[41] flex max-h-[80vh] flex-col gap-1 overflow-auto rounded-2xl border border-[rgba(255,255,255,.14)] bg-[rgba(13,20,15,.97)] p-3.5 shadow-[0_24px_60px_rgba(0,0,0,.55)] backdrop-blur-[18px]">
+                    {V.isHome && (
+                      <>
+                        <button onClick={V.toggleLoc} className="flex cursor-pointer items-center gap-2 rounded-[11px] border border-[rgba(242,237,227,.16)] bg-[rgba(255,255,255,.05)] px-[13px] py-[11px] text-left font-[inherit] text-[13px] font-semibold text-[rgba(242,237,227,.9)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
+                          <span className="flex-1">{V.aimagLabel}</span>
+                          <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
+                        </button>
+                        {V.locOpen && (
+                          <div className="flex flex-wrap gap-1.5 px-0.5 py-2.5">
+                            {V.aimagOpts.map((a: any, i: number) => (
+                              <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-colors duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
+                                <span>{a.label}</span>
+                                <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {V.isMapsPage && (
+                      <div className="flex flex-wrap items-center gap-2 pt-2 pr-0.5 pb-1 pl-0.5">
+                        <button onClick={V.openGlobe} title={V.L.globe} className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border-none text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5" style={{ background: V.accent }}><Globe size={15} /></button>
+                        <div className="relative flex-1 inline-grid grid-cols-3 rounded-full border border-[rgba(255,255,255,.16)] bg-[rgba(255,255,255,.06)] p-[3px]">
+                          <div className="absolute top-[3px] bottom-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-full transition-transform duration-300 ease-[cubic-bezier(.34,1.4,.5,1)]" style={{ background: V.accent, transform: `translateX(${V.pinPillShift})` }}></div>
+                          {V.pinModeOpts.map((m: any, i: number) => (
+                            <button key={i} onClick={m.pick} className="relative z-[2] cursor-pointer whitespace-nowrap border-none bg-transparent px-2 py-[5px] font-[inherit] text-[11px] font-bold transition-colors duration-250" style={{ color: m.color }}>{m.label}</button>
+                          ))}
+                        </div>
+                        {V.mapZoomed && (
+                          <button onClick={V.resetMap} className="cursor-pointer whitespace-nowrap rounded-full border border-[rgba(242,237,227,.3)] bg-[rgba(255,255,255,.05)] px-3.5 py-1.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.85)] hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">← {V.L.resetMap}</button>
+                        )}
                       </div>
                     )}
                     {[
                       [V.L.home, V.goHome], [V.L.pin, V.openPin], [V.L.event, V.openEvent],
                       [V.L.suggest, V.openSuggest], [V.L.about, V.openAbout],
                     ].map(([label, fn]: any, i: number) => (
-                      <Hover key={i} as="button" onClick={() => { fn(); V.closeMobileMenu(); }} s="all:unset;cursor:pointer;font-size:14px;font-weight:600;color:rgba(242,237,227,.85);padding:11px 13px;border-radius:11px" h="background:rgba(255,255,255,.06);color:#f2ede3">{label}</Hover>
+                      <button key={i} onClick={() => { fn(); V.closeMobileMenu(); }} className="cursor-pointer rounded-[11px] border-0 bg-transparent px-[13px] py-[11px] text-left font-[inherit] text-sm font-semibold text-[rgba(242,237,227,.85)] hover:bg-[rgba(255,255,255,.06)] hover:text-cream">{label}</button>
                     ))}
-                    <div style={css('display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px 4px;border-top:1px solid rgba(255,255,255,.1);margin-top:6px')}>
-                      <div style={css('display:flex;border:1px solid rgba(242,237,227,.25);border-radius:999px;overflow:hidden')}>
-                        <button onClick={V.setMn} style={{ ...css('cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;padding:6px 11px;border:none'), background: V.mnBg, color: V.mnColor }}>MN</button>
-                        <button onClick={V.setEn} style={{ ...css('cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;padding:6px 11px;border:none'), background: V.enBg, color: V.enColor }}>EN</button>
+                    <div className="mt-1.5 flex items-center justify-between gap-2.5 border-t border-[rgba(255,255,255,.1)] pt-2.5 pr-[13px] pb-1 pl-[13px]">
+                      <div className="flex overflow-hidden rounded-full border border-[rgba(242,237,227,.25)]">
+                        <button onClick={V.setMn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold" style={{ background: V.mnBg, color: V.mnColor }}>MN</button>
+                        <button onClick={V.setEn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold" style={{ background: V.enBg, color: V.enColor }}>EN</button>
                       </div>
-                      <Link href="/login" onClick={V.closeMobileMenu} style={css('cursor:pointer;text-decoration:none;font-family:inherit;font-size:12.5px;font-weight:600;color:#f2ede3;background:transparent;border:1px solid rgba(242,237,227,.28);border-radius:999px;padding:7px 15px')}>{V.L.signin}</Link>
-                      <Hover as="button" onClick={() => { V.openProfile(); V.closeMobileMenu(); }} title={V.L.profile} s={`cursor:pointer;font-family:inherit;width:34px;height:34px;flex:none;border-radius:50%;border:1px solid ${V.profileBorder};background:${V.profileBg};color:${V.profileColor};font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center`} h="border-color:var(--accent,#E8B84B)">Б</Hover>
+                      {!V.loggedIn && (
+                        <Link href="/login" onClick={V.closeMobileMenu} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-[15px] py-1.5 font-[inherit] text-[12.5px] font-semibold text-cream no-underline">{V.L.signin}</Link>
+                      )}
+                      {V.loggedIn && (
+                        <button onClick={() => { V.openProfile(); V.closeMobileMenu(); }} title={V.L.profile} className="flex h-[34px] w-[34px] flex-none cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
+                      )}
                     </div>
                   </div>
                 </>
               )}
             </>
           ) : (
-            <div style={css('display:flex;align-items:center;gap:16px;min-width:0')}>
-              <div style={css('position:relative')}>
-                <Hover as="button" onClick={V.toggleLoc} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:rgba(242,237,227,.85);background:rgba(255,255,255,.06);border:1px solid rgba(242,237,227,.18);border-radius:999px;padding:6px 12px;transition:all .25s" h="border-color:var(--accent,#E8B84B)">
-                  <span style={css('width:6px;height:6px;border-radius:50%;background:var(--accent,#E8B84B)')}></span>
-                  <span>{V.aimagLabel}</span>
-                  <span style={css('font-size:10.5px;font-weight:800;color:var(--accent,#E8B84B)')}>{V.aimagCount}</span>
-                  <span style={css('font-size:9px;opacity:.6')}>▾</span>
-                </Hover>
-                {V.locOpen && (
-                  <>
-                    <div onClick={V.closeLoc} style={css('position:fixed;inset:0;z-index:40;cursor:default')}></div>
-                    <div style={css('position:fixed;left:50%;transform:translateX(-50%);top:76px;width:560px;max-height:70vh;overflow:auto;background:rgba(255,255,255,.09);backdrop-filter:blur(22px) saturate(1.2);-webkit-backdrop-filter:blur(22px) saturate(1.2);border:1px solid rgba(255,255,255,.35);border-radius:14px;padding:14px 16px 16px;box-shadow:0 24px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.25);z-index:41')}>
-                      <div style={css('display:flex;flex-wrap:wrap;gap:6px')}>
-                        {V.aimagOpts.map((a: any, i: number) => (
-                          <Hover as="button" key={i} onClick={a.pick} s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid ${a.border};background:${a.bg};color:${a.color};transition:all .2s`} h="border-color:rgba(242,237,227,.6)">
-                            <span>{a.label}</span>
-                            <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
-                          </Hover>
-                        ))}
+            <div className="flex min-w-0 items-center gap-4">
+              {V.isHome && (
+                <div className="relative">
+                  <button onClick={V.toggleLoc} className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.06)] px-3 py-1.5 font-[inherit] text-xs font-semibold text-[rgba(242,237,227,.85)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
+                    <span>{V.aimagLabel}</span>
+                    <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
+                    <span className="text-[9px] opacity-60">▾</span>
+                  </button>
+                  {V.locOpen && (
+                    <>
+                      <div onClick={V.closeLoc} className="fixed inset-0 z-40 cursor-default"></div>
+                      <div className="fixed top-[76px] left-1/2 z-[41] max-h-[70vh] w-[560px] -translate-x-1/2 overflow-auto rounded-[14px] border border-[rgba(255,255,255,.35)] bg-[rgba(255,255,255,.09)] p-4 pt-3.5 shadow-[0_24px_60px_rgba(0,0,0,.45),inset_0_1px_0_rgba(255,255,255,.25)] backdrop-blur-[22px] backdrop-saturate-[1.2]">
+                        <div className="flex flex-wrap gap-1.5">
+                          {V.aimagOpts.map((a: any, i: number) => (
+                            <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-all duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
+                              <span>{a.label}</span>
+                              <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </>
-                )}
-              </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {!V.isTablet && (
                 <>
-                  <Hover as="button" onClick={V.goHome} s="all:unset;cursor:pointer;font-size:13px;font-weight:600;color:rgba(242,237,227,.75)" h="color:#f2ede3">{V.L.home}</Hover>
-                  <Hover as="button" onClick={V.openPin} s={`all:unset;cursor:pointer;font-size:13px;font-weight:600;color:${V.pinNavColor}`} h="color:#f2ede3">{V.L.pin}</Hover>
-                  <Hover as="button" onClick={V.openEvent} s={`all:unset;cursor:pointer;font-size:13px;font-weight:600;color:${V.eventNavColor}`} h="color:#f2ede3">{V.L.event}</Hover>
-                  <Hover as="button" onClick={V.openSuggest} s={`all:unset;cursor:pointer;font-size:13px;font-weight:600;color:${V.suggestNavColor}`} h="color:#f2ede3">{V.L.suggest}</Hover>
-                  <Hover as="button" onClick={V.openAbout} s={`all:unset;cursor:pointer;font-size:13px;font-weight:600;color:${V.aboutNavColor}`} h="color:#f2ede3">{V.L.about}</Hover>
+                  <button onClick={V.goHome} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold text-[rgba(242,237,227,.75)] hover:text-cream">{V.L.home}</button>
+                  <button onClick={V.openPin} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold hover:text-cream" style={{ color: V.pinNavColor }}>{V.L.pin}</button>
+                  <button onClick={V.openEvent} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold hover:text-cream" style={{ color: V.eventNavColor }}>{V.L.event}</button>
+                  <button onClick={V.openSuggest} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold hover:text-cream" style={{ color: V.suggestNavColor }}>{V.L.suggest}</button>
+                  <button onClick={V.openAbout} className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold hover:text-cream" style={{ color: V.aboutNavColor }}>{V.L.about}</button>
                 </>
               )}
 
-              <div style={css('display:flex;border:1px solid rgba(242,237,227,.25);border-radius:999px;overflow:hidden')}>
-                <button onClick={V.setMn} style={{ ...css('cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;padding:6px 11px;border:none;transition:all .25s'), background: V.mnBg, color: V.mnColor }}>MN</button>
-                <button onClick={V.setEn} style={{ ...css('cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;padding:6px 11px;border:none;transition:all .25s'), background: V.enBg, color: V.enColor }}>EN</button>
+              <div className="flex overflow-hidden rounded-full border border-[rgba(242,237,227,.25)]">
+                <button onClick={V.setMn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold transition-all duration-250" style={{ background: V.mnBg, color: V.mnColor }}>MN</button>
+                <button onClick={V.setEn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold transition-all duration-250" style={{ background: V.enBg, color: V.enColor }}>EN</button>
               </div>
 
-              {!V.isTablet && (
-                <Link href="/login" style={css('cursor:pointer;text-decoration:none;font-family:inherit;font-size:13px;font-weight:600;color:#f2ede3;background:transparent;border:1px solid rgba(242,237,227,.28);border-radius:999px;padding:6px 16px;transition:all .25s')}>{V.L.signin}</Link>
+              {!V.isTablet && !V.loggedIn && (
+                <Link href="/login" className="cursor-pointer rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-4 py-1.5 font-[inherit] text-[13px] font-semibold text-cream no-underline transition-all duration-250">{V.L.signin}</Link>
               )}
 
-              <Hover as="button" onClick={V.openProfile} title={V.L.profile} s={`cursor:pointer;font-family:inherit;width:34px;height:34px;border-radius:50%;border:1px solid ${V.profileBorder};background:${V.profileBg};color:${V.profileColor};font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;transition:all .2s`} h="border-color:var(--accent,#E8B84B)">Б</Hover>
+              {V.loggedIn && (
+                <button onClick={V.openProfile} title={V.L.profile} className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-all duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
+              )}
             </div>
           )}
         </nav>
@@ -953,8 +1329,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
         <BigBangContext.Provider value={V}>{this.props.children}</BigBangContext.Provider>
 
         {/* Same shared modal Host/Admin use — map picker, what3words, satellite tiles included. */}
+        {V.showPlaceForm && <CreateForm kind="place" onClose={V.closePlaceForm} onSubmit={V.onPlaceSubmit} />}
         {V.showScenicForm && <CreateForm kind="scenic" onClose={V.closeScenicForm} onSubmit={V.onScenicSubmit} />}
         {V.showEventForm && <CreateForm kind="event" onClose={V.closeEventForm} onSubmit={V.onEventSubmit} />}
+        {V.showUserAuthForm && <UserAuthForm onClose={V.closeUserAuthForm} onAuthed={V.onUserAuthed} />}
       </div>
     );
   }

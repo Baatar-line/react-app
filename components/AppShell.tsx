@@ -29,7 +29,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     if (!settingsReady) return <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#0b0d0b' }} />;
-    return <MarauderLoader loop={false} onFinish={() => setLoading(false)} backgroundImage={loaderBg} />;
+    // MarauderLoader's own animation length is independent of how fast the
+    // real page/data loaded — it always runs the full duration below, then
+    // waits for the pin-drop (a fixed .9s baked into MarauderLoader) before
+    // calling onFinish. So on a fast connection this is what makes the site
+    // still hold on the loader instead of revealing itself the instant it's
+    // ready; 2100ms + that .9s = a consistent ~3s splash either way.
+    return <MarauderLoader loop={false} duration={2100} onFinish={() => setLoading(false)} backgroundImage={loaderBg} />;
   }
 
   return <>{children}</>;

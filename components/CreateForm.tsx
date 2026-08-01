@@ -2,12 +2,13 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Shared "add place / scenic spot / event" modal — used by both AdminPanel and
-// HostProfile so the map-pin-picker + image-upload + accessibility-criteria logic
-// (already implemented once, inline, in BigBang's own add-place form) isn't duplicated
-// a third and fourth time. Reuses the same static data as BigBang (bigbang/data.ts).
+// BigBangLayout (Profile page's add-content flow) so the map-pin-picker +
+// image-upload + accessibility-criteria logic isn't duplicated a second time.
+// Reuses the same static data as BigBang (bigbang/data.ts). No "host" tier —
+// place submissions from any signed-in account land pending admin approval.
 import React, { useCallback, useRef, useState } from 'react';
 import { Accessibility } from 'lucide-react';
-import { css, Hover, useIsMobile } from './bigbang/ui';
+import { useIsMobile } from './bigbang/ui';
 import { AIMAGS, CATS, FCRIT } from './bigbang/data';
 
 export type CreateKind = 'place' | 'scenic' | 'event';
@@ -18,14 +19,22 @@ export interface CreateFormData {
   desc: string;
   aimag: string;
   images: string[];
+  // Raw File objects paired 1:1 with `images` (base64 previews) — the caller
+  // needs the real File to upload to Cloudinary; CreateForm itself only
+  // renders previews and stays otherwise dumb about where data ends up.
+  imageFiles: File[];
   catName?: string;
+  catSlug?: string;
   sub?: string;
   access?: boolean;
   phone?: string;
-  social?: string;
+  instagram?: string;
+  facebook?: string;
+  contactEmail?: string;
   openTime?: string;
   closeTime?: string;
   icon?: string;
+  scenicType?: string;
   date?: string;
   time?: string;
   max?: string;
@@ -51,13 +60,15 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
   const isMobile = useIsMobile();
   // Inputs below 16px make iOS Safari zoom the whole page in on focus — bump
   // to 16px only on small screens so the desktop layout stays as designed.
-  const inputFont = isMobile ? '16px' : '13.5px';
-  const smallInputFont = isMobile ? '16px' : '13px';
+  const inputFontClass = isMobile ? 'text-base' : 'text-[13.5px]';
+  const smallInputFontClass = isMobile ? 'text-base' : 'text-[13px]';
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [aimag, setAimag] = useState('Улаанбаатар');
   const [phone, setPhone] = useState('');
-  const [social, setSocial] = useState('');
+  const [instagram, setInstagram] = useState('');
+  const [facebook, setFacebook] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
   const [catSlug, setCatSlug] = useState(CATS[0].slug);
   const [sub, setSub] = useState(CATS[0].subs[0]);
   const [openTime, setOpenTime] = useState('');
@@ -65,10 +76,12 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
   const [access, setAccess] = useState(false);
   const [crit, setCrit] = useState<boolean[]>(() => FCRIT.map(() => false));
   const [icon, setIcon] = useState(SCENIC_ICONS[0]);
+  const [scenicType, setScenicType] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [max, setMax] = useState('');
   const [images, setImages] = useState<string[]>([]);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [err, setErr] = useState(false);
@@ -160,23 +173,40 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
   const onImgFile = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const f = ev.target.files && ev.target.files[0];
     if (!f) return;
+    setImageFiles((s) => [...s, f]);
     const r = new FileReader();
     r.onload = () => setImages((s) => [...s, String(r.result)]);
     r.readAsDataURL(f);
     ev.target.value = '';
   };
-  const removeImg = (i: number) => setImages((s) => s.filter((_, k) => k !== i));
+  const removeImg = (i: number) => {
+    setImages((s) => s.filter((_, k) => k !== i));
+    setImageFiles((s) => s.filter((_, k) => k !== i));
+  };
 
   const curCat = CATS.find((c) => c.slug === catSlug) || CATS[0];
 
+  // Place is the one kind with mandatory contact info — admin has no other
+  // way to reach whoever's asking to be listed before approving them (see
+  // app/api/places/route.ts, which requires + format-checks these too).
+  const PHONE_RE = /^\d{8}$/;
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const placeContactMissing = kind === 'place' && (!phone.trim() || !instagram.trim() || !facebook.trim() || !contactEmail.trim());
+  const placePhoneInvalid = kind === 'place' && !!phone.trim() && !PHONE_RE.test(phone.trim());
+  const placeEmailInvalid = kind === 'place' && !!contactEmail.trim() && !EMAIL_RE.test(contactEmail.trim());
+  const placeContactInvalid = placeContactMissing || placePhoneInvalid || placeEmailInvalid;
+
   const submit = () => {
     if (!name.trim()) { setErr(true); return; }
-    const data: CreateFormData = { kind, name: name.trim(), desc: desc.trim(), aimag, images, lat, lng };
+    if (kind === 'scenic' && !scenicType.trim()) { setErr(true); return; }
+    if (placeContactInvalid) { setErr(true); return; }
+    const data: CreateFormData = { kind, name: name.trim(), desc: desc.trim(), aimag, images, imageFiles, lat, lng };
     if (kind === 'place') {
-      data.catName = curCat.name; data.sub = sub; data.access = access && crit.every(Boolean);
-      data.phone = phone.trim(); data.social = social.trim(); data.openTime = openTime; data.closeTime = closeTime;
+      data.catName = curCat.name; data.catSlug = curCat.slug; data.sub = sub; data.access = access && crit.every(Boolean);
+      data.phone = phone.trim(); data.instagram = instagram.trim(); data.facebook = facebook.trim(); data.contactEmail = contactEmail.trim();
+      data.openTime = openTime; data.closeTime = closeTime;
     } else if (kind === 'scenic') {
-      data.icon = icon;
+      data.icon = icon; data.scenicType = scenicType.trim();
     } else {
       data.date = date; data.time = time; data.max = max.trim() || '20';
     }
@@ -185,150 +215,182 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
 
   const stop = (ev: React.MouseEvent) => ev.stopPropagation();
 
+  const inputClass = `w-full font-[inherit] rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.04)] px-[13px] py-[11px] text-cream outline-none`;
+  const smallInputClass = `w-full font-[inherit] rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.04)] px-2.5 py-[11px] text-cream outline-none`;
+  const labelSpanClass = 'text-xs font-semibold text-[rgba(242,237,227,.7)]';
+
   return (
-    <div onClick={onClose} style={{ ...css('position:fixed;inset:0;z-index:60;background:rgba(6,8,12,.72);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;box-sizing:border-box;animation:bbFadeUp .25s ease both'), padding: isMobile ? '14px' : '36px' }}>
-      <div onClick={stop} style={{ ...css('width:640px;max-width:100%;max-height:90vh;overflow:auto;background:#171410;border:1px solid rgba(255,255,255,.14);border-radius:20px;box-sizing:border-box;box-shadow:0 30px 80px rgba(0,0,0,.6)'), padding: isMobile ? '18px 16px 20px' : '26px 28px 28px' }}>
-        <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:20px')}>
-          <div style={css('font-size:18px;font-weight:800;letter-spacing:-0.02em;color:#f6f1e7')}>{TITLES[kind]}</div>
-          <Hover as="button" onClick={onClose} s="cursor:pointer;font-family:inherit;font-size:18px;line-height:1;width:32px;height:32px;border-radius:50%;border:1px solid rgba(242,237,227,.2);background:transparent;color:rgba(242,237,227,.75);transition:all .2s" h="border-color:var(--accent,#E8B84B);color:var(--accent,#E8B84B)">×</Hover>
+    <div onClick={onClose} className="fixed inset-0 z-[60] box-border flex items-center justify-center bg-[rgba(6,8,12,.72)] backdrop-blur-[8px] [animation:bbFadeUp_.25s_ease_both]" style={{ padding: isMobile ? '14px' : '36px' }}>
+      <div onClick={stop} className="box-border w-[640px] max-w-full max-h-[90vh] overflow-auto rounded-2xl border border-[rgba(255,255,255,.14)] bg-[#171410] shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '26px 28px 28px' }}>
+        <div className="mb-5 flex items-center justify-between">
+          <div className="text-lg font-extrabold tracking-[-0.02em] text-cream-2">{TITLES[kind]}</div>
+          <button onClick={onClose} className="h-8 w-8 cursor-pointer rounded-full border border-[rgba(242,237,227,.2)] bg-transparent font-[inherit] text-lg leading-none text-[rgba(242,237,227,.75)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">×</button>
         </div>
 
-        <div style={css('display:flex;flex-direction:column;gap:15px')}>
-          <label style={css('display:flex;flex-direction:column;gap:6px')}>
-            <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Нэр / Гарчиг <span style={css('color:#f08a8a')}>*</span></span>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ж: Sky Lounge 21" style={{ ...css('font-family:inherit;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: inputFont }} />
+        <div className="flex flex-col gap-[15px]">
+          <label className="flex flex-col gap-1.5">
+            <span className={labelSpanClass}>Нэр / Гарчиг <span className="text-[#f08a8a]">*</span></span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ж: Sky Lounge 21" className={`${inputClass} ${inputFontClass}`} />
           </label>
 
           {kind === 'place' && (
             <>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Утасны дугаар</span>
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="99112233" inputMode="numeric" style={{ ...css('font-family:inherit;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: inputFont }} />
-              </label>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Instagram / Facebook</span>
-                <input value={social} onChange={(e) => setSocial(e.target.value)} placeholder="Ж: instagram.com/skylounge21" style={{ ...css('font-family:inherit;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: inputFont }} />
-              </label>
-              <div style={{ ...css('display:grid;gap:12px'), gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Ангилал</span>
-                  <select value={catSlug} onChange={(e) => { const v = e.target.value; const c = CATS.find((x) => x.slug === v) || CATS[0]; setCatSlug(v); setSub(c.subs[0]); }} style={{ ...css('font-family:inherit;padding:11px 10px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: smallInputFont }}>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Утасны дугаар <span className="text-[#f08a8a]">*</span></span>
+                  <input
+                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    className={`${inputClass} ${inputFontClass}`}
+                    style={{ borderColor: err && placePhoneInvalid ? '#f08a8a' : undefined }}
+                  />
+                  {err && placePhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Имэйл хаяг <span className="text-[#f08a8a]">*</span></span>
+                  <input
+                    value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="tanii@email.mn" inputMode="email"
+                    className={`${inputClass} ${inputFontClass}`}
+                    style={{ borderColor: err && placeEmailInvalid ? '#f08a8a' : undefined }}
+                  />
+                  {err && placeEmailInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">Имэйл хаяг буруу байна — жишээ: tanii@email.mn</span>}
+                </label>
+              </div>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Instagram <span className="text-[#f08a8a]">*</span></span>
+                  <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="instagram.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Facebook <span className="text-[#f08a8a]">*</span></span>
+                  <input value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="facebook.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
+                </label>
+              </div>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Ангилал</span>
+                  <select value={catSlug} onChange={(e) => { const v = e.target.value; const c = CATS.find((x) => x.slug === v) || CATS[0]; setCatSlug(v); setSub(c.subs[0]); }} className={`${smallInputClass} ${smallInputFontClass}`}>
                     {CATS.map((c) => <option key={c.slug} value={c.slug} style={{ background: '#1a1712', color: '#f2ede3' }}>{c.name}</option>)}
                   </select>
                 </label>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Дэд ангилал</span>
-                  <select value={sub} onChange={(e) => setSub(e.target.value)} style={{ ...css('font-family:inherit;padding:11px 10px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: smallInputFont }}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Дэд ангилал</span>
+                  <select value={sub} onChange={(e) => setSub(e.target.value)} className={`${smallInputClass} ${smallInputFontClass}`}>
                     {curCat.subs.map((s) => <option key={s} value={s} style={{ background: '#1a1712', color: '#f2ede3' }}>{s}</option>)}
                   </select>
                 </label>
               </div>
-              <div style={{ ...css('display:grid;gap:12px'), gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Нээх цаг</span>
-                  <input type="time" value={openTime} onChange={(e) => setOpenTime(e.target.value)} style={{ ...css('font-family:inherit;padding:10px 12px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none;color-scheme:dark'), fontSize: smallInputFont }} />
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Нээх цаг</span>
+                  <input type="time" value={openTime} onChange={(e) => setOpenTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
                 </label>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Хаах цаг</span>
-                  <input type="time" value={closeTime} onChange={(e) => setCloseTime(e.target.value)} style={{ ...css('font-family:inherit;padding:10px 12px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none;color-scheme:dark'), fontSize: smallInputFont }} />
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Хаах цаг</span>
+                  <input type="time" value={closeTime} onChange={(e) => setCloseTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
                 </label>
               </div>
             </>
           )}
 
           {kind === 'scenic' && (
-            <label style={css('display:flex;flex-direction:column;gap:8px')}>
-              <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Тэмдэг</span>
-              <div style={css('display:flex;flex-wrap:wrap;gap:8px')}>
-                {SCENIC_ICONS.map((g) => (
-                  <button key={g} onClick={() => setIcon(g)} style={{ ...css('cursor:pointer;font-size:18px;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;transition:all .2s'), border: `1.5px solid ${icon === g ? 'var(--accent,#E8B84B)' : 'rgba(255,255,255,.16)'}`, background: icon === g ? 'rgba(232, 184, 75,.2)' : 'rgba(255,255,255,.04)' }}>{g}</button>
-                ))}
-              </div>
-            </label>
+            <>
+              <label className="flex flex-col gap-1.5">
+                <span className={labelSpanClass}>Төрөл <span className="text-[#f08a8a]">*</span></span>
+                <input value={scenicType} onChange={(e) => setScenicType(e.target.value)} placeholder="Ж: Нар жаргах цэг, Уулын харагдац" className={`${inputClass} ${inputFontClass}`} />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className={labelSpanClass}>Тэмдэг</span>
+                <div className="flex flex-wrap gap-2">
+                  {SCENIC_ICONS.map((g) => (
+                    <button key={g} onClick={() => setIcon(g)} className="flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-[10px] text-lg transition-all duration-200" style={{ border: `1.5px solid ${icon === g ? 'var(--accent,#E8B84B)' : 'rgba(255,255,255,.16)'}`, background: icon === g ? 'rgba(232, 184, 75,.2)' : 'rgba(255,255,255,.04)' }}>{g}</button>
+                  ))}
+                </div>
+              </label>
+            </>
           )}
 
           {kind === 'event' && (
-            <div style={{ ...css('display:grid;gap:12px'), gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr' }}>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Огноо</span>
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...css('font-family:inherit;padding:10px 12px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none;color-scheme:dark'), fontSize: smallInputFont }} />
+            <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
+              <label className="flex flex-col gap-1.5">
+                <span className={labelSpanClass}>Огноо</span>
+                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
               </label>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Цаг</span>
-                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ ...css('font-family:inherit;padding:10px 12px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none;color-scheme:dark'), fontSize: smallInputFont }} />
+              <label className="flex flex-col gap-1.5">
+                <span className={labelSpanClass}>Цаг</span>
+                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
               </label>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Дээд тал (хүн)</span>
-                <input value={max} onChange={(e) => setMax(e.target.value)} placeholder="20" inputMode="numeric" style={{ ...css('font-family:inherit;padding:10px 12px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: smallInputFont }} />
+              <label className="flex flex-col gap-1.5">
+                <span className={labelSpanClass}>Дээд тал (хүн)</span>
+                <input value={max} onChange={(e) => setMax(e.target.value)} placeholder="20" inputMode="numeric" className={`${smallInputClass} ${smallInputFontClass}`} />
               </label>
             </div>
           )}
 
-          <label style={css('display:flex;flex-direction:column;gap:6px')}>
-            <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Аймаг / хот</span>
-            <select value={aimag} onChange={(e) => setAimag(e.target.value)} style={{ ...css('font-family:inherit;padding:11px 10px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: smallInputFont }}>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelSpanClass}>Аймаг / хот</span>
+            <select value={aimag} onChange={(e) => setAimag(e.target.value)} className={`${smallInputClass} ${smallInputFontClass}`}>
               {AIMAGS.map((a) => <option key={a[0]} value={a[0]} style={{ background: '#1a1712', color: '#f2ede3' }}>{a[0]}</option>)}
             </select>
           </label>
 
-          <label style={css('display:flex;flex-direction:column;gap:6px')}>
-            <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Тайлбар</span>
-            <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="Энэ газрын онцлог, юугаараа гоё вэ..." style={{ ...css('font-family:inherit;line-height:1.5;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none;resize:vertical'), fontSize: smallInputFont }}></textarea>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelSpanClass}>Тайлбар</span>
+            <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="Энэ газрын онцлог, юугаараа гоё вэ..." className={`${smallInputClass} ${smallInputFontClass} resize-y leading-[1.5]`}></textarea>
           </label>
 
-          <div style={css('display:flex;flex-direction:column;gap:6px')}>
-            <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Байршил (заавал биш)</span>
-            <div style={css('display:flex;gap:8px')}>
+          <div className="flex flex-col gap-1.5">
+            <span className={labelSpanClass}>Байршил (заавал биш)</span>
+            <div className="flex gap-2">
               <input
                 value={w3w}
                 onChange={(e) => { setW3w(e.target.value); setW3wErr(''); }}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupW3w(); } }}
                 placeholder="what3words: ///hydration.pounces.loose"
-                style={{ ...css('flex:1;min-width:0;font-family:inherit;padding:11px 13px;border-radius:10px;border:1px solid rgba(242,237,227,.18);background:rgba(255,255,255,.04);color:#f2ede3;outline:none'), fontSize: inputFont }}
+                className={`min-w-0 flex-1 font-[inherit] rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.04)] px-[13px] py-[11px] text-cream outline-none ${inputFontClass}`}
               />
-              <Hover as="button" onClick={lookupW3w} s={`cursor:pointer;font-family:inherit;flex-shrink:0;padding:0 18px;border-radius:10px;border:1px solid rgba(242,237,227,.22);background:rgba(255,255,255,.04);color:rgba(242,237,227,.9);font-weight:700;font-size:${inputFont};transition:all .2s`} h="border-color:var(--accent,#E8B84B);color:var(--accent,#E8B84B)">
+              <button onClick={lookupW3w} className={`flex-shrink-0 cursor-pointer rounded-[10px] border border-[rgba(242,237,227,.22)] bg-[rgba(255,255,255,.04)] px-[18px] font-[inherit] font-bold text-[rgba(242,237,227,.9)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)] ${inputFontClass}`}>
                 {w3wLoading ? '...' : 'Олох'}
-              </Hover>
+              </button>
             </div>
-            {w3wErr && <div style={css('font-size:11.5px;color:#f08a8a')}>{w3wErr}</div>}
-            <div style={css('position:relative;height:200px;border-radius:12px;overflow:hidden;border:1px solid rgba(242,237,227,.14);background:#1a2534')}>
-              <div ref={attachMap} style={css('position:absolute;inset:0;cursor:crosshair')}></div>
-              <div style={css('position:absolute;left:10px;bottom:8px;z-index:500;font-size:10.5px;font-weight:700;color:#fff;background:rgba(10,12,16,.72);padding:4px 10px;border-radius:999px;pointer-events:none')}>{lat != null ? `Байршил тэмдэглэгдлээ ✓${w3w ? ' · ///' + w3w : ''}` : 'Газрын зураг дээр дарж, эсвэл what3words хаягаар байршил тэмдэглэнэ үү'}</div>
+            {w3wErr && <div className="text-[11.5px] text-[#f08a8a]">{w3wErr}</div>}
+            <div className="relative h-[200px] overflow-hidden rounded-xl border border-[rgba(242,237,227,.14)] bg-[#1a2534]">
+              <div ref={attachMap} className="absolute inset-0 cursor-crosshair"></div>
+              <div className="pointer-events-none absolute bottom-2 left-2.5 z-[500] rounded-full bg-[rgba(10,12,16,.72)] px-2.5 py-1 text-[10.5px] font-bold text-white">{lat != null ? `Байршил тэмдэглэгдлээ ✓${w3w ? ' · ///' + w3w : ''}` : 'Газрын зураг дээр дарж, эсвэл what3words хаягаар байршил тэмдэглэнэ үү'}</div>
             </div>
           </div>
 
-          <div style={css('display:flex;flex-direction:column;gap:6px')}>
-            <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Зураг</span>
-            <div style={css('display:flex;flex-wrap:wrap;gap:10px')}>
+          <div className="flex flex-col gap-1.5">
+            <span className={labelSpanClass}>Зураг</span>
+            <div className="flex flex-wrap gap-2.5">
               {images.map((img, i) => (
-                <div key={i} style={{ ...css('position:relative;width:84px;height:84px;border-radius:10px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: `url("${img}")` }}>
-                  <button onClick={() => removeImg(i)} style={css('position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#f08a8a;color:#132a1f;font-size:11px;font-weight:800;cursor:pointer')}>×</button>
+                <div key={i} className="relative h-[84px] w-[84px] flex-shrink-0 rounded-[10px] bg-cover bg-center" style={{ backgroundImage: `url("${img}")` }}>
+                  <button onClick={() => removeImg(i)} className="absolute -top-1.5 -right-1.5 h-5 w-5 cursor-pointer rounded-full border-none bg-[#f08a8a] text-[11px] font-extrabold text-[#132a1f]">×</button>
                 </div>
               ))}
-              <Hover as="label" s="display:flex;align-items:center;justify-content:center;width:84px;height:84px;border-radius:10px;border:1.5px dashed rgba(242,237,227,.25);background:rgba(255,255,255,.03);cursor:pointer;font-size:11px;color:rgba(242,237,227,.5);text-align:center;flex-shrink:0" h="border-color:var(--accent,#E8B84B)">
+              <label className="flex h-[84px] w-[84px] flex-shrink-0 cursor-pointer items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-[rgba(242,237,227,.25)] bg-[rgba(255,255,255,.03)] text-center text-[11px] text-[rgba(242,237,227,.5)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
                 ＋ зураг
-                <input type="file" accept="image/*" onChange={onImgFile} style={{ display: 'none' }} />
-              </Hover>
+                <input type="file" accept="image/*" onChange={onImgFile} className="hidden" />
+              </label>
             </div>
           </div>
 
           {kind === 'place' && (
-            <div style={css('display:flex;flex-direction:column;gap:6px')}>
-              <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.7)')}>Хүртээмж</span>
-              <button onClick={() => setAccess((v) => !v)} style={{ ...css('cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:11px;text-align:left;padding:12px 13px;border-radius:11px;transition:all .25s'), border: `1px solid ${access ? 'rgba(120,200,170,.5)' : 'rgba(242,237,227,.18)'}`, background: access ? 'rgba(120,200,170,.1)' : 'rgba(255,255,255,.04)' }}>
+            <div className="flex flex-col gap-1.5">
+              <span className={labelSpanClass}>Хүртээмж</span>
+              <button onClick={() => setAccess((v) => !v)} className="flex cursor-pointer items-center gap-[11px] rounded-[11px] px-[13px] py-3 text-left font-[inherit] transition-all duration-250" style={{ border: `1px solid ${access ? 'rgba(120,200,170,.5)' : 'rgba(242,237,227,.18)'}`, background: access ? 'rgba(120,200,170,.1)' : 'rgba(255,255,255,.04)' }}>
                 <Accessibility size={18} />
-                <span style={css('flex:1;font-size:12.5px;font-weight:700;color:#f2ede3;line-height:1.35')}>Тусгай хэрэгцээт хүмүүст тохиромжтой</span>
-                <span style={{ ...css('width:40px;height:23px;border-radius:999px;position:relative;flex:none;transition:background .25s'), background: access ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.2)' }}><span style={{ ...css('position:absolute;top:3px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .25s'), left: access ? '20px' : '3px' }}></span></span>
+                <span className="flex-1 text-[12.5px] font-bold leading-[1.35] text-cream">Тусгай хэрэгцээт хүмүүст тохиромжтой</span>
+                <span className="relative h-[23px] w-10 flex-none rounded-full transition-colors duration-250" style={{ background: access ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.2)' }}><span className="absolute top-[3px] h-[17px] w-[17px] rounded-full bg-white transition-[left] duration-250" style={{ left: access ? '20px' : '3px' }}></span></span>
               </button>
               {access && (
-                <div style={css('display:flex;flex-direction:column;gap:7px;padding:12px 13px;border-radius:11px;border:1px dashed rgba(120,200,170,.5);background:rgba(120,200,170,.06)')}>
-                  <div style={css('display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:rgba(120,200,170,.95)')}><Accessibility size={13} /> Бүх шалгуурыг хангасан байх</div>
+                <div className="flex flex-col gap-[7px] rounded-[11px] border border-dashed border-[rgba(120,200,170,.5)] bg-[rgba(120,200,170,.06)] px-[13px] py-3">
+                  <div className="flex items-center gap-1.5 text-[10.5px] font-extrabold tracking-[.06em] text-[rgba(120,200,170,.95)] uppercase"><Accessibility size={13} /> Бүх шалгуурыг хангасан байх</div>
                   {FCRIT.map((label, i) => {
                     const on = crit[i];
                     return (
-                      <button key={i} onClick={() => setCrit((c) => c.map((v, k) => (k === i ? !v : v)))} style={{ ...css('cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:9px;text-align:left;padding:6px 8px;border-radius:8px;transition:all .2s'), border: `1px solid ${on ? 'rgba(120,200,170,.4)' : 'rgba(255,255,255,.12)'}`, background: on ? 'rgba(120,200,170,.08)' : 'transparent' }}>
-                        <span style={{ ...css('width:17px;height:17px;border-radius:5px;color:#0b1512;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none'), border: `1.5px solid ${on ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.3)'}`, background: on ? 'rgba(120,200,170,.9)' : 'transparent' }}>{on ? '✓' : ''}</span>
-                        <span style={css('font-size:12px;font-weight:600;color:rgba(242,237,227,.85);line-height:1.35')}>{label}</span>
+                      <button key={i} onClick={() => setCrit((c) => c.map((v, k) => (k === i ? !v : v)))} className="flex cursor-pointer items-center gap-[9px] rounded-lg px-2 py-1.5 text-left font-[inherit] transition-all duration-200" style={{ border: `1px solid ${on ? 'rgba(120,200,170,.4)' : 'rgba(255,255,255,.12)'}`, background: on ? 'rgba(120,200,170,.08)' : 'transparent' }}>
+                        <span className="flex h-[17px] w-[17px] flex-none items-center justify-center rounded-[5px] text-[11px] font-extrabold text-[#0b1512]" style={{ border: `1.5px solid ${on ? 'rgba(120,200,170,.9)' : 'rgba(255,255,255,.3)'}`, background: on ? 'rgba(120,200,170,.9)' : 'transparent' }}>{on ? '✓' : ''}</span>
+                        <span className="text-xs font-semibold leading-[1.35] text-[rgba(242,237,227,.85)]">{label}</span>
                       </button>
                     );
                   })}
@@ -337,10 +399,20 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
             </div>
           )}
 
-          <div style={css('display:flex;align-items:center;gap:12px;margin-top:4px')}>
-            <Hover as="button" onClick={submit} s="cursor:pointer;font-family:inherit;font-size:13px;font-weight:800;padding:11px 28px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)">Үүсгэх →</Hover>
-            <button onClick={onClose} style={css('cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;padding:10px 20px;border-radius:999px;border:1px solid rgba(242,237,227,.25);background:transparent;color:rgba(242,237,227,.7)')}>Болих</button>
-            {err && <span style={css('font-size:11.5px;font-weight:700;color:#f08a8a')}>Нэр оруулна уу</span>}
+          <div className="mt-1 flex items-center gap-3">
+            <button onClick={submit} className="cursor-pointer rounded-full border-none bg-[var(--accent,#E8B84B)] px-7 py-[11px] font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5">Үүсгэх →</button>
+            <button onClick={onClose} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-5 py-2.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.7)]">Болих</button>
+            {err && (
+              <span className="text-[11.5px] font-bold text-[#f08a8a]">
+                {!name.trim()
+                  ? 'Нэр оруулна уу'
+                  : placePhoneInvalid || placeEmailInvalid
+                  ? 'Дээрх талбаруудыг зөв бөглөнө үү'
+                  : placeContactMissing
+                  ? 'Утас, имэйл, Instagram, Facebook-оо бөглөнө үү'
+                  : 'Төрлөө оруулна уу'}
+              </span>
+            )}
           </div>
         </div>
       </div>

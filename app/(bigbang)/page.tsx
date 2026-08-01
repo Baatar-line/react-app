@@ -3,81 +3,100 @@
 // Big Bang — Home (/): category nav list + aimag hero picker + preview cards.
 import React, { useContext } from 'react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { css } from '@/components/bigbang/ui';
+import { BgMedia } from '@/components/bigbang/ui';
 
 export default function Home() {
   const V: any = useContext(BigBangContext);
   return (
-    <section data-screen-label="Нүүр — ангилал хайлт" style={css(`position:relative;${V.isMobile ? 'min-height:100vh' : 'height:100vh;overflow:hidden'};background:#0b0a08`)}>
-      {V.homeBgIsVideo ? (
-        <>
-          <video src={V.homeBgRawUrl} autoPlay loop muted playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } as any} />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(0,0,0,.5), rgba(0,0,0,.72))' }}></div>
-        </>
-      ) : (
-        <div style={{ position: 'absolute', inset: 0, backgroundImage: V.homeHeroBg, backgroundSize: 'cover', backgroundPosition: 'center', animation: 'var(--drift, none)' }}></div>
-      )}
-      {V.aimagBgIsVideo ? (
-        <>
-          <video src={V.aimagBgRawUrl} autoPlay loop muted playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: V.aimagBgOpacity, transition: 'opacity .55s ease' } as any} />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78))', opacity: V.aimagBgOpacity, transition: 'opacity .55s ease' }}></div>
-        </>
-      ) : (
-        <div style={{ position: 'absolute', inset: 0, backgroundImage: V.aimagBg, backgroundSize: 'cover', backgroundPosition: 'center', opacity: V.aimagBgOpacity, transition: 'opacity .55s ease', animation: 'var(--drift, none)' }}></div>
-      )}
+    <section
+      data-screen-label="Нүүр — ангилал хайлт"
+      className={`relative bg-ink ${V.isTablet ? 'min-h-screen' : 'h-screen overflow-hidden'}`}
+    >
+      <BgMedia
+        bg={V.homeHeroBg} isVideo={V.homeBgIsVideo} videoSrc={V.homeBgRawUrl}
+        className="absolute inset-0" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
+      />
+      {/* Aimag hero — the picked aimag's photo/video crossfades in over the
+          Home hero above; while it's still loading, a skeleton shows through
+          the same fade instead of the flat black scrim (see aimagBgLoading). */}
+      {V.aimagBgLoading && <div className="absolute inset-0 bb-skeleton" />}
+      <BgMedia
+        bg={V.aimagBg} isVideo={V.aimagBgIsVideo} videoSrc={V.aimagBgRawUrl}
+        className="absolute inset-0 transition-opacity duration-[550ms] ease-in-out" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
+        style={{ opacity: V.aimagBgOpacity }}
+      />
+      {/* Category hover/selection preview — always a still photo, even for a
+          category with an uploaded background video (that only plays once
+          you're inside the category's own page). */}
       {V.bgLayers.map((layer: any, i: number) => (
-        layer.isVideo ? (
-          // Only mounted while this category is actually the hovered one —
-          // rendering (and autoplaying) all 7 videos at once regardless of
-          // opacity was decoding every category's clip simultaneously in
-          // the background, which is what was causing the stutter.
-          layer.opacity === 1 ? (
-            <React.Fragment key={i}>
-              <video src={layer.rawUrl} autoPlay loop muted playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } as any} />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78))' }}></div>
-            </React.Fragment>
-          ) : null
-        ) : (
-          <div key={i} style={{ position: 'absolute', inset: 0, backgroundImage: layer.bg, backgroundSize: 'cover', backgroundPosition: 'center', opacity: layer.opacity, transition: 'opacity .55s ease', animation: 'var(--drift, none)' }}></div>
-        )
+        <BgMedia
+          key={i} bg={layer.bg}
+          className="absolute inset-0 transition-opacity duration-[550ms] ease-in-out" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
+          style={{ opacity: layer.opacity }}
+        />
       ))}
-      <div style={css('position:absolute;inset:0;background:radial-gradient(120% 100% at 50% 50%, rgba(0,0,0,0) 45%, rgba(0,0,0,.55) 100%), linear-gradient(90deg, rgba(0,0,0,.88) 0%, rgba(0,0,0,.35) 45%, rgba(0,0,0,0) 72%);pointer-events:none')}></div>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_100%_at_50%_50%,_rgba(0,0,0,0)_45%,_rgba(0,0,0,.55)_100%),_linear-gradient(90deg,_rgba(0,0,0,.88)_0%,_rgba(0,0,0,.35)_45%,_rgba(0,0,0,0)_72%)]"></div>
 
-      <div onMouseLeave={V.clearActive} style={V.isMobile
-        ? css('position:relative;z-index:10;display:flex;flex-direction:column;gap:2px;padding:96px 20px 40px')
-        : css('position:absolute;left:48px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:2px;z-index:10')}>
-        <div style={css('font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:rgba(242,237,227,.4);margin-bottom:12px')}>{V.L.catLabel}</div>
-        {V.navCats.map((c: any, i: number) => (
-          <button key={i} onClick={c.open} onMouseEnter={c.activate} onFocus={c.activate} style={{ ...css('all:unset;cursor:pointer;display:flex;align-items:center;gap:14px;padding:8px 0'), color: c.color, transform: V.isMobile ? 'none' : c.shift, transition: 'transform .4s cubic-bezier(.22,.8,.3,1), color .3s ease' }}>
-            <span style={css('font-family:ui-monospace,Menlo,monospace;font-size:10.5px;opacity:.5')}>{c.num}</span>
-            <span style={css('font-size:clamp(14px,1.1vw,18px);font-weight:700;letter-spacing:-0.01em;line-height:1.3')}>{c.name}</span>
-            <span style={css('font-size:11px;font-weight:800;color:var(--accent,#E8B84B)')}>{c.count}</span>
-            {!V.isMobile && <span style={{ display: 'inline-block', width: '32px', height: '2px', background: 'var(--accent,#E8B84B)', opacity: c.barOpacity, transition: 'opacity .3s' }}></span>}
-          </button>
-        ))}
-        <div style={css('margin-top:18px;font-size:12px;color:rgba(242,237,227,.38)')}>{V.L.hint}</div>
+      <div
+        onMouseLeave={V.clearActive}
+        className={V.isTablet
+          ? 'relative z-10 flex flex-col items-center gap-3 pt-24 px-5 pb-10 text-center'
+          : 'absolute left-12 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-[2px]'}
+      >
+        <div className="mb-3 font-mono text-[10.5px] uppercase tracking-[.2em] text-[rgba(242,237,227,.4)]">{V.L.catLabel}</div>
+        {/* Mobile: a centered, wrapping horizontal row instead of the
+            desktop's left-pinned vertical stack — `contents` on desktop so
+            this wrapper doesn't add an extra flex item to the outer column. */}
+        <div className={V.isTablet ? 'flex flex-wrap items-center justify-center gap-x-5 gap-y-2' : 'contents'}>
+          {V.navCats.map((c: any, i: number) => (
+            <button
+              key={i}
+              onClick={c.open}
+              onMouseEnter={c.activate}
+              onFocus={c.activate}
+              className="flex cursor-pointer items-center gap-[14px] border-0 bg-transparent px-0 py-2 text-left transition-[transform_.4s_cubic-bezier(.22,.8,.3,1),_color_.3s_ease]"
+              style={{ color: c.color, transform: V.isTablet ? 'none' : c.shift }}
+            >
+              <span className="font-mono text-[10.5px] opacity-50">{c.num}</span>
+              <span className="text-[clamp(14px,1.1vw,18px)] font-bold leading-[1.3] tracking-[-0.01em]">{c.name}</span>
+              <span className="text-[11px] font-extrabold text-[var(--accent,#E8B84B)]">{c.count}</span>
+              {!V.isTablet && (
+                <span
+                  className="inline-block h-[2px] w-8 bg-[var(--accent,#E8B84B)] transition-opacity duration-[300ms] ease-in-out"
+                  style={{ opacity: c.barOpacity }}
+                ></span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* map picker + preview cards — the absolute side-by-side hero
           layout doesn't fit a phone screen, so both stay desktop/tablet
           only for now; the category list above already covers browsing
           and picking a category on mobile without them. */}
-      {!V.isMobile && (
+      {!V.isTablet && (
         <>
-          <div style={css('position:absolute;left:30%;right:30px;top:100px;bottom:150px;z-index:6;display:flex;flex-direction:column;gap:10px')}>
-            <div ref={V.pickerWrapRef} style={css('position:relative;flex:1;min-height:0')}>
+          {/* top/bottom shifted together (not just top) so nudging the map
+              down the page doesn't also squash the picker's height. */}
+          <div className="absolute left-[30%] right-[30px] top-[136px] bottom-[114px] z-[6]">
+            <div ref={V.pickerWrapRef} className="relative h-full">
               {V.pickerSvg}
               {V.heroVertLabel && V.heroVertPos && (
-                <div style={{
-                  position: 'absolute', left: V.heroVertPos.left, top: V.heroVertPos.top - 10, zIndex: 6, pointerEvents: 'none',
-                  writingMode: 'vertical-lr', fontFamily: "'Mongolian Baiti','Menksoft Tigst',sans-serif",
-                  fontSize: 16, color: 'var(--accent,#E8B84B)', textShadow: '0 1px 4px rgba(6,9,14,.8), 0 0 2px rgba(6,9,14,.8)',
-                } as any} title="Уламжлалт бичиг — AI орчуулга, шалгагдаагvй">{V.heroVertLabel}</div>
+                <div
+                  className="absolute z-[6] pointer-events-none [writing-mode:vertical-lr] font-[Mongolian_Baiti,Menksoft_Tigst,sans-serif] text-[16px] text-[var(--accent,#E8B84B)] [text-shadow:0_1px_4px_rgba(6,9,14,.8),_0_0_2px_rgba(6,9,14,.8)]"
+                  style={{ left: V.heroVertPos.left, top: V.heroVertPos.top - 10 }}
+                  title="Уламжлалт бичиг — AI орчуулга, шалгагдаагvй"
+                >{V.heroVertLabel}</div>
               )}
             </div>
           </div>
 
-          <div style={css('position:absolute;right:48px;bottom:44px;display:flex;gap:14px;z-index:10;align-items:flex-end')}>{V.previewCards}</div>
+          {/* Sits in the otherwise-empty background above the map's
+              right edge — the spot the map itself doesn't reach. */}
+          <div className="absolute right-[80px] top-[110px] z-[7] max-w-[240px] text-right text-[12px] text-[rgba(242,237,227,.45)]">{V.L.mapHint}</div>
+
+          <div className="absolute right-12 bottom-11 z-10 flex items-end gap-[14px]">{V.previewCards}</div>
         </>
       )}
     </section>

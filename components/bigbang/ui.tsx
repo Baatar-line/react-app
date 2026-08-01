@@ -1,15 +1,88 @@
 'use client';
 
 // Small runtime helpers used by the Big Bang port.
-// `css` parses an inline CSS declaration string into a React style object,
-// so the ported JSX can keep the original style strings almost verbatim.
-// `Hover` reproduces the DC `style-hover` / `style-focus` / `style-active` behaviour.
 import React, { useEffect, useMemo, useState } from 'react';
 
-// Same "no @media queries, branch on JS state" pattern BigBang.tsx uses for its
-// own inline styles — shared here so the other screens (which render inline
-// style strings via `css`, not Tailwind) can collapse fixed/multi-column
-// layouts on small screens without duplicating a resize listener each.
+// Pulls the `url("...")` portion out of a composed CSS background value
+// (e.g. 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.4)), url("https://...")')
+// and returns what's left (the gradient/scrim layers, if any) separately —
+// used by BgMedia so it can preload just the photo and still show the scrim
+// underneath a <video> (which can't take a CSS background-image itself).
+function parseBg(bg?: string): { url: string; scrim: string } {
+  if (!bg) return { url: '', scrim: '' };
+  const m = /url\((['"]?)(.*?)\1\)/.exec(bg);
+  if (!m) return { url: '', scrim: bg };
+  const scrim = (bg.slice(0, m.index) + bg.slice(m.index + m[0].length)).replace(/^\s*,\s*|\s*,\s*$/g, '').trim();
+  return { url: m[2], scrim };
+}
+
+const POSITIONED = /(^|\s)(absolute|relative|fixed|sticky)(\s|$)/;
+
+// Drop-in replacement for a plain `<div style={{ backgroundImage: bg }} />`
+// (or a photo/video pair) that shows a shimmering skeleton in place of the
+// photo/video until it has actually finished loading, instead of a flash of
+// blank/black. `bg` is the full CSS background value (gradient scrim + the
+// real `url(...)`, same string these call sites already compute) — pass
+// `isVideo`/`videoSrc` for the spots that can hold an admin-uploaded video
+// instead of a photo.
+export function BgMedia({
+  bg, isVideo, videoSrc, className = '', imgClassName = '', videoClassName = '', style, children,
+}: {
+  bg?: string;
+  isVideo?: boolean;
+  videoSrc?: string;
+  className?: string;
+  imgClassName?: string;
+  videoClassName?: string;
+  style?: React.CSSProperties;
+  children?: React.ReactNode;
+}) {
+  const { url, scrim } = useMemo(() => parseBg(bg), [bg]);
+  const vSrc = videoSrc || url;
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (isVideo) { setReady(false); return; }
+    if (!url) { setReady(true); return; }
+    setReady(false);
+    let alive = true;
+    const im = new Image();
+    im.onload = () => { if (alive) setReady(true); };
+    im.onerror = () => { if (alive) setReady(true); };
+    im.src = url;
+    return () => { alive = false; };
+  }, [url, isVideo]);
+
+  return (
+    <div className={(POSITIONED.test(className) ? '' : 'relative ') + 'overflow-hidden ' + className} style={style}>
+      {!ready && <div className="absolute inset-0 bb-skeleton" />}
+      {isVideo ? (
+        <>
+          <video
+            src={vSrc} autoPlay loop muted playsInline
+            onLoadedData={() => setReady(true)}
+            className={'absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ' + videoClassName}
+            style={{ opacity: ready ? 1 : 0 }}
+          />
+          {scrim && (
+            <div className="absolute inset-0 transition-opacity duration-300" style={{ background: scrim, opacity: ready ? 1 : 0 }} />
+          )}
+        </>
+      ) : (
+        <div
+          className={'absolute inset-0 transition-opacity duration-300 ' + imgClassName}
+          style={{ backgroundImage: bg, opacity: ready ? 1 : 0 }}
+        />
+      )}
+      {children}
+    </div>
+  );
+}
+
+// Styling across the app is Tailwind utility classes now — no @media queries
+// available for inline `style` values (genuinely dynamic/per-instance colors,
+// positions, backgrounds still use `style` alongside `className`), so this
+// hook covers the few cases that need a JS-computed breakpoint instead
+// (a boolean baked into two different literal class strings, picked by index.tsx).
 export function useIsMobile(breakpoint = 640): boolean {
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < breakpoint : false));
   useEffect(() => {
@@ -21,84 +94,12 @@ export function useIsMobile(breakpoint = 640): boolean {
   return isMobile;
 }
 
-export function css(decl?: string): React.CSSProperties {
-  const out: Record<string, string | number> = {};
-  if (!decl) return out;
-  for (const part of decl.split(';')) {
-    const idx = part.indexOf(':');
-    if (idx === -1) continue;
-    const rawProp = part.slice(0, idx).trim();
-    const value = part.slice(idx + 1).trim();
-    if (!rawProp || value === '') continue;
-    // -webkit-foo -> WebkitFoo ; -ms-foo -> msFoo ; foo-bar -> fooBar
-    const prop = rawProp
-      .replace(/^-ms-/, 'ms-')
-      .replace(/^-(webkit|moz|o)-/, (_, p) => `${p[0].toUpperCase()}${p.slice(1)}-`)
-      .replace(/^-/, '')
-      .replace(/-([a-zA-Z])/g, (_, c) => c.toUpperCase());
-    if (prop === 'border') {
-      // Always split the shorthand into its longhand parts. `Hover` (below)
-      // concatenates a base `s` string with a `border:` decl and a `h`/`f`/`a`
-      // string that overrides just `border-color:` — parsed as two separate
-      // keys, that leaves `border` and `borderColor` both set while hovered
-      // but only `border` once it's not, which is exactly the shorthand vs.
-      // longhand conflict React's setValueForStyles warns about on removal.
-      // Longhand-only keeps the key set identical across every state.
-      const m = value.match(/^(\S+)\s+(\S+)\s+(.+)$/);
-      if (m) {
-        out.borderWidth = m[1]; out.borderStyle = m[2]; out.borderColor = m[3];
-        continue;
-      }
-    }
-    out[prop] = value;
-  }
-  return out as React.CSSProperties;
-}
-
-type HoverProps = {
-  as?: keyof JSX.IntrinsicElements;
-  s: string;           // base style string
-  h?: string;          // hover style string (merged on hover)
-  f?: string;          // focus style string
-  a?: string;          // active style string
-  children?: React.ReactNode;
-} & Omit<React.HTMLAttributes<HTMLElement>, 'style'> & Record<string, unknown>;
-
-export function Hover({ as = 'div', s, h, f, a, children, ...rest }: HoverProps) {
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const [active, setActive] = useState(false);
-
-  const style = useMemo(() => {
-    let str = s;
-    if (hovered && h) str += ';' + h;
-    if (focused && f) str += ';' + f;
-    if (active && a) str += ';' + a;
-    return css(str);
-  }, [s, h, f, a, hovered, focused, active]);
-
-  const handlers: Record<string, unknown> = {
-    onMouseEnter: (e: React.MouseEvent) => { setHovered(true); (rest.onMouseEnter as ((e: React.MouseEvent) => void) | undefined)?.(e); },
-    onMouseLeave: (e: React.MouseEvent) => { setHovered(false); setActive(false); (rest.onMouseLeave as ((e: React.MouseEvent) => void) | undefined)?.(e); },
-  };
-  if (f) {
-    handlers.onFocus = (e: React.FocusEvent) => { setFocused(true); (rest.onFocus as ((e: React.FocusEvent) => void) | undefined)?.(e); };
-    handlers.onBlur = (e: React.FocusEvent) => { setFocused(false); (rest.onBlur as ((e: React.FocusEvent) => void) | undefined)?.(e); };
-  }
-  if (a) {
-    handlers.onMouseDown = (e: React.MouseEvent) => { setActive(true); (rest.onMouseDown as ((e: React.MouseEvent) => void) | undefined)?.(e); };
-    handlers.onMouseUp = (e: React.MouseEvent) => { setActive(false); (rest.onMouseUp as ((e: React.MouseEvent) => void) | undefined)?.(e); };
-  }
-
-  return React.createElement(as, { ...rest, ...handlers, style }, children);
-}
-
 // Small isometric "3D-ish" icons (layered flat-shaded faces + outline strokes,
 // no photoreal render) for the "add content" cards — a lightweight CSS/SVG
 // stand-in for a purchased 3D icon pack, built from polygons, not a rendered
 // asset. Richer pass: outlined edges, a soft ground glow, and a couple of
 // floating accent details so they read as more than a flat silhouette.
-export type Iso3DKind = 'scenic' | 'event' | 'chess' | 'gaming' | 'controller' | 'movie' | 'travel';
+export type Iso3DKind = 'place' | 'scenic' | 'event' | 'chess' | 'gaming' | 'controller' | 'movie' | 'travel';
 
 export function Isometric3DIcon({ kind, size = 56 }: { kind: Iso3DKind; size?: number }) {
   const accent = 'var(--accent,#E8B84B)';
@@ -197,6 +198,25 @@ export function Isometric3DIcon({ kind, size = 56 }: { kind: Iso3DKind; size?: n
         <path d="M37 40 A7 7 0 0 0 51 40 M44 33 A10 7 0 0 1 44 47 M44 33 A10 7 0 0 0 44 47" stroke="rgba(20,16,11,.5)" strokeWidth={0.7} fill="none" />
         {/* small paper plane */}
         <path d="M50 12 L58 15 L52 17 L50 22 L48 17 Z" fill="#f2ede3" stroke={outline} strokeWidth={0.6} strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (kind === 'place') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 64 66" style={{ overflow: 'visible' }}>
+        {glow(50)}
+        <ellipse cx="32" cy="52" rx="22" ry="8" fill="rgba(255,255,255,.05)" stroke={outline} strokeWidth={0.8} />
+        {/* map pin, isometric-ish teardrop with a flat base shadow */}
+        <path d="M32 6 C20 6 12 15 12 26 C12 38 32 54 32 54 C32 54 52 38 52 26 C52 15 44 6 32 6 Z" fill={accent} opacity={0.92} stroke={outline} strokeWidth={0.8} strokeLinejoin="round" />
+        <circle cx="32" cy="25" r="9.5" fill="rgba(20,16,11,.55)" stroke={outline} strokeWidth={0.7} />
+        {/* small building silhouette inside the pin's head */}
+        <rect x="27" y="21" width="10" height="9" fill="#f2ede3" opacity={0.9} />
+        <rect x="29" y="23.5" width="2" height="2" fill="rgba(20,16,11,.6)" />
+        <rect x="33" y="23.5" width="2" height="2" fill="rgba(20,16,11,.6)" />
+        <rect x="29" y="27" width="2" height="2" fill="rgba(20,16,11,.6)" />
+        <rect x="33" y="27" width="2" height="2" fill="rgba(20,16,11,.6)" />
+        <circle cx="10" cy="18" r="1.4" fill="#f2ede3" opacity={0.6} />
+        <circle cx="55" cy="30" r="1.6" fill={accent} opacity={0.85} />
       </svg>
     );
   }

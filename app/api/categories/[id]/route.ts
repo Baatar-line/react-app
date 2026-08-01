@@ -7,8 +7,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const user = await requireAuth(request);
     requireRole(user, 'admin');
     const { id } = await params;
-    const { image } = await request.json();
-    const category = await prisma.category.update({ where: { id: Number(id) }, data: { image } });
+    const { image, videoImage } = await request.json();
+    const data: { image?: string; videoImage?: string } = {};
+    if (image !== undefined) data.image = image;
+    if (videoImage !== undefined) data.videoImage = videoImage;
+    const category = await prisma.category.update({ where: { id: Number(id) }, data });
     return NextResponse.json(category);
   } catch (err) {
     return jsonError(err);

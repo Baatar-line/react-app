@@ -69,10 +69,6 @@ export const GEO_MN: Record<string, string> = {
 
 export const LABEL_OFF: Record<string, [number, number]> = { 'Orhon': [0, -8], 'Gowisümber': [4, 0] };
 
-export const PIN_OFFS: [number, number][] = [
-  [-0.22, -0.1], [0.2, 0.14], [-0.06, 0.24], [0.18, -0.2], [0, -0.26],
-];
-
 export const AIMAG_BG: Record<string, string> = {
   'Улаанбаатар': '1477959858617-67f85cf4f1df', 'Архангай': '1500534314209-a25ddb2bd429',
   'Баян-Өлгий': '1506905925346-21bda4d32df4', 'Баянхонгор': '1469854523086-cc02fe5d8800',
@@ -117,24 +113,9 @@ export interface Pin {
   lat?: number; lng?: number; px?: number; py?: number; addedBy?: string;
 }
 
-export const PINS: Pin[] = [
-  { name: 'Зайсан толгой', type: 'Нар жаргах цэг', aimag: 'Улаанбаатар', x: '62%', y: '39%', img: '1470071459604-3b5ec3a7fe05', desc: 'Хотын дээрх нар жаргах шилдэг үзэмж. Оройн 19:00–21:00 цагт очвол хамгийн гоё.' },
-  { name: 'Богд уулын ойн зам', type: 'Уулын харагдац', aimag: 'Улаанбаатар', x: '64.5%', y: '42%', img: '1441974231531-c6227db76b6e', desc: 'Хотын хажуудах нам гүм ойн зам, оройн алхалтад тохиромжтой.' },
-  { name: 'Мэлхий хад', type: 'Уулын харагдац', aimag: 'Төв', x: '66%', y: '44%', img: '1441974231531-c6227db76b6e', desc: 'Тэрэлжийн бэлгэ тэмдэг — хадны орой дээрээс хөндий бүхэлдээ харагдана.' },
-  { name: 'Од харах цэг — Гачуурт', type: 'Од ажиглалт', aimag: 'Төв', x: '61%', y: '48%', img: '1419242902214-272b3f66ee7a', desc: 'Хотын гэрлээс хол, сартай биш шөнө сүүн зам нүдэнд ил харагдана.' },
-  { name: 'Цонжин болдогийн тал', type: 'Талын харагдац', aimag: 'Төв', x: '67%', y: '48%', img: '1553284965-83fd3e82fa5a', desc: 'Уудам тал, морьтой зургийн шилдэг цэг.' },
-  { name: 'Хөвсгөл далай', type: 'Нуурын эрэг', aimag: 'Хөвсгөл', x: '42%', y: '17%', img: '1501785888041-af3ef285b470', desc: 'Цэнхэр сувд — тунгалаг ус, нам гүм эрэг.' },
-  { name: 'Тайгын зам', type: 'Ойн аялал', aimag: 'Хөвсгөл', x: '38%', y: '25%', img: '1441974231531-c6227db76b6e', desc: 'Шинэсэн тайгаар дамжих нам гүм жим.' },
-  { name: 'Элсэн тасархай', type: 'Элсэн манхан', aimag: 'Булган', x: '49%', y: '43%', img: '1504280390367-361c6d9f38f4', desc: 'Нар жаргах үед манхан алтан өнгөөр гэрэлтэнэ.' },
-  { name: 'Тайхар чулуу', type: 'Байгалийн дурсгал', aimag: 'Архангай', x: '42%', y: '43%', img: '1476480862126-209bfaa8edc8', desc: 'Домогт өндөр хад — Тамир голын эрэг дээр.' },
-  { name: 'Тэрхийн цагаан нуур', type: 'Нуурын эрэг', aimag: 'Архангай', x: '39%', y: '47%', img: '1501785888041-af3ef285b470', desc: 'Хорго уулын дэргэдэх тайван цагаан нуур.' },
-  { name: 'Ёлын ам', type: 'Хавцал', aimag: 'Өмнөговь', x: '53%', y: '79%', img: '1476480862126-209bfaa8edc8', desc: 'Зуны халуунд ч сэрүүн, мөстэй хавцал.' },
-  { name: 'Хонгорын элс', type: 'Элсэн манхан', aimag: 'Өмнөговь', x: '47%', y: '82%', img: '1504280390367-361c6d9f38f4', desc: '«Дуут манхан» — говийн хамгийн том элсэн нуруу.' },
-  { name: 'Буйр нуур', type: 'Нуурын эрэг', aimag: 'Дорнод', x: '87%', y: '47%', img: '1501785888041-af3ef285b470', desc: 'Зүүн хязгаарын уудам нуур, нар мандалт гайхалтай.' },
-  { name: 'Халхын голын тал', type: 'Талын харагдац', aimag: 'Дорнод', x: '84%', y: '40%', img: '1553284965-83fd3e82fa5a', desc: 'Хязгааргүй мэт тал нутгийн үзэмж.' },
-  { name: 'Таван богд', type: 'Мөнх цаст оргил', aimag: 'Баян-Өлгий', x: '4.5%', y: '41%', img: '1476480862126-209bfaa8edc8', desc: 'Монголын хамгийн өндөр оргилууд, мөсөн гол.' },
-  { name: 'Толбо нуур', type: 'Нуурын эрэг', aimag: 'Баян-Өлгий', x: '10%', y: '43%', img: '1501785888041-af3ef285b470', desc: 'Уулсаар хүрээлэгдсэн гүн цэнхэр нуур.' },
-];
+// Real scenic pins now come from the ScenicPin table (see /api/scenic-pins),
+// fetched and shaped into Pin[] by BigBangLayout.fetchLiveContent — nothing
+// hardcoded here anymore.
 
 export const TEAM: [string, string, string][] = [
   ['Азаа', 'Багийн ахлагч · Бүтээгдэхүүн', 'Team lead · Product'],
@@ -145,18 +126,11 @@ export const TEAM: [string, string, string][] = [
   ['Магнай', 'Маркетинг · Хамтын ажиллагаа', 'Marketing · Partnerships'],
 ];
 
-export const FEATURED_EVENT = { name: 'Playtime Festival 2026', date: '7 сарын 11–12', meta: 'Гачуурт · Хөгжмийн наадам · 2 өдөр', img: '1470229722913-7c0e2dbbafd3' };
-
-export interface EventItem { day: string; mon: string; name: string; meta: string; tag: string; img: string; aimag?: string; thumb?: string; }
-
-export const EVENTS: EventItem[] = [
-  { day: '09', mon: '7-р сар', name: 'UB Jazz Night', meta: '20:00 · Жаз клуб 46', tag: 'Концерт', img: '1511192336575-5a79af67a629' },
-  { day: '15', mon: '7-р сар', name: 'Задгай кино үдэш', meta: '21:30 · Сүхбаатарын талбай', tag: 'Кино', img: '1489599849927-2ee91cede3ba' },
-  { day: '17', mon: '7-р сар', name: 'Board Game Meetup', meta: '19:00 · Meeple Cafe', tag: 'Цугларалт', img: '1610890716171-6b1bb98ffd09' },
-  { day: '18', mon: '7-р сар', name: 'Орчин үеийн урлагийн үзэсгэлэн', meta: '10:00–20:00 · Арт Галерей', tag: 'Үзэсгэлэн', img: '1531058020387-3be344556be6' },
-  { day: '20', mon: '7-р сар', name: 'Нар жаргах SUP', meta: '18:30 · Туул гол', tag: 'Спорт', img: '1544551763-46a013bb70d5' },
-  { day: '25', mon: '7-р сар', name: 'Pop-up дарсны үдэш', meta: '19:00 · Noir Speakeasy', tag: 'Pop-up', img: '1510812431401-41d2bd2722f3' },
-];
+// Real events now come from the Event table (see /api/events), fetched and
+// shaped into EventItem[] by BigBangLayout.fetchLiveContent. The "featured"
+// banner picks whichever fetched event has `featured: true` instead of a
+// hardcoded FEATURED_EVENT.
+export interface EventItem { day: string; mon: string; name: string; meta: string; tag: string; img: string; aimag?: string; thumb?: string; featured?: boolean; }
 
 export const SUGGESTS = [
   { slug: 'games', title: '2 хүний хурдан тоглоомууд', count: '6 тоглоом', tag: 'Тоглоом', img: '1550745165-9bc0b252726f' },
@@ -244,17 +218,17 @@ export function sitesFor(gc: any, lang: string) {
 // instead of the generic lucide `icon`. None are wired up yet since we don't have
 // rights to any official app logos bundled in the repo; drop a URL in here (or an
 // uploaded asset path) per app once one is sourced.
-export interface TravelApp { icon: LucideIcon; name: string; mn: string; en: string; tint: string; ring: string; url: string; logo?: string; }
+export interface TravelApp { slug: string; icon: LucideIcon; name: string; mn: string; en: string; tint: string; ring: string; url: string; logo?: string; }
 export const TRAVEL_APPS: TravelApp[] = [
-  { icon: Map, name: 'Organic Maps', mn: 'Offline газрын зураг & навигаци', en: 'Offline maps & navigation', tint: 'rgba(66,133,244,.22)', ring: 'rgba(120,170,255,.5)', url: 'https://organicmaps.app/' },
-  { icon: Compass, name: 'OsmAnd', mn: 'Offline маршрут & GPS', en: 'Offline routes & GPS', tint: 'rgba(52,168,83,.22)', ring: 'rgba(120,220,150,.5)', url: 'https://osmand.net/' },
-  { icon: Wind, name: 'Windy', mn: 'Салхи & цаг агаарын урьдчилсан мэдээ', en: 'Wind & weather forecast', tint: 'rgba(120,200,220,.22)', ring: 'rgba(150,220,240,.5)', url: 'https://www.windy.com/-Temperature-temp?temp,39.270,87.989,3' },
-  { icon: CloudRain, name: 'Ventusky', mn: 'Хур тунадас & температурын зураг', en: 'Rainfall & temperature maps', tint: 'rgba(180,120,220,.22)', ring: 'rgba(200,150,240,.5)', url: 'https://www.ventusky.com/#p=31;89;2' },
-  { icon: Car, name: 'Avis Mongolia', mn: 'Машин түрээслэх', en: 'Rent a car', tint: 'rgba(224,122,95,.22)', ring: 'rgba(240,150,120,.5)', url: 'https://avis-mongolia.com/car-rental?ssid=nVfrblZ014TB' },
-  { icon: Route, name: 'Drive Mongolia', mn: 'Өөрөө жолоодох & хөтөчтэй аялал', en: 'Self-drive & guided tours', tint: 'rgba(232,183,125,.24)', ring: 'rgba(232,183,125,.6)', url: 'https://www.drivemongolia.com/?utm_source=chatgpt.com' },
+  { slug: 'organic-maps', icon: Map, name: 'Organic Maps', mn: 'Offline газрын зураг & навигаци', en: 'Offline maps & navigation', tint: 'rgba(66,133,244,.22)', ring: 'rgba(120,170,255,.5)', url: 'https://organicmaps.app/' },
+  { slug: 'osmand', icon: Compass, name: 'OsmAnd', mn: 'Offline маршрут & GPS', en: 'Offline routes & GPS', tint: 'rgba(52,168,83,.22)', ring: 'rgba(120,220,150,.5)', url: 'https://osmand.net/' },
+  { slug: 'windy', icon: Wind, name: 'Windy', mn: 'Салхи & цаг агаарын урьдчилсан мэдээ', en: 'Wind & weather forecast', tint: 'rgba(120,200,220,.22)', ring: 'rgba(150,220,240,.5)', url: 'https://www.windy.com/-Temperature-temp?temp,39.270,87.989,3' },
+  { slug: 'ventusky', icon: CloudRain, name: 'Ventusky', mn: 'Хур тунадас & температурын зураг', en: 'Rainfall & temperature maps', tint: 'rgba(180,120,220,.22)', ring: 'rgba(200,150,240,.5)', url: 'https://www.ventusky.com/#p=31;89;2' },
+  { slug: 'avis-mongolia', icon: Car, name: 'Avis Mongolia', mn: 'Машин түрээслэх', en: 'Rent a car', tint: 'rgba(224,122,95,.22)', ring: 'rgba(240,150,120,.5)', url: 'https://avis-mongolia.com/car-rental?ssid=nVfrblZ014TB' },
+  { slug: 'drive-mongolia', icon: Route, name: 'Drive Mongolia', mn: 'Өөрөө жолоодох & хөтөчтэй аялал', en: 'Self-drive & guided tours', tint: 'rgba(232,183,125,.24)', ring: 'rgba(232,183,125,.6)', url: 'https://www.drivemongolia.com/?utm_source=chatgpt.com' },
 ];
 
-export interface CatItem { name: string; meta: string; sub: string; aimag?: string; hours?: string; phone?: string; desc?: string; access?: boolean; }
+export interface CatItem { name: string; meta: string; sub: string; aimag?: string; hours?: string; phone?: string; desc?: string; access?: boolean; img?: string; id?: number; lat?: number; lng?: number; mapUrl?: string; }
 export interface Cat {
   slug: string; num: string; name: string; nameEn: string; desc: string; descEn: string;
   glow: string; hero: string; pool: string[]; subs: string[];
@@ -263,117 +237,56 @@ export interface Cat {
 
 export const CATS: Cat[] = [
   {
-    slug: 'adrenalin', num: '01', name: 'Адреналин & Спорт', nameEn: 'Adrenaline & Sports',
+    slug: 'zugaa', num: '01', name: 'Өрсөлдөөн & Хөгжилтэй', nameEn: 'Competition & Fun',
+    desc: 'Инээд, өрсөлдөөн, тоглоом — хамтдаа хөгжилтэй үдэш.',
+    descEn: 'Laughter, games and friendly competition.',
+    glow: 'rgba(230,90,160,.36)', hero: '1511882150382-421056c89033',
+    pool: ['1511882150382-421056c89033', '1550745165-9bc0b252726f', '1493711662062-fa541adb3fc8'],
+    subs: ['Escape room', 'Board game кафе', 'VR arcade', 'Боулинг', 'Бильярд', 'Дартс бар', 'KTV', 'Шатрын кафе'],
+    // Real businesses in this category come from the Place table (see
+    // /api/places), fetched and grouped by BigBangLayout.fetchLiveContent.
+    previews: [],
+    items: [],
+  },
+  {
+    slug: 'adrenalin', num: '02', name: 'Адреналин & Спорт', nameEn: 'Adrenaline & Sports',
     desc: 'Зүрх дэлсүүлэх адал явдал — мөс хайлуулах хамгийн хурдан арга.',
     descEn: 'Heart-racing adventures — the fastest way to break the ice.',
     glow: 'rgba(235,110,60,.38)', hero: '1517649763962-0c623066013b',
     pool: ['1461896836934-ffe607ba8211', '1476480862126-209bfaa8edc8', '1517649763962-0c623066013b'],
     subs: ['Буудлага', 'Нум сум', 'Шүхрээр буух', 'Авиралт', 'Off-road', 'Цана / мотор', 'Паддл', 'Гольф симулятор', 'Мөсний гулгуур'],
-    previews: [
-      { name: 'Vertical Wall', meta: 'Авиралт · Зааварчилгаатай' },
-      { name: 'Sky Resort', meta: 'Цана · Өвлийн улирал' },
-      { name: 'Steppe Riders', meta: 'Off-road · Хагас өдөр' },
-    ],
-    items: [
-      { name: 'UB Shooting Club', meta: 'Буудлагын танхим · Зааварчилгаатай', sub: 'Буудлага' },
-      { name: 'Хараат Archery', meta: 'Нум сумын клуб · Анхан шат', sub: 'Нум сум' },
-      { name: 'SkyDive Mongolia', meta: 'Тандем үсрэлт · Зуны улирал', sub: 'Шүхрээр буух', aimag: 'Төв' },
-      { name: 'Vertical Wall', meta: 'Хана авиралтын төв', sub: 'Авиралт' },
-      { name: 'Steppe Riders', meta: 'ATV аялал · Хагас өдөр', sub: 'Off-road', aimag: 'Төв' },
-      { name: 'Sky Resort', meta: 'Цанын бааз · 12–3 сар', sub: 'Цана / мотор' },
-      { name: 'SUP Club', meta: 'Туул гол · Зун', sub: 'Паддл' },
-      { name: 'Indoor Golf UB', meta: 'Симулятор · 2 хүн', sub: 'Гольф симулятор' },
-      { name: 'Steppe Arena', meta: 'Мөсөн талбай · Тоног түрээстэй', sub: 'Мөсний гулгуур' },
-    ],
+    previews: [],
+    items: [],
   },
   {
-    slug: 'wellness', num: '02', name: 'Амралт & Wellness', nameEn: 'Rest & Wellness',
-    desc: 'Удаашрах, амрах, хамтдаа тайвшрах — яриа өөрөө урсана.',
-    descEn: 'Slow down, relax, unwind together.',
-    glow: 'rgba(120,200,170,.32)', hero: '1544161515-4ab6ce6db874',
-    pool: ['1544161515-4ab6ce6db874', '1506126613408-eca07ce68773', '1540555700478-4be289fbecef'],
-    subs: ['Спа / сауна', 'Йог / бясалгал', 'Массаж', 'Уламжлалт эмчилгээ', 'Орон зай түрээс'],
-    previews: [
-      { name: 'Aroma Spa', meta: 'Спа · Хосын багц' },
-      { name: 'Shine Yoga', meta: 'Йог · Оройн анги' },
-      { name: 'Zen Massage', meta: 'Массаж · 60 мин' },
-    ],
-    items: [
-      { name: 'Aroma Spa', meta: 'Хосын спа багц · 90 мин', sub: 'Спа / сауна' },
-      { name: 'Онсен Сауна', meta: 'Халуун усан сан, сауна', sub: 'Спа / сауна', aimag: 'Дархан-Уул' },
-      { name: 'Shine Yoga', meta: 'Хосын йогийн анги', sub: 'Йог / бясалгал' },
-      { name: 'Zen Massage', meta: 'Тайвшруулах массаж', sub: 'Массаж' },
-      { name: 'Уламжлалт эмчилгээний төв', meta: 'Бариа засал, зүү', sub: 'Уламжлалт эмчилгээ' },
-      { name: 'Quiet Loft', meta: 'Хувийн амралтын орон зай · Цагаар', sub: 'Орон зай түрээс' },
-    ],
-  },
-  {
-    slug: 'ayalal', num: '03', name: 'Аялал & Байгаль', nameEn: 'Travel & Nature',
-    desc: 'Хотоос гарч, цэвэр агаарт — хамгийн энгийн атлаа мартагдашгүй.',
-    descEn: 'Out of the city, into fresh air — simple yet unforgettable.',
-    glow: 'rgba(90,190,120,.34)', hero: '1501785888041-af3ef285b470',
-    pool: ['1441974231531-c6227db76b6e', '1504280390367-361c6d9f38f4', '1553284965-83fd3e82fa5a'],
-    subs: ['Морин аялал', 'Нохой чарга', 'Явган аялал', 'Glamping', 'Од ажиглах', 'Рашаан', 'Усан спорт', 'Завь'],
-    previews: [
-      { name: 'Тэрэлж Glamping', meta: 'Glamping · Амралтын өдөр' },
-      { name: 'Хустайн морин аялал', meta: 'Морин аялал · Өдрийн турш' },
-      { name: 'Од ажиглалын кэмп', meta: 'Од ажиглах · Шөнө' },
-    ],
-    items: [
-      { name: 'Хустайн морин аялал', meta: 'Тахь үзэх маршрут', sub: 'Морин аялал', aimag: 'Төв' },
-      { name: 'Husky Sledding', meta: 'Нохой чарга · Өвөл', sub: 'Нохой чарга', aimag: 'Төв' },
-      { name: 'Богд уул', meta: 'Цэцээ гүн хүртэлх маршрут', sub: 'Явган аялал' },
-      { name: 'Тэрэлж Glamping', meta: 'Тохилог гэр буудал', sub: 'Glamping', aimag: 'Төв' },
-      { name: 'Од ажиглалын кэмп', meta: 'Дуран, халуун цай', sub: 'Од ажиглах', aimag: 'Төв' },
-      { name: 'Хужиртын рашаан', meta: 'Халуун рашаан сувилал', sub: 'Рашаан', aimag: 'Өвөрхангай' },
-      { name: 'Хөвсгөл каяк', meta: 'Каяк түрээс · Зун', sub: 'Усан спорт', aimag: 'Хөвсгөл' },
-      { name: 'Нуурын завины аялал', meta: 'Нар жаргах цагийн аялал', sub: 'Завь', aimag: 'Хөвсгөл' },
-    ],
-  },
-  {
-    slug: 'hool', num: '04', name: 'Хоол & Ундаа', nameEn: 'Food & Drinks',
+    slug: 'hool', num: '03', name: 'Хоол & Ундаа', nameEn: 'Food & Drinks',
     desc: 'Оройн хоол, нэг аяга кофе, чимээгүй яриа — сонгодог болзоо.',
     descEn: 'Dinner, coffee, quiet conversation — the classic date.',
     glow: 'rgba(232,160,90,.4)', hero: '1414235077428-338989a2e8c0',
     pool: ['1514933651103-005eec06c04b', '1470337458703-46ad1756a187', '1510812431401-41d2bd2722f3'],
     subs: ['Speakeasy бар', 'Дээвэр лоунж', "Chef's table", 'Гэрийн зоог', 'Supper club', 'Дарс таних'],
-    previews: [
-      { name: 'Noir Speakeasy', meta: 'Нууц бар · Оройн цаг' },
-      { name: 'Ember Rooftop', meta: 'Дээвэр лоунж · Хотын харагдац' },
-      { name: 'Wine Tasting Room', meta: 'Дарс таних · 2 хүн' },
-    ],
-    items: [
-      { name: 'Noir Speakeasy', meta: 'Нууц хаалгатай коктейль бар', sub: 'Speakeasy бар' },
-      { name: 'Ember Rooftop', meta: '17 давхар · Нар жаргах үзэмж', sub: 'Дээвэр лоунж' },
-      { name: "Chef's Table UB", meta: 'Тогоочийн ширээ · Захиалгаар', sub: "Chef's table" },
-      { name: 'Гэрийн зоог клуб', meta: 'Уламжлалт зоог, дулаан орчин', sub: 'Гэрийн зоог', aimag: 'Орхон' },
-      { name: 'Midnight Supper', meta: 'Сарын нэг удаагийн үдэшлэг', sub: 'Supper club' },
-      { name: 'Wine Tasting Room', meta: '5 төрлийн дарс · Хөтөчтэй', sub: 'Дарс таних' },
-    ],
+    previews: [],
+    items: [],
   },
   {
-    slug: 'zugaa', num: '05', name: 'Зугаа цэнгэл', nameEn: 'Entertainment',
-    desc: 'Инээд, өрсөлдөөн, тоглоом — хамтдаа хөгжилтэй үдэш.',
-    descEn: 'Laughter, games and friendly competition.',
-    glow: 'rgba(230,90,160,.36)', hero: '1511882150382-421056c89033',
-    pool: ['1511882150382-421056c89033', '1550745165-9bc0b252726f', '1493711662062-fa541adb3fc8'],
-    subs: ['Escape room', 'Board game кафе', 'VR arcade', 'Боулинг', 'Бильярд', 'Дартс бар', 'KTV', 'Муурны кафе', 'Шатрын кафе'],
-    previews: [
-      { name: 'Mystery Room', meta: 'Escape room · 60 мин' },
-      { name: 'VR Zone', meta: 'VR arcade · 2 хүн' },
-      { name: 'Meeple Cafe', meta: 'Board game · Оройн цаг' },
-    ],
-    items: [
-      { name: 'Mystery Room', meta: 'Оньсого тайлах өрөө · 60 мин', sub: 'Escape room' },
-      { name: 'Meeple Cafe', meta: '300+ ширээний тоглоом', sub: 'Board game кафе' },
-      { name: 'VR Zone', meta: 'Виртуал ертөнц · Хос горим', sub: 'VR arcade' },
-      { name: 'Strike Bowling', meta: '12 зам · Оройн хөгжимтэй', sub: 'Боулинг' },
-      { name: 'Q Club', meta: 'Бильярдын танхим', sub: 'Бильярд', aimag: 'Дархан-Уул' },
-      { name: 'Bullseye Bar', meta: 'Дартс + коктейль', sub: 'Дартс бар' },
-      { name: 'Echo KTV', meta: 'Жижиг өрөө, том дэлгэц', sub: 'KTV' },
-      { name: 'Cat Cafe UB', meta: 'Муурнуудтай кофе', sub: 'Муурны кафе' },
-      { name: 'Шатрын өргөө', meta: 'Шатар + цай', sub: 'Шатрын кафе' },
-    ],
+    slug: 'horizon', num: '04', name: 'Горизон', nameEn: 'Horizon',
+    desc: 'Одод, шинжлэх ухаан, сониуч зан — ердийн бус болзоо.',
+    descEn: 'Stars, science and curiosity — an unusual date.',
+    glow: 'rgba(90,140,235,.36)', hero: '1419242902214-272b3f66ee7a',
+    pool: ['1419242902214-272b3f66ee7a', '1462331940025-496dfbfc7564', '1532094349884-543bc11b234d'],
+    subs: ['Science cafe', 'Одон дурандах төв', 'Планетари', 'Шинжлэх ухааны лекц', 'Сансрын ажиглалт', 'Лаборатори тур'],
+    previews: [],
+    items: [],
+  },
+  {
+    slug: 'wellness', num: '05', name: 'Амралт & Wellness', nameEn: 'Rest & Wellness',
+    desc: 'Удаашрах, амрах, хамтдаа тайвшрах — яриа өөрөө урсана.',
+    descEn: 'Slow down, relax, unwind together.',
+    glow: 'rgba(120,200,170,.32)', hero: '1544161515-4ab6ce6db874',
+    pool: ['1544161515-4ab6ce6db874', '1506126613408-eca07ce68773', '1540555700478-4be289fbecef'],
+    subs: ['Спа / сауна', 'Йог / бясалгал', 'Массаж', 'Уламжлалт эмчилгээ', 'Орон зай түрээс', 'Муурны кафе'],
+    previews: [],
+    items: [],
   },
   {
     slug: 'soyol', num: '06', name: 'Соёл & Урлаг', nameEn: 'Culture & Arts',
@@ -382,48 +295,25 @@ export const CATS: Cat[] = [
     glow: 'rgba(150,110,230,.36)', hero: '1470229722913-7c0e2dbbafd3',
     pool: ['1470229722913-7c0e2dbbafd3', '1507924538820-ede94a04019d', '1513364776144-60967b0f800f'],
     subs: ['Андеграунд концерт', 'Амьд жаз', 'Open mic', 'Drive-in кино', 'Морин хуур / хөөмий', 'DJ үдэш', 'Зурагчийн студи', 'Галерей'],
-    previews: [
-      { name: 'Жаз клуб 46', meta: 'Амьд жаз · Пү–Бя' },
-      { name: 'Drive-in Cinema', meta: 'Машинтай кино · Зун' },
-      { name: 'Хөөмийн тоглолт', meta: 'Уламжлалт урлаг' },
-    ],
-    items: [
-      { name: 'UB Underground', meta: 'Андеграунд хамтлагууд', sub: 'Андеграунд концерт' },
-      { name: 'Жаз клуб 46', meta: 'Амьд жаз · Лаа асаасан орчин', sub: 'Амьд жаз' },
-      { name: 'Open Mic Night', meta: 'Долоо хоног бүрийн Лхагва', sub: 'Open mic' },
-      { name: 'Drive-in Cinema', meta: 'Машиндаа сууж кино үзэх', sub: 'Drive-in кино', aimag: 'Төв' },
-      { name: 'Хөөмийн тоглолт', meta: 'Морин хуур, хөөмий', sub: 'Морин хуур / хөөмий' },
-      { name: 'Warehouse DJ', meta: 'Электрон хөгжмийн үдэш', sub: 'DJ үдэш' },
-      { name: 'Portrait Studio', meta: 'Хосын зургийн сешн', sub: 'Зурагчийн студи' },
-      { name: 'Арт Галерей', meta: 'Орчин үеийн монгол урлаг', sub: 'Галерей' },
-    ],
+    previews: [],
+    items: [],
   },
   {
-    slug: 'horizon', num: '07', name: 'Горизон', nameEn: 'Horizon',
-    desc: 'Одод, шинжлэх ухаан, сониуч зан — ердийн бус болзоо.',
-    descEn: 'Stars, science and curiosity — an unusual date.',
-    glow: 'rgba(90,140,235,.36)', hero: '1419242902214-272b3f66ee7a',
-    pool: ['1419242902214-272b3f66ee7a', '1462331940025-496dfbfc7564', '1532094349884-543bc11b234d'],
-    subs: ['Science cafe', 'Одон дурандах төв', 'Планетари', 'Шинжлэх ухааны лекц', 'Сансрын ажиглалт', 'Лаборатори тур'],
-    previews: [
-      { name: 'Планетари', meta: 'Оддын бөмбөгөр · Үзвэр' },
-      { name: 'Од харах төв', meta: 'Дурангаар ажиглалт' },
-      { name: 'Science Cafe UB', meta: 'Кофе + сониуч яриа' },
-    ],
-    items: [
-      { name: 'Science Cafe UB', meta: 'Шинжлэх ухааны сэдэвт кафе', sub: 'Science cafe' },
-      { name: 'Од харах төв', meta: 'Том дурангаар ажиглалт', sub: 'Одон дурандах төв', aimag: 'Төв' },
-      { name: 'Планетари', meta: 'Оддын бөмбөгөр үзвэр · 45 мин', sub: 'Планетари' },
-      { name: 'Nerd Night', meta: 'Нээлттэй лекц · Сар бүр', sub: 'Шинжлэх ухааны лекц' },
-      { name: 'Сансрын ажиглалтын үдэш', meta: 'Хотоос гадуур · Хөтөчтэй', sub: 'Сансрын ажиглалт', aimag: 'Төв' },
-      { name: 'Лаборатори аялал', meta: 'Судалгааны төвөөр зочлох', sub: 'Лаборатори тур' },
-    ],
+    slug: 'ayalal', num: '07', name: 'Аялал & Байгаль', nameEn: 'Travel & Nature',
+    desc: 'Хотоос гарч, цэвэр агаарт — хамгийн энгийн атлаа мартагдашгүй.',
+    descEn: 'Out of the city, into fresh air — simple yet unforgettable.',
+    glow: 'rgba(90,190,120,.34)', hero: '1501785888041-af3ef285b470',
+    pool: ['1441974231531-c6227db76b6e', '1504280390367-361c6d9f38f4', '1553284965-83fd3e82fa5a'],
+    subs: ['Морин аялал', 'Нохой чарга', 'Явган аялал', 'Glamping', 'Од ажиглах', 'Рашаан', 'Усан спорт', 'Завь'],
+    previews: [],
+    items: [],
   },
 ];
 
 export const STR: Record<'mn' | 'en', Record<string, string>> = {
   mn: { home: 'Нүүр', about: 'Бидний тухай', signin: 'Нэвтрэх', catLabel: 'Ангилал',
     hint: 'Ангилал дээр хулганаа аваачиж үзээрэй', places: 'газар', all: 'Бүгд',
+    mapHint: 'Газрын зураг дээр аймгаа дарж шүүнэ үү', pinsLabel: 'пин',
     back: '← Нүүр хуудас', tag: 'болзооны санаануудын орон зай', location: 'Байршил',
     empty: 'Энэ аймагт одоогоор газар алга', reset: 'Бүгдийг харах',
     pin: 'Maps', event: 'Эвент', suggest: 'Санал болгох', globe: 'Дэлхий', travel: 'Аялал',
@@ -432,21 +322,15 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     mapNote: '[газрын зураг — интеграцийн байрлал]', close: 'Хаах',
     resetMap: 'Бүх Монгол', detail: 'Дэлгэрэнгүй', panelHint: 'Пин дээр дарж дэлгэрэнгүй үзээрэй',
     openMaps: 'Google Map-аар харах',
-    addPlace: 'Газар нэмэх', addTitle: 'Шинэ газар нэмэх', addSub: 'Мэдээллийг бөглөөд газрын зураг дээр пин тэмдэглэнэ үү',
-    roleLabel: 'Хэн нэмж байна', roleHost: 'Хост', roleUser: 'Хэрэглэгч', roleAdmin: 'Админ',
-    fName: 'Газрын нэр', fNamePh: 'Жишээ: Ember Rooftop', fPhone: 'Утасны дугаар',
-    fAccessLabel: 'Хүртээмж', fAccessToggle: 'Тусгай хэрэгцээт хүмүүст тохиромжтой', fAccessReq: 'Бүх шалгуурыг хангасан байх',
-    fCat: 'Ангилал', fSub: 'Дэд ангилал', fAimag: 'Аймаг / хот', fOpen: 'Нээх цаг', fClose: 'Хаах цаг',
-    fDesc: 'Тайлбар', fDescPh: 'Энэ газрын онцлог, юугаараа гоё вэ...',
-    fMap: 'Google Map байршил', fMapPh: 'Google Maps линк (заавал биш)', fImg: 'Зураг', fImgPh: '＋ Зураг оруулах',
-    mapPick: 'Google Map дээр дарж пин тэмдэглэнэ үү', mapPicked: 'Байршил тэмдэглэгдлээ ✓',
-    cancel: 'Болих', saveBtn: 'Газар нэмэх', errName: 'Газрын нэр оруулна уу', added: 'Газар амжилттай нэмэгдлээ!',
     profile: 'Профайл', profileName: 'Миний профайл', profileMeta: 'big bang хэрэглэгч · Улаанбаатар', settings: 'Тохиргоо',
     a11yEyeTitle: 'Харааны бэрхшээлтэй горим', a11yEyeSub: 'Товчлуур болон текстийг том, тодоор харуулна',
     a11yWheelTitle: 'Тусгай хэрэгцээт горим', a11yWheelSub: 'Ээлтэй газруудыг эхэнд эрэмбэлж харуулна', addContent: 'Контент нэмэх',
     addPlaceTitle: 'Газар нэмэх', addPlaceDesc: 'Ресторан, клуб, амралтын газар',
+    addPlaceApproval: 'Админ баталгаажуулсны дараа идэвхжинэ',
     addScenicTitle: 'Үзэсгэлэнт газар', addScenicDesc: 'Байгалийн үзэсгэлэнт цэг нэмэх',
     addEventTitle: 'Эвент нэмэх', addEventDesc: 'Тодорхой огноо, цагтай арга хэмжээ',
+    addInstantNote: 'Шууд нийтлэгдэнэ',
+    myPlacesTitle: 'Миний нэмсэн газрууд',
     myScenicTitle: 'Миний нэмсэн үзэсгэлэнт газрууд', myEventsTitle: 'Миний нэмсэн эвентүүд',
     scModalTitle: 'Үзэсгэлэнт газар нэмэх', scName: 'Газрын нэр', scNamePh: 'Ж: Тэрхийн цагаан нуур',
     scDesc: 'Тайлбар', scDescPh: 'Юугаараа онцлог вэ...', scSave: 'Нэмэх',
@@ -478,30 +362,26 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     abResBody: 'Аймаг бүрийн газар, эвент, санал болголтыг нэг дороос — ангилал, рейтинг, дуртай жагсаалттайгаар.', abResBtn: 'Газрууд үзэх',
     pdAccess: 'Хүртээмжтэй', pdRating: 'Үнэлгээ', pdHours: 'Цагийн хуваарь', pdPhone: 'Утас',
     pdAbout: 'Тухай', pdInfo: 'Мэдээлэл', pdA11yTitle: 'Тусгай хэрэгцээт хүнд ээлтэй',
-    pdCat: 'Ангилал', pdSub: 'Дэд ангилал', pdLoc: 'Байршил', pdAccessRow: 'Хүртээмж', pdYes: 'Тийм ✓', pdNo: 'Мэдээлэлгүй' },
+    pdCat: 'Ангилал', pdSub: 'Дэд ангилал', pdLoc: 'Байршил', pdAccessRow: 'Хүртээмж', pdYes: 'Тийм ✓', pdNo: 'Мэдээлэлгүй',
+    pdRateTitle: 'Үнэлгээ өгөх', pdRateThanks: 'Баярлалаа! Таны үнэлгээ', pdRateHint: 'Одоор дарж үнэлнэ үү' },
   en: { home: 'Home', about: 'About', signin: 'Sign in', catLabel: 'Categories',
     hint: 'Hover over a category', places: 'places', all: 'All', back: '← Home', tag: 'a space of date ideas', location: 'Location',
+    mapHint: 'Click the map to filter by province', pinsLabel: 'pins',
     empty: 'No places in this province yet', reset: 'Show all',
     pin: 'Maps', event: 'Event', suggest: 'Suggest', globe: 'World', travel: 'Travel',
     locTitle: 'Provinces', locSub: 'Browse places by province',
     pinTitle: 'Pin', pinSub: 'Beautiful, remarkable spots on the map. Click a pin for details.',
     mapNote: '[map — integration placeholder]', close: 'Close', resetMap: 'Full map', detail: 'Details',
     panelHint: 'Click a pin for details', openMaps: 'Open in Google Maps',
-    addPlace: 'Add place', addTitle: 'Add a new place', addSub: 'Fill in the details and drop a pin on the map',
-    roleLabel: 'Adding as', roleHost: 'Host', roleUser: 'User', roleAdmin: 'Admin',
-    fName: 'Place name', fNamePh: 'e.g. Ember Rooftop', fPhone: 'Phone number',
-    fAccessLabel: 'Accessibility', fAccessToggle: 'Suitable for people with special needs', fAccessReq: 'All criteria must be met',
-    fCat: 'Category', fSub: 'Sub-category', fAimag: 'Province / city', fOpen: 'Opens', fClose: 'Closes',
-    fDesc: 'Description', fDescPh: 'What makes this place special...',
-    fMap: 'Google Map location', fMapPh: 'Google Maps link (optional)', fImg: 'Photo', fImgPh: '＋ Upload photo',
-    mapPick: 'Click on Google Map to drop a pin', mapPicked: 'Location marked ✓',
-    cancel: 'Cancel', saveBtn: 'Add place', errName: 'Please enter a name', added: 'Place added successfully!',
     profile: 'Profile', profileName: 'My profile', profileMeta: 'big bang user · Ulaanbaatar', settings: 'Settings',
     a11yEyeTitle: 'Low-vision mode', a11yEyeSub: 'Larger, bolder buttons and text',
     a11yWheelTitle: 'Accessibility mode', a11yWheelSub: 'Sort wheelchair-friendly places first', addContent: 'Add content',
     addPlaceTitle: 'Add place', addPlaceDesc: 'Restaurant, club, getaway',
+    addPlaceApproval: 'Goes live after admin approval',
     addScenicTitle: 'Scenic spot', addScenicDesc: 'Add a natural scenic place',
     addEventTitle: 'Add event', addEventDesc: 'A happening with a date and time',
+    addInstantNote: 'Publishes instantly',
+    myPlacesTitle: 'My submitted places',
     myScenicTitle: 'My scenic spots', myEventsTitle: 'My events',
     scModalTitle: 'Add scenic spot', scName: 'Name', scNamePh: 'e.g. Terkhiin Tsagaan Lake',
     scDesc: 'Description', scDescPh: 'What makes it special...', scSave: 'Add',
@@ -533,7 +413,8 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     abResBody: 'Places, events and picks from every province in one place — with categories, ratings and a favorites list.', abResBtn: 'Browse places',
     pdAccess: 'Accessible', pdRating: 'Rating', pdHours: 'Opening hours', pdPhone: 'Phone',
     pdAbout: 'About', pdInfo: 'Information', pdA11yTitle: 'Accessible for people with special needs',
-    pdCat: 'Category', pdSub: 'Sub-category', pdLoc: 'Location', pdAccessRow: 'Accessibility', pdYes: 'Yes ✓', pdNo: 'Not specified' },
+    pdCat: 'Category', pdSub: 'Sub-category', pdLoc: 'Location', pdAccessRow: 'Accessibility', pdYes: 'Yes ✓', pdNo: 'Not specified',
+    pdRateTitle: 'Leave a rating', pdRateThanks: 'Thanks! Your rating', pdRateHint: 'Click a star to rate' },
 };
 
 // ── pure helpers ──
@@ -544,6 +425,12 @@ export const catBgOf = (c: Cat, overrideImg?: string | null) =>
 
 export const thumbOf = (c: Cat, i: number) =>
   'linear-gradient(rgba(11,10,8,.12), rgba(11,10,8,.42)), url("' + U(c.pool[i % c.pool.length], 640) + '")';
+
+// Same gradient as thumbOf, but for a real place's own uploaded photo
+// (falls back to the placeholder graphic via imgUrl when none was uploaded)
+// instead of cycling through the category's decorative stock-photo pool.
+export const itemThumbOf = (img?: string) =>
+  'linear-gradient(rgba(11,10,8,.12), rgba(11,10,8,.42)), url("' + imgUrl(img || '', 640) + '")';
 
 export function aimagName(mn: string, lang: 'mn' | 'en'): string {
   if (mn === 'Бүгд') return STR[lang].all;
@@ -574,6 +461,20 @@ export function lonLatToXY(lng: number, lat: number): [number, number] {
   const my = (l: number) => Math.log(Math.tan(Math.PI / 4 + (l * Math.PI) / 360));
   const top = my(52.16), bot = my(41.56);
   return [((lng - 87.73) / (119.93 - 87.73)) * 1000, ((top - my(lat)) / (top - bot)) * 483];
+}
+
+// Inverse of lonLatToXY — recovers real-world [lat, lng] from a point in the
+// mn-aimags.json projected coordinate space (that geometry is itself a Mercator
+// projection of the real aimag borders — see lonLatToXY — so this lets the
+// real map reuse the exact same borders/anchors the old SVG map drew, instead
+// of a second, hand-guessed set of coordinates).
+export function xyToLonLat(x: number, y: number): [number, number] {
+  const my = (l: number) => Math.log(Math.tan(Math.PI / 4 + (l * Math.PI) / 360));
+  const myInv = (v: number) => (Math.atan(Math.exp(v)) - Math.PI / 4) * (360 / Math.PI);
+  const top = my(52.16), bot = my(41.56);
+  const lng = 87.73 + (x / 1000) * (119.93 - 87.73);
+  const lat = myInv(top - (y / 483) * (top - bot));
+  return [lat, lng];
 }
 
 export function embedUrlFor(p: { name: string; aimag: string; lat?: number; lng?: number }) {

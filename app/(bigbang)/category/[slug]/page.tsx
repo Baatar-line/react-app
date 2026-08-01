@@ -5,8 +5,8 @@ import React, { useContext } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Accessibility, Heart } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { css, Hover } from '@/components/bigbang/ui';
-import { CATS, ratingOf, isAccessible, thumbOf, catBgOf, aimagName, isVideoUrl, U } from '@/components/bigbang/data';
+import { ratingOf, catBgOf, itemThumbOf, aimagName, isVideoUrl } from '@/components/bigbang/data';
+import { BgMedia } from '@/components/bigbang/ui';
 
 export default function CategoryPage() {
   const V: any = useContext(BigBangContext);
@@ -16,7 +16,8 @@ export default function CategoryPage() {
 
   React.useEffect(() => { setSub('Бүгд'); }, [slug]);
 
-  const cat = CATS.find((c) => c.slug === slug) || CATS[0];
+  const cats: any[] = V.cats || [];
+  const cat: any = cats.find((c: any) => c.slug === slug) || cats[0] || { slug: '', num: '', name: '', nameEn: '', desc: '', descEn: '', hero: '', pool: [], subs: [], items: [] };
   const accent = V.accent;
   const L = V.L;
 
@@ -25,75 +26,101 @@ export default function CategoryPage() {
     return { label: label === 'Бүгд' ? L.all : label, on: () => setSub(label), bg: on ? accent : 'transparent', color: on ? '#132a1f' : 'rgba(242,237,227,.75)', border: on ? accent : 'rgba(242,237,227,.22)' };
   });
 
+  const renderChip = (ch: any) => (
+    <button key={ch.label} onClick={ch.on} className="cursor-pointer rounded-full py-1.5 px-[13px] text-[12.5px] font-semibold transition-all duration-[250ms]" style={{ border: `1px solid ${ch.border}`, background: ch.bg, color: ch.color }}>{ch.label}</button>
+  );
+
   const gridItems = cat.items
-    .filter((it) => (sub === 'Бүгд' || it.sub === sub) && (V.aimag === 'Бүгд' || (it.aimag || 'Улаанбаатар') === V.aimag))
-    .map((it, i) => {
+    .filter((it: any) => (sub === 'Бүгд' || it.sub === sub) && (V.aimag === 'Бүгд' || (it.aimag || 'Улаанбаатар') === V.aimag))
+    .map((it: any, i: number) => {
       const key = 'p:' + cat.slug + ':' + it.name;
-      const acc = isAccessible(it.name);
+      const acc = !!it.access;
       return {
         ...it, rating: ratingOf(it.name), access: acc, accShow: acc ? 'flex' : 'none',
         openPlace: () => { router.push('/category/' + cat.slug + '/place/' + i); try { window.scrollTo(0, 0); } catch (err) { /* ignore */ } },
         toggleFav: V.toggleFav(key), favOn: !!V.favs[key], heartColor: V.favs[key] ? accent : 'rgba(242,237,227,.9)',
-        thumb: i === 0 ? ('linear-gradient(rgba(0,0,0,.06), rgba(0,0,0,.18)), url("' + U('1500534623283-312aade485b7', 640) + '")') : thumbOf(cat, i).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
+        thumb: itemThumbOf(it.img).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
         displayMeta: it.meta + ' · ' + aimagName(it.aimag || 'Улаанбаатар', V.lang),
       };
     })
-    .sort((a, b) => { if (V.spNeeds && a.access !== b.access) return a.access ? -1 : 1; return +b.rating - +a.rating; });
+    .sort((a: any, b: any) => { if (V.spNeeds && a.access !== b.access) return a.access ? -1 : 1; return +b.rating - +a.rating; });
 
   const catBgOverride = V.catBgOverride[cat.slug] || '';
+  // The background video (uploaded separately from the photo above) only
+  // plays here, inside the category's own page — Home's hover/selection
+  // preview always stays the still photo instead. Falls back to the photo
+  // when no video has been uploaded for this category.
+  const catVideoOverride = V.catVideoOverride[cat.slug] || '';
 
   return (
     <section data-screen-label="Ангиллын дэлгэрэнгүй">
-      <header style={css('position:relative;height:52vh;min-height:380px;overflow:hidden;display:flex;align-items:flex-end')}>
-        {isVideoUrl(catBgOverride) ? (
-          <>
-            <video src={catBgOverride} autoPlay loop muted playsInline style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } as any} />
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78))' }}></div>
-          </>
-        ) : (
-          <div style={{ ...css('position:absolute;inset:0;background-size:cover;background-position:center'), background: catBgOf(cat, catBgOverride), animation: 'var(--drift, none)' }}></div>
-        )}
-        <div style={css('position:absolute;inset:0;background:linear-gradient(180deg, rgba(0,0,0,.4) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,.94) 100%)')}></div>
-        <div style={{ ...css('position:relative;z-index:5;width:100%;box-sizing:border-box'), padding: V.isMobile ? '0 20px 28px' : '0 48px 40px' }}>
-          <Hover as="button" onClick={V.goHome} s="all:unset;cursor:pointer;font-size:13px;font-weight:600;color:rgba(242,237,227,.6);transition:color .25s" h="color:var(--accent,#E8B84B)">{L.back}</Hover>
-          <div style={css('display:flex;align-items:baseline;gap:20px;flex-wrap:wrap;margin-top:14px')}>
-            <h1 style={css('margin:0;font-size:clamp(38px,9vw,92px);font-weight:800;letter-spacing:-0.04em;line-height:1;color:#f2ede3')}>{V.lang === 'en' ? cat.nameEn : cat.name}</h1>
-            <span style={css('font-family:ui-monospace,Menlo,monospace;font-size:12px;color:rgba(242,237,227,.5)')}>{gridItems.length} {L.places}</span>
+      <header className="relative flex h-[52vh] min-h-[380px] items-end overflow-hidden">
+        <BgMedia
+          bg={catBgOf(cat, catBgOverride)} isVideo={!!catVideoOverride || isVideoUrl(catBgOverride)} videoSrc={catVideoOverride || catBgOverride}
+          className="absolute inset-0" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
+        />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.4)_0%,_rgba(0,0,0,0)_40%,_rgba(0,0,0,.94)_100%)]"></div>
+        <div className="relative z-[5] box-border w-full" style={{ padding: V.isMobile ? '0 20px 28px' : '0 48px 40px' }}>
+          <button onClick={V.goHome} className="cursor-pointer border-0 bg-transparent text-[13px] font-semibold text-[rgba(242,237,227,.6)] transition-colors duration-[250ms] hover:text-[var(--accent,#E8B84B)]">{L.back}</button>
+          <div className="mt-3.5 flex flex-wrap items-baseline gap-5">
+            <h1 className="m-0 text-[clamp(38px,9vw,92px)] font-extrabold leading-none tracking-[-0.04em] text-cream">{V.lang === 'en' ? cat.nameEn : cat.name}</h1>
+            <span className="font-mono text-xs text-[rgba(242,237,227,.5)]">{gridItems.length} {L.places}</span>
           </div>
-          <p style={css('margin:12px 0 0;font-size:15px;color:rgba(242,237,227,.6);max-width:520px')}>{V.lang === 'en' ? cat.descEn : cat.desc}</p>
+          <p className="mt-3 max-w-[520px] text-[15px] text-[rgba(242,237,227,.6)]">{V.lang === 'en' ? cat.descEn : cat.desc}</p>
         </div>
       </header>
-      <div style={{ ...css('display:flex;gap:10px;flex-wrap:wrap'), padding: V.isMobile ? '20px 20px 8px' : '28px 48px 8px' }}>
-        {chips.map((ch: any, i: number) => (
-          <button key={i} onClick={ch.on} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;padding:6px 13px;border-radius:999px;transition:all .25s'), border: `1px solid ${ch.border}`, background: ch.bg, color: ch.color }}>{ch.label}</button>
-        ))}
+      <div className="flex flex-wrap gap-2.5" style={{ padding: V.isMobile ? '20px 20px 8px' : '28px 48px 8px' }}>
+        {/* "Бүгд" first, then the accessibility toggle, then the real subs —
+            it sits next to the reset-to-everything chip because it cuts across
+            all of them rather than belonging in that list. */}
+        {chips.slice(0, 1).map(renderChip)}
+        {/* Accessibility filter — a toggle, not a sub-category: it drives the
+            same global spNeeds flag the profile switch does (so it persists and
+            stays in sync), which the sort below reads to float wheelchair-
+            friendly places to the front. Kept on the teal accessibility colour
+            rather than the yellow accent so it doesn't read as one more sub. */}
+        <button
+          onClick={V.toggleSp}
+          aria-pressed={V.spNeeds}
+          aria-label={L.a11yWheelTitle}
+          title={L.a11yWheelTitle + ' — ' + L.a11yWheelSub}
+          className="flex cursor-pointer items-center gap-1.5 rounded-full py-1.5 px-[13px] text-[12.5px] font-semibold transition-all duration-[250ms]"
+          style={{
+            border: `1px solid ${V.spNeeds ? 'rgba(120,200,170,.9)' : 'rgba(242,237,227,.22)'}`,
+            background: V.spNeeds ? 'rgba(120,200,170,.16)' : 'transparent',
+            color: V.spNeeds ? '#8fd6c6' : 'rgba(242,237,227,.75)',
+          }}
+        >
+          <Accessibility size={15} />
+        </button>
+        {chips.slice(1).map(renderChip)}
       </div>
-      <div style={{ ...css('display:grid;grid-template-columns:repeat(auto-fill, minmax(270px, 1fr));gap:22px'), padding: V.isMobile ? '20px 20px 32px' : '26px 48px 40px' }}>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(270px,1fr))] gap-[22px]" style={{ padding: V.isMobile ? '20px 20px 32px' : '26px 48px 40px' }}>
         {gridItems.map((it: any, i: number) => (
-          <Hover key={i} onClick={it.openPlace} s="position:relative;aspect-ratio:677/525;border-radius:18px;overflow:hidden;border:1px solid rgba(0,0,0,.6);animation:bbFadeUp .5s cubic-bezier(.22,.8,.3,1) both;cursor:pointer;transition:transform .35s cubic-bezier(.22,.8,.3,1), box-shadow .35s ease" h="transform:translateY(-5px);box-shadow:0 22px 48px rgba(0,0,0,.5)">
-            <div style={{ position: 'absolute', inset: 0, backgroundImage: it.thumb, backgroundSize: 'cover', backgroundPosition: 'center', transition: 'transform .6s cubic-bezier(.22,.8,.3,1)' }}></div>
-            <div style={css('position:absolute;inset:0;background:linear-gradient(180deg, rgba(0,0,0,.18) 0%, rgba(0,0,0,0) 28%, rgba(0,0,0,.4) 50%, rgba(0,0,0,.99) 100%);pointer-events:none')}></div>
-            <div style={css('position:absolute;inset:0;background:radial-gradient(120% 90% at 0% 0%, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 45%), radial-gradient(120% 90% at 100% 0%, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 45%);pointer-events:none')}></div>
-            <div style={css('position:absolute;left:12px;top:12px;display:flex;gap:6px;pointer-events:none')}>
-              <span style={css('font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:4px 11px;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.28);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:rgba(246,241,231,.95)')}>{it.sub}</span>
-              <span title="Тусгай хэрэгцээт хүнд ээлтэй" style={{ ...css('align-items:center;justify-content:center;width:24px;height:24px;border-radius:999px;background:rgba(0,0,0,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#8fd6c6;border:1px solid rgba(255,255,255,.26)'), display: it.accShow }}><Accessibility size={13} /></span>
+          <div key={i} onClick={it.openPlace} className="relative aspect-[677/525] cursor-pointer overflow-hidden rounded-[18px] border border-[rgba(0,0,0,.6)] transition-all duration-[350ms] ease-[cubic-bezier(.22,.8,.3,1)] animate-[bbFadeUp_.5s_cubic-bezier(.22,.8,.3,1)_both] hover:-translate-y-[5px] hover:shadow-[0_22px_48px_rgba(0,0,0,.5)]">
+            <BgMedia bg={it.thumb} className="absolute inset-0" imgClassName="bg-cover bg-center transition-transform duration-[600ms] ease-[cubic-bezier(.22,.8,.3,1)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.18)_0%,_rgba(0,0,0,0)_28%,_rgba(0,0,0,.4)_50%,_rgba(0,0,0,.99)_100%)]"></div>
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_0%_0%,_rgba(0,0,0,.55)_0%,_rgba(0,0,0,0)_45%),radial-gradient(120%_90%_at_100%_0%,_rgba(0,0,0,.55)_0%,_rgba(0,0,0,0)_45%)]"></div>
+            <div className="pointer-events-none absolute left-3 top-3 flex gap-1.5">
+              <span className="rounded-full bg-[rgba(255,255,255,.1)] py-1 px-[11px] text-[10px] font-bold uppercase tracking-[.08em] text-[rgba(246,241,231,.95)] backdrop-blur-[10px] border border-[rgba(255,255,255,.28)]">{it.sub}</span>
+              <span title="Тусгай хэрэгцээт хүнд ээлтэй" className="h-6 w-6 items-center justify-center rounded-full border border-[rgba(255,255,255,.26)] bg-[rgba(0,0,0,.5)] text-[#8fd6c6] backdrop-blur-[10px]" style={{ display: it.accShow }}><Accessibility size={13} /></span>
             </div>
-            <Hover as="button" onClick={it.toggleFav} s={`position:absolute;right:12px;top:12px;z-index:5;cursor:pointer;width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.28);background:rgba(0,0,0,.45);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:${it.heartColor};display:flex;align-items:center;justify-content:center;transition:all .2s`} h="border-color:var(--accent,#E8B84B)"><Heart size={15} fill={it.favOn ? 'currentColor' : 'none'} /></Hover>
-            <div style={css('position:absolute;left:0;right:0;bottom:0;padding:16px 18px;pointer-events:none')}>
-              <div style={css('display:flex;align-items:center;gap:5px;margin-bottom:8px')}><span style={css('font-size:12px;line-height:1;color:var(--accent,#E8B84B)')}>★</span><span style={css('font-size:12px;font-weight:800;line-height:1;color:#f6f1e7')}>{it.rating}</span></div>
-              <div style={css('font-size:16.5px;font-weight:800;letter-spacing:-0.01em;line-height:1.2;color:#f6f1e7')}>{it.name}</div>
-              <div style={css('font-size:12px;color:rgba(242,237,227,.62);margin-top:5px;line-height:1.45')}>{it.displayMeta}</div>
+            <button onClick={it.toggleFav} className="absolute right-3 top-3 z-[5] flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-full border border-[rgba(255,255,255,.28)] bg-[rgba(0,0,0,.45)] backdrop-blur-[10px] transition-all duration-[200ms] hover:border-[var(--accent,#E8B84B)]" style={{ color: it.heartColor }}><Heart size={15} fill={it.favOn ? 'currentColor' : 'none'} /></button>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 py-4 px-[18px]">
+              <div className="mb-2 flex items-center gap-[5px]"><span className="text-xs leading-none text-[var(--accent,#E8B84B)]">★</span><span className="text-xs font-extrabold leading-none text-cream-2">{it.rating}</span></div>
+              <div className="text-[16.5px] font-extrabold leading-[1.2] tracking-[-0.01em] text-cream-2">{it.name}</div>
+              <div className="mt-[5px] text-xs leading-[1.45] text-[rgba(242,237,227,.62)]">{it.displayMeta}</div>
             </div>
-          </Hover>
+          </div>
         ))}
       </div>
       {gridItems.length === 0 && (
-        <div style={{ ...css('display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center'), padding: V.isMobile ? '10px 20px 50px' : '10px 48px 70px' }}>
-          <div style={css('font-size:15px;color:rgba(242,237,227,.55)')}>{L.empty}</div>
-          <Hover as="button" onClick={V.resetAimag} s="cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;border:1px solid var(--accent,#E8B84B);background:transparent;color:var(--accent,#E8B84B);transition:all .25s" h="background:var(--accent,#E8B84B);color:#132a1f">{L.reset}</Hover>
+        <div className="flex flex-col items-center gap-3.5 text-center" style={{ padding: V.isMobile ? '10px 20px 50px' : '10px 48px 70px' }}>
+          <div className="text-[15px] text-[rgba(242,237,227,.55)]">{L.empty}</div>
+          <button onClick={V.resetAimag} className="cursor-pointer rounded-full border border-[var(--accent,#E8B84B)] bg-transparent py-[9px] px-5 text-[12.5px] font-bold text-[var(--accent,#E8B84B)] transition-all duration-[250ms] hover:bg-[var(--accent,#E8B84B)] hover:text-[#132a1f]">{L.reset}</button>
         </div>
       )}
-      <footer style={{ ...css('border-top:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between;font-size:12px;color:rgba(242,237,227,.4)'), padding: V.isMobile ? '20px 20px' : '26px 48px' }}>
+      <footer className="flex justify-between border-t border-[rgba(255,255,255,.07)] text-xs text-[rgba(242,237,227,.4)]" style={{ padding: V.isMobile ? '20px 20px' : '26px 48px' }}>
         <span>© 2026 big bang</span>
         <span>{L.tag}</span>
       </footer>

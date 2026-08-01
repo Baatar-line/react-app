@@ -7,36 +7,28 @@
 // place/scenic/event creation modal with HostProfile via shared/CreateForm.
 import React, { useEffect, useRef, useState } from 'react';
 import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, Film, Search, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
-import { css, Hover, useIsMobile } from '@/components/bigbang/ui';
-import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, U, imgUrl, isVideoUrl } from '@/components/bigbang/data';
+import { useIsMobile } from '@/components/bigbang/ui';
+import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, SUGGEST_COLLECTIONS, SuggestCollectionItem, TRAVEL_APPS, U, imgUrl, isVideoUrl, itemThumbOf } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
-import { apiGet, apiPatch, apiPut, uploadImage } from '@/lib/api';
+import { apiGet, apiGetAuthed, apiPatch, apiPost, apiPut, uploadImage } from '@/lib/api';
+import { createPlace, createScenicPin, createEvent } from '@/lib/userContent';
 
 type Tab = 'dash' | 'places' | 'scenic' | 'events' | 'suggests' | 'bg' | 'ads';
 
 interface Ad { title: string; desc: string; img: string; from: string; to: string; views: number; active: boolean; }
-interface ScenicEntry { name: string; desc: string; icon: string; aimag: string; img: string; }
-interface AdminEvent { name: string; day: string; mon: string; tag: string; aimag: string; meta: string; img: string; }
-interface CreatedPlace { name: string; cat: string; aimag: string; access?: boolean; desc: string; img: string; }
 // `id` is the backend row id (category/aimag) once fetched — needed to PATCH the right row.
 // Absent for the 'about'/'home'/'flag'/'suggest' kinds, which PUT the singleton
 // settings row instead; `slug` is the SUGGESTS card key used there since that
 // list isn't a db table with its own row ids.
-interface BgItem { id?: number; slug?: string; name: string; type: 'image' | 'video'; src: string; }
-
-const PLACE_REQS = [
-  { name: 'Sky Lounge 21', cat: 'Хоол & Кофе', aimag: 'Улаанбаатар', host: 'host: @boldoo', when: 'өнөөдөр 14:02', desc: 'Хотын дээвэр ресторан, нар жаргах гоё үзэмжтэй', img: '1517248135467-4c7edcad34c4' },
-  { name: 'Говь кэмп', cat: 'Аялал & Байгаль', aimag: 'Өмнөговь', host: 'host: @nomin.travel', when: 'өчигдөр 19:44', desc: 'Хонгорын элсний дэргэдэх гэр кэмп', img: '1469854523086-cc02fe5d8800' },
-  { name: 'Ice Rink UB', cat: 'Адреналин & Спорт', aimag: 'Улаанбаатар', host: 'host: @icepark', when: 'өчигдөр 11:20', desc: 'Задгай мөсөн гулгуур, түрээсийн тоноглолтой', img: '1476480862126-209bfaa8edc8' },
-  { name: 'Art Wine Bar', cat: 'Соёл & Урлаг', aimag: 'Улаанбаатар', host: 'host: @artspace', when: '2 хоногийн өмнө', desc: 'Урлагийн галерей болон дарсны бар нэг дор', img: '1514933651103-005eec06c04b' },
-];
-
-const EVENT_REQS = [
-  { name: 'Дуурийн шинэ тайлбар', tag: 'Соёл', day: '12', mon: '7-р сар', aimag: 'Улаанбаатар', host: 'host: @opera.mn', meta: 'Дуурийн театр · 19:00' },
-  { name: 'Jazz Night', tag: 'Хөгжим', day: '18', mon: '7-р сар', aimag: 'Улаанбаатар', host: 'host: @bluenote', meta: 'Blue Note · 21:00' },
-  { name: 'Хөвсгөл мөрний баяр', tag: 'Фестиваль', day: '02', mon: '8-р сар', aimag: 'Хөвсгөл', host: 'host: @travelmn', meta: 'Хатгал тосгон · 2 өдөр' },
-  { name: 'Street Food Fest', tag: 'Хоол', day: '25', mon: '7-р сар', aimag: 'Дархан-Уул', host: 'host: @foodie', meta: 'Төв талбай · 12:00–22:00' },
-];
+// `video` is only meaningful for category items — the background video shown
+// inside that category's own page, uploaded separately from `src` (the still
+// photo shown on Home's hover/selection preview). Every other BgKind still
+// holds a single image-or-video asset via `type`/`src`, same as before.
+interface BgItem { id?: number; slug?: string; name: string; type: 'image' | 'video'; src: string; video?: string; }
+// Which background list the "Фон зураг" tab is showing / editing. Named rather
+// than repeated inline at each of the state, lookup and handler sites, so
+// adding a kind is one edit here plus its own branches.
+type BgKind = 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader' | 'travelApps' | 'login';
 
 const INITIAL_ADS: Ad[] = [
   { title: 'Шинэ жилийн онцгой санал', desc: '', img: '1477959858617-67f85cf4f1df', from: '2026-07-01', to: '2026-07-31', views: 1240, active: true },
@@ -71,7 +63,10 @@ const SEARCH_PLACEHOLDER: Partial<Record<Tab, string>> = {
   ads: 'Зар хайх...',
 };
 
-const CAT_BG_DEFS: [string, string][] = CATS.map((c) => [c.name, c.hero]);
+// slug (not name) is the stable key here — a category's display name can be
+// renamed in data.ts at any time, and matching on it would silently break
+// this row's link to its already-saved backend id/image/video.
+const CAT_BG_DEFS: [string, string, string][] = CATS.map((c) => [c.name, c.hero, c.slug]);
 const ALL_AIMAGS = AIMAGS.map((a) => a[0]);
 
 const thumb = (img: string) => 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(img, 500) + '")';
@@ -96,8 +91,7 @@ export default function AdminPanel() {
   // index), so switching tabs clears whatever was typed for the last one.
   useEffect(() => { setQuery(''); }, [tab]);
 
-  const [placeDecisions, setPlaceDecisions] = useState<Record<number, 'ok' | 'no'>>({});
-  const [eventDecisions, setEventDecisions] = useState<Record<number, 'ok' | 'no'>>({});
+  const [placeActionErr, setPlaceActionErr] = useState('');
   const [ads, setAds] = useState<Ad[]>(INITIAL_ADS);
   const [adFormOpen, setAdFormOpen] = useState(false);
   const [adEditIdx, setAdEditIdx] = useState(-1);
@@ -106,13 +100,29 @@ export default function AdminPanel() {
   const [adFrom, setAdFrom] = useState('');
   const [adTo, setAdTo] = useState('');
 
-  const [scenicList, setScenicList] = useState<ScenicEntry[]>([
-    { name: 'Хайрхан толгой', desc: 'Нар жаргах гоё үзэмж', icon: '🏔️', aimag: 'Улаанбаатар', img: '1470071459604-3b5ec3a7fe05' },
-  ]);
-  const [adminEvents, setAdminEvents] = useState<AdminEvent[]>([
-    { name: 'Playtime Festival 2026', day: '11', mon: '7-р сар', tag: 'Фестиваль', aimag: 'Төв', meta: 'Гачуурт · 2 өдөр', img: '1533105079780-92b9be482077' },
-  ]);
-  const [createdPlaces, setCreatedPlaces] = useState<CreatedPlace[]>([]);
+  // Real place/scenic/event rows — approvedPlaces + pendingPlaceRows both come
+  // from Place (status 'approved' vs 'pending'); scenic pins and events have
+  // no moderation queue, so they're just "everyone's, fetched fresh".
+  const [approvedPlaces, setApprovedPlaces] = useState<any[]>([]);
+  const [pendingPlaceRows, setPendingPlaceRows] = useState<any[]>([]);
+  const [scenicList, setScenicList] = useState<any[]>([]);
+  const [adminEvents, setAdminEvents] = useState<any[]>([]);
+  const [contentSyncError, setContentSyncError] = useState('');
+
+  const refetchContent = React.useCallback(() => {
+    Promise.all([
+      apiGet<any[]>('/places'),
+      apiGetAuthed<any[]>('/places/pending'),
+      apiGet<any[]>('/scenic-pins'),
+      apiGet<any[]>('/events'),
+    ]).then(([places, pending, pins, events]) => {
+      setApprovedPlaces(places);
+      setPendingPlaceRows(pending);
+      setScenicList(pins);
+      setAdminEvents(events);
+    }).catch(() => setContentSyncError('Газар/эвент/үзэсгэлэнт газрын мэдээлэл татахад алдаа гарлаа.'));
+  }, []);
+  useEffect(() => { refetchContent(); }, [refetchContent]);
 
   const [sharedFormOpen, setSharedFormOpen] = useState(false);
   const [sharedFormKind, setSharedFormKind] = useState<CreateKind>('place');
@@ -127,11 +137,11 @@ export default function AdminPanel() {
   const [sgImg, setSgImg] = useState('');
   const [sgErr, setSgErr] = useState(false);
 
-  const [bgSub, setBgSub] = useState<'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader'>('cat');
+  const [bgSub, setBgSub] = useState<BgKind>('cat');
   // Seeded with the same local defaults as before so the tab isn't empty while the
   // backend fetch below is in flight; the effect then attaches real ids + latest
   // saved images so edits actually PATCH/PUT the right row and survive a refresh.
-  const [catBg, setCatBg] = useState<BgItem[]>(() => CAT_BG_DEFS.map(([name, id]) => ({ name, type: 'image' as const, src: U(id, 900) })));
+  const [catBg, setCatBg] = useState<BgItem[]>(() => CAT_BG_DEFS.map(([name, id, slug]) => ({ name, type: 'image' as const, src: U(id, 900), video: '', slug })));
   const [aimagBg, setAimagBg] = useState<BgItem[]>(() => ALL_AIMAGS.map((a) => ({ name: a, type: 'image' as const, src: U(AIMAG_BG[a] || '1470071459604-3b5ec3a7fe05', 900) })));
   // Single-item "list" so it can reuse the same edit modal as cat/aimag backgrounds.
   const [aboutBg, setAboutBg] = useState<BgItem[]>(() => [{ name: 'Бидний тухай фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1200) }]);
@@ -146,6 +156,10 @@ export default function AdminPanel() {
   const [suggestBg, setSuggestBg] = useState<BgItem[]>(() => SUGGESTS.map((s) => ({ slug: s.slug, name: s.title, type: 'image' as const, src: U(s.img, 900) })));
   // Full-bleed photo behind the Marauder's-map loading screen shown on first load.
   const [loaderBg, setLoaderBg] = useState<BgItem[]>(() => [{ name: 'Ачаалж буй дэлгэцийн фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1800) }]);
+  // Full-bleed photo/video behind the /login (OTP sign-in) screen.
+  const [loginBg, setLoginBg] = useState<BgItem[]>(() => [{ name: 'Нэвтрэх хуудасны фон', type: 'image', src: U('1470071459604-3b5ec3a7fe05', 1800) }]);
+  // Background photo/video behind the "Аяллын апп" card on the Suggest page.
+  const [travelAppsBg, setTravelAppsBg] = useState<BgItem[]>(() => TRAVEL_APPS.map((a) => ({ slug: a.slug, name: a.name, type: 'image' as const, src: U('1470071459604-3b5ec3a7fe05', 900) })));
   const [bgSyncError, setBgSyncError] = useState('');
   const [bgUploading, setBgUploading] = useState(false);
 
@@ -154,16 +168,16 @@ export default function AdminPanel() {
     (async () => {
       try {
         const [cats, aimags, settings] = await Promise.all([
-          apiGet<{ id: number; name: string; image: string | null }[]>('/categories'),
+          apiGet<{ id: number; slug: string; name: string; image: string | null; videoImage: string | null }[]>('/categories'),
           apiGet<{ id: number; name: string; backgroundImage: string | null }[]>('/aimags'),
-          apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; loaderBackgroundImage: string | null }>('/settings'),
+          apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; loaderBackgroundImage: string | null; travelAppsBackgroundImages: Record<string, string> | null; loginBackgroundImage: string | null }>('/settings'),
         ]);
         if (cancelled) return;
         setCatBg((prev) => prev.map((it) => {
-          const match = cats.find((c) => c.name === it.name);
+          const match = cats.find((c) => c.slug === it.slug);
           if (!match) return it;
           const src = match.image || it.src;
-          return { ...it, id: match.id, src, type: match.image ? (isVideoUrl(src) ? 'video' : 'image') : it.type };
+          return { ...it, id: match.id, src, type: 'image', video: match.videoImage || '' };
         }));
         setAimagBg((prev) => prev.map((it) => {
           const match = aimags.find((a) => a.name === it.name);
@@ -191,6 +205,17 @@ export default function AdminPanel() {
         if (settings.loaderBackgroundImage) {
           setLoaderBg((prev) => [{ ...prev[0], src: settings.loaderBackgroundImage as string, type: isVideoUrl(settings.loaderBackgroundImage as string) ? 'video' : 'image' }]);
         }
+        if (settings.loginBackgroundImage) {
+          setLoginBg((prev) => [{ ...prev[0], src: settings.loginBackgroundImage as string, type: isVideoUrl(settings.loginBackgroundImage as string) ? 'video' : 'image' }]);
+        }
+        if (settings.travelAppsBackgroundImages) {
+          const map = settings.travelAppsBackgroundImages;
+          setTravelAppsBg((prev) => prev.map((it) => {
+            const saved = it.slug ? map[it.slug] : null;
+            if (!saved) return it;
+            return { ...it, src: saved, type: isVideoUrl(saved) ? 'video' : 'image' };
+          }));
+        }
       } catch {
         if (!cancelled) setBgSyncError('Backend-тэй холбогдож чадсангүй — локал жишээ өгөгдөл харагдаж байна.');
       }
@@ -199,60 +224,72 @@ export default function AdminPanel() {
   }, []);
 
   const [bgEditOpen, setBgEditOpen] = useState(false);
-  const [bgEditKind, setBgEditKind] = useState<'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader'>('cat');
+  const [bgEditKind, setBgEditKind] = useState<BgKind>('cat');
   const [bgEditIdx, setBgEditIdx] = useState(-1);
   const [bgDraftType, setBgDraftType] = useState<'image' | 'video'>('image');
   const [bgDraftSrc, setBgDraftSrc] = useState('');
+  // Only used while editing a category ('cat') — its background video, held
+  // alongside bgDraftSrc (the photo) instead of replacing it, since a
+  // category now carries both at once.
+  const [bgDraftVideoSrc, setBgDraftVideoSrc] = useState('');
 
-  const pendingPlaces = PLACE_REQS.filter((_, i) => !placeDecisions[i]).length;
-  const pendingEvents = EVENT_REQS.filter((_, i) => !eventDecisions[i]).length;
+  const pendingPlaces = pendingPlaceRows.length;
 
-  const decidePlace = (i: number, val: 'ok' | 'no') => setPlaceDecisions((d) => ({ ...d, [i]: val }));
-  const decideEvent = (i: number, val: 'ok' | 'no') => setEventDecisions((d) => ({ ...d, [i]: val }));
+  const decidePlace = (id: number, status: 'approved' | 'rejected') => {
+    setPlaceActionErr('');
+    apiPatch(`/places/${id}/status`, { status })
+      .then(() => refetchContent())
+      .catch((err) => setPlaceActionErr(err instanceof Error ? err.message : String(err)));
+  };
 
   const openSharedForm = (kind: CreateKind) => { setSharedFormKind(kind); setSharedFormOpen(true); };
 
-  const onSharedSubmit = (data: CreateFormData) => {
-    if (data.kind === 'place') {
-      setCreatedPlaces((s) => [{ name: data.name, cat: data.catName || '', aimag: data.aimag, access: data.access, desc: data.desc || data.sub || data.catName || '', img: data.images[0] || '' }, ...s]);
-    } else if (data.kind === 'scenic') {
-      const loc = data.lat != null ? data.lat.toFixed(3) + ', ' + data.lng!.toFixed(3) : data.aimag;
-      setScenicList((s) => [{ name: data.name, desc: data.desc, icon: data.icon || '🏔️', aimag: loc, img: data.images[0] || '1470071459604-3b5ec3a7fe05' }, ...s]);
-    } else {
-      let day = '01', mon = '7-р сар';
-      if (data.date) { const d = new Date(data.date); if (!isNaN(+d)) { day = String(d.getDate()).padStart(2, '0'); mon = (d.getMonth() + 1) + '-р сар'; } }
-      const meta = [data.time, data.desc, 'Хамгийн ихдээ ' + data.max + ' хүн'].filter(Boolean).join(' · ');
-      setAdminEvents((s) => [{ name: data.name, day, mon, tag: 'Эвент', aimag: data.aimag, meta, img: data.images[0] || '1533105079780-92b9be482077' }, ...s]);
+  // No token passed — falls back to AdminPanel's own bootstrapped admin
+  // token (see lib/api.ts), same as every other write this screen already does.
+  const onSharedSubmit = async (data: CreateFormData) => {
+    try {
+      if (data.kind === 'place') await createPlace(undefined, data);
+      else if (data.kind === 'scenic') await createScenicPin(undefined, data);
+      else await createEvent(undefined, data);
+      setSharedFormOpen(false);
+      refetchContent();
+    } catch (err) {
+      alert('Үүсгэхэд алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
     }
-    setSharedFormOpen(false);
   };
 
-  const bgArrFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader') => (kind === 'aimag' ? aimagBg : kind === 'about' ? aboutBg : kind === 'home' ? homeBg : kind === 'flag' ? flagBg : kind === 'suggest' ? suggestBg : kind === 'loader' ? loaderBg : catBg);
-  const bgSetterFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader') => (kind === 'aimag' ? setAimagBg : kind === 'about' ? setAboutBg : kind === 'home' ? setHomeBg : kind === 'flag' ? setFlagBg : kind === 'suggest' ? setSuggestBg : kind === 'loader' ? setLoaderBg : setCatBg);
-  const bgLabelFor = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader') => (kind === 'aimag' ? 'Аймгийн фон' : kind === 'about' ? 'Тухай хуудасны фон' : kind === 'home' ? 'Нүүр хуудасны фон' : kind === 'flag' ? 'Монгол улсын дэлбээ' : kind === 'suggest' ? 'Санал болгохын фон' : kind === 'loader' ? 'Ачаалж буй дэлгэцийн фон' : 'Ангиллын фон');
+  const bgArrFor = (kind: BgKind) => (kind === 'aimag' ? aimagBg : kind === 'about' ? aboutBg : kind === 'home' ? homeBg : kind === 'flag' ? flagBg : kind === 'suggest' ? suggestBg : kind === 'loader' ? loaderBg : kind === 'travelApps' ? travelAppsBg : kind === 'login' ? loginBg : catBg);
+  const bgSetterFor = (kind: BgKind) => (kind === 'aimag' ? setAimagBg : kind === 'about' ? setAboutBg : kind === 'home' ? setHomeBg : kind === 'flag' ? setFlagBg : kind === 'suggest' ? setSuggestBg : kind === 'loader' ? setLoaderBg : kind === 'travelApps' ? setTravelAppsBg : kind === 'login' ? setLoginBg : setCatBg);
+  const bgLabelFor = (kind: BgKind) => (kind === 'aimag' ? 'Аймгийн фон' : kind === 'about' ? 'Тухай хуудасны фон' : kind === 'home' ? 'Нүүр хуудасны фон' : kind === 'flag' ? 'Монгол улсын дэлбээ' : kind === 'suggest' ? 'Санал болгохын фон' : kind === 'loader' ? 'Ачаалж буй дэлгэцийн фон' : kind === 'travelApps' ? 'Аяллын апп хэсгийн фон' : kind === 'login' ? 'Нэвтрэх хуудасны фон' : 'Ангиллын фон');
 
-  const openBgEdit = (kind: 'cat' | 'aimag' | 'about' | 'home' | 'flag' | 'suggest' | 'loader', idx: number) => {
+  const openBgEdit = (kind: BgKind, idx: number) => {
     const cur = bgArrFor(kind)[idx];
-    setBgEditKind(kind); setBgEditIdx(idx); setBgDraftType(cur.type); setBgDraftSrc(cur.src); setBgEditOpen(true);
+    setBgEditKind(kind); setBgEditIdx(idx); setBgDraftType(cur.type); setBgDraftSrc(cur.src); setBgDraftVideoSrc(cur.video || ''); setBgEditOpen(true);
   };
   const saveBg = async () => {
     if (bgEditIdx < 0) { setBgEditOpen(false); return; }
     const item = bgArrFor(bgEditKind)[bgEditIdx];
     try {
-      if (bgEditKind === 'cat' && item.id) await apiPatch(`/categories/${item.id}`, { image: bgDraftSrc });
+      if (bgEditKind === 'cat' && item.id) await apiPatch(`/categories/${item.id}`, { image: bgDraftSrc, videoImage: bgDraftVideoSrc });
       else if (bgEditKind === 'aimag' && item.id) await apiPatch(`/aimags/${item.id}`, { backgroundImage: bgDraftSrc });
       else if (bgEditKind === 'about') await apiPut('/settings', { aboutBackgroundImage: bgDraftSrc });
       else if (bgEditKind === 'home') await apiPut('/settings', { homeBackgroundImage: bgDraftSrc });
       else if (bgEditKind === 'flag') await apiPut('/settings', { mongoliaFlagImage: bgDraftSrc });
       else if (bgEditKind === 'loader') await apiPut('/settings', { loaderBackgroundImage: bgDraftSrc });
+      else if (bgEditKind === 'login') await apiPut('/settings', { loginBackgroundImage: bgDraftSrc });
       else if (bgEditKind === 'suggest' && item.slug) {
         const map: Record<string, string> = {};
         suggestBg.forEach((it) => { if (it.slug) map[it.slug] = it.src; });
         map[item.slug] = bgDraftSrc;
         await apiPut('/settings', { suggestBackgroundImages: map });
+      } else if (bgEditKind === 'travelApps' && item.slug) {
+        const map: Record<string, string> = {};
+        travelAppsBg.forEach((it) => { if (it.slug) map[it.slug] = it.src; });
+        map[item.slug] = bgDraftSrc;
+        await apiPut('/settings', { travelAppsBackgroundImages: map });
       }
       const setArr = bgSetterFor(bgEditKind);
-      setArr((arr) => arr.map((it, i) => (i === bgEditIdx ? { ...it, type: bgDraftType, src: bgDraftSrc } : it)));
+      setArr((arr) => arr.map((it, i) => (i === bgEditIdx ? (bgEditKind === 'cat' ? { ...it, type: 'image' as const, src: bgDraftSrc, video: bgDraftVideoSrc } : { ...it, type: bgDraftType, src: bgDraftSrc }) : it)));
       setBgEditOpen(false);
     } catch (err) {
       alert('Хадгалахад алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
@@ -265,6 +302,9 @@ export default function AdminPanel() {
     setBgUploading(true);
     try {
       const url = await uploadImage(f, 'backgrounds');
+      // A category keeps its photo and video as two independent slots — the
+      // video button fills bgDraftVideoSrc instead of replacing bgDraftSrc.
+      if (bgEditKind === 'cat' && asVideo) { setBgDraftVideoSrc(url); return; }
       setBgDraftType(asVideo ? 'video' : 'image');
       setBgDraftSrc(url);
     } catch (err) {
@@ -301,10 +341,10 @@ export default function AdminPanel() {
   const fmtD = (d: string) => (d ? d.slice(5).replace('-', '/') : '—');
 
   const stats = [
-    { label: 'Нийт газар', value: '128', sub: '+6 энэ долоо хоногт', color: '#f2ede3' },
-    { label: 'Хүлээгдэж буй хүсэлт', value: String(pendingPlaces + pendingEvents), sub: 'газар + эвент', color: 'var(--accent,#E8B84B)' },
+    { label: 'Нийт газар', value: String(approvedPlaces.length), sub: 'батлагдсан', color: '#f2ede3' },
+    { label: 'Хүлээгдэж буй хүсэлт', value: String(pendingPlaces), sub: 'газар', color: 'var(--accent,#E8B84B)' },
     { label: 'Идэвхтэй зар', value: String(ads.filter((a) => a.active).length), sub: 'нийт ' + ads.length + ' зар', color: '#a8d5a2' },
-    { label: 'Хэрэглэгчид', value: '2,340', sub: '+112 энэ сард', color: '#8ab4f8' },
+    { label: 'Эвент', value: String(adminEvents.length), sub: 'нийт эвент', color: '#8ab4f8' },
   ];
 
   const recentReqs = [
@@ -316,61 +356,80 @@ export default function AdminPanel() {
 
   const activeAds = ads.filter((a) => a.active);
 
-  const rowLabel = css('font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(242,237,227,.5);margin-bottom:12px');
-  const catBadge = css('font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:rgba(242,237,227,.8)');
-  const inputStyle = { ...css('font-family:inherit;color:#f2ede3;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.2);border-radius:11px;padding:10px 13px;outline:none'), fontSize: isMobile ? '16px' : '13px' };
+  const rowLabel = 'text-[11px] font-extrabold tracking-[.08em] uppercase text-[rgba(242,237,227,.5)] mb-3';
+  const catBadge = 'text-[10px] font-bold tracking-[.06em] uppercase px-[9px] py-[3px] rounded-full bg-[rgba(255,255,255,.08)] border border-[rgba(255,255,255,.2)] text-[rgba(242,237,227,.8)]';
+  const inputClass = 'font-[inherit] text-cream bg-[rgba(0,0,0,.35)] border border-[rgba(255,255,255,.2)] rounded-[11px] px-[13px] py-2.5 outline-none';
+  const inputStyle = { fontSize: isMobile ? '16px' : '13px' };
 
   return (
-    <div style={{ ...css(isMobile ? 'display:flex;flex-direction:column;min-height:100vh;color:#f2ede3' : 'display:flex;height:100vh;overflow:hidden;color:#f2ede3'), background: '#0b0a08', fontFamily: "'Manrope', sans-serif" }}>
-      <aside style={isMobile
-        ? css('width:100%;flex-shrink:0;display:flex;align-items:center;gap:6px;padding:10px 12px;box-sizing:border-box;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.08);overflow-x:auto')
-        : { ...css('flex-shrink:0;display:flex;flex-direction:column;box-sizing:border-box;background:rgba(255,255,255,.03);border-right:1px solid rgba(255,255,255,.08);transition:width .2s ease'), width: sbCollapsed ? 76 : 240, padding: sbCollapsed ? '26px 12px' : '26px 16px' }
-      }>
-        <div style={css(`display:flex;align-items:center;gap:8px;flex-shrink:0;padding:${isMobile ? '0 10px 0 0' : sbCollapsed ? '0 0 22px' : '0 4px 22px'};justify-content:${!isMobile && sbCollapsed ? 'center' : 'flex-start'}`)}>
-          <div style={css('width:32px;height:32px;border-radius:9px;background:var(--accent,#E8B84B);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#132a1f;flex-shrink:0')}>b</div>
+    <div className={isMobile ? 'flex flex-col min-h-screen text-cream' : 'flex h-screen overflow-hidden text-cream'} style={{ background: '#0b0a08', fontFamily: "'Manrope', sans-serif" }}>
+      <aside
+        className={isMobile
+          ? 'w-full flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 box-border bg-[rgba(255,255,255,.03)] border-b border-[rgba(255,255,255,.08)] overflow-x-auto'
+          : 'flex-shrink-0 flex flex-col box-border bg-[rgba(255,255,255,.03)] border-r border-[rgba(255,255,255,.08)] transition-[width] duration-200 ease-in-out'}
+        style={isMobile ? undefined : { width: sbCollapsed ? 76 : 240, padding: sbCollapsed ? '26px 12px' : '26px 16px' }}
+      >
+        <div
+          className="flex items-center gap-2 flex-shrink-0"
+          style={{ padding: isMobile ? '0 10px 0 0' : sbCollapsed ? '0 0 22px' : '0 4px 22px', justifyContent: !isMobile && sbCollapsed ? 'center' : 'flex-start' }}
+        >
+          <div className="w-8 h-8 rounded-[9px] bg-[var(--accent,#E8B84B)] flex items-center justify-center font-extrabold text-[15px] text-[#132a1f] flex-shrink-0">b</div>
           {!isMobile && !sbCollapsed && (
-            <div style={css('flex:1;min-width:0')}>
-              <div style={css('font-size:14.5px;font-weight:800;letter-spacing:-0.02em')}>big bang</div>
-              <div style={css('font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:rgba(242,237,227,.45)')}>admin panel</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[14.5px] font-extrabold tracking-[-0.02em]">big bang</div>
+              <div className="font-[ui-monospace,Menlo,monospace] text-[9.5px] tracking-[.18em] uppercase text-[rgba(242,237,227,.45)]">admin panel</div>
             </div>
           )}
           {!isMobile && (
-            <Hover as="button" onClick={() => setSbCollapsed((v) => !v)} title={sbCollapsed ? 'Цэсийг дэлгэх' : 'Цэсийг хумих'} s="cursor:pointer;font-family:inherit;flex-shrink:0;width:26px;height:26px;border-radius:8px;border:none;background:transparent;color:rgba(242,237,227,.5);display:flex;align-items:center;justify-content:center;transition:all .2s" h="background:rgba(255,255,255,.08);color:rgba(242,237,227,.9)">
+            <button
+              onClick={() => setSbCollapsed((v) => !v)}
+              title={sbCollapsed ? 'Цэсийг дэлгэх' : 'Цэсийг хумих'}
+              className="cursor-pointer font-[inherit] flex-shrink-0 w-[26px] h-[26px] rounded-lg border-none bg-transparent text-[rgba(242,237,227,.5)] flex items-center justify-center transition-all duration-200 hover:bg-[rgba(255,255,255,.08)] hover:text-[rgba(242,237,227,.9)]"
+            >
               {sbCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-            </Hover>
+            </button>
           )}
         </div>
 
         {isMobile ? (
           NAV.map((n) => {
             const on = tab === n.key;
-            const badge = n.key === 'places' ? pendingPlaces : n.key === 'events' ? pendingEvents : 0;
+            const badge = n.key === 'places' ? pendingPlaces : 0;
             return (
-              <Hover key={n.key} as="button" onClick={() => setTab(n.key)} s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;text-align:left;white-space:nowrap;flex-shrink:0;padding:9px 12px;border-radius:11px;border:none;background:${on ? 'var(--accent,#E8B84B)' : 'transparent'};color:${on ? '#132a1f' : 'rgba(242,237,227,.8)'};transition:all .2s`} h={on ? undefined : 'background:rgba(255,255,255,.07)'}>
+              <button
+                key={n.key}
+                onClick={() => setTab(n.key)}
+                className={`cursor-pointer font-[inherit] flex items-center gap-[7px] text-xs font-bold text-left whitespace-nowrap flex-shrink-0 px-3 py-[9px] rounded-[11px] border-none transition-all duration-200 ${on ? '' : 'hover:bg-[rgba(255,255,255,.07)]'}`}
+                style={{ background: on ? 'var(--accent,#E8B84B)' : 'transparent', color: on ? '#132a1f' : 'rgba(242,237,227,.8)' }}
+              >
                 <n.icon size={16} />
                 <span>{n.label}</span>
-                {badge > 0 && <span style={{ ...css('margin-left:auto;font-size:10.5px;font-weight:800;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:999px'), background: on ? 'rgba(0,0,0,.25)' : 'rgba(232, 184, 75,.2)', color: on ? '#132a1f' : 'var(--accent,#E8B84B)' }}>{badge}</span>}
-              </Hover>
+                {badge > 0 && <span className="ml-auto text-[10.5px] font-extrabold min-w-5 h-5 flex items-center justify-center rounded-full" style={{ background: on ? 'rgba(0,0,0,.25)' : 'rgba(232, 184, 75,.2)', color: on ? '#132a1f' : 'var(--accent,#E8B84B)' }}>{badge}</span>}
+              </button>
             );
           })
         ) : (
           NAV_GROUPS.map((g) => (
-            <div key={g.label} style={css('display:flex;flex-direction:column;gap:2px;margin-bottom:10px')}>
-              {!sbCollapsed && <div style={css('font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:rgba(242,237,227,.35);padding:8px 10px 6px')}>{g.label}</div>}
+            <div key={g.label} className="flex flex-col gap-0.5 mb-2.5">
+              {!sbCollapsed && <div className="text-[10px] font-extrabold tracking-[.09em] uppercase text-[rgba(242,237,227,.35)] pt-2 px-2.5 pb-1.5">{g.label}</div>}
               {g.keys.map((k) => {
                 const n = NAV.find((x) => x.key === k)!;
                 const on = tab === n.key;
-                const badge = n.key === 'places' ? pendingPlaces : n.key === 'events' ? pendingEvents : 0;
+                const badge = n.key === 'places' ? pendingPlaces : 0;
                 return (
-                  <Hover key={n.key} as="button" onClick={() => setTab(n.key)} title={sbCollapsed ? n.label : undefined}
-                    s={`cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:11px;justify-content:${sbCollapsed ? 'center' : 'flex-start'};font-size:13px;font-weight:700;text-align:left;white-space:nowrap;padding:${sbCollapsed ? '11px' : '11px 14px'};border-radius:11px;border:none;background:${on ? 'var(--accent,#E8B84B)' : 'transparent'};color:${on ? '#132a1f' : 'rgba(242,237,227,.8)'};transition:all .2s;position:relative`}
-                    h={on ? undefined : 'background:rgba(255,255,255,.07)'}>
+                  <button
+                    key={n.key}
+                    onClick={() => setTab(n.key)}
+                    title={sbCollapsed ? n.label : undefined}
+                    className={`cursor-pointer font-[inherit] flex items-center gap-[11px] text-[13px] font-bold text-left whitespace-nowrap rounded-[11px] border-none transition-all duration-200 relative ${sbCollapsed ? 'justify-center p-[11px]' : 'justify-start py-[11px] px-3.5'} ${on ? '' : 'hover:bg-[rgba(255,255,255,.07)]'}`}
+                    style={{ background: on ? 'var(--accent,#E8B84B)' : 'transparent', color: on ? '#132a1f' : 'rgba(242,237,227,.8)' }}
+                  >
                     <n.icon size={16} />
                     {!sbCollapsed && <span>{n.label}</span>}
                     {badge > 0 && (sbCollapsed
-                      ? <span style={{ position: 'absolute', top: 6, right: 6, width: 7, height: 7, borderRadius: '50%', background: on ? '#132a1f' : 'var(--accent,#E8B84B)' }} />
-                      : <span style={{ ...css('margin-left:auto;font-size:10.5px;font-weight:800;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:999px'), background: on ? 'rgba(0,0,0,.25)' : 'rgba(232, 184, 75,.2)', color: on ? '#132a1f' : 'var(--accent,#E8B84B)' }}>{badge}</span>)}
-                  </Hover>
+                      ? <span className="absolute top-1.5 right-1.5 w-[7px] h-[7px] rounded-full" style={{ background: on ? '#132a1f' : 'var(--accent,#E8B84B)' }} />
+                      : <span className="ml-auto text-[10.5px] font-extrabold min-w-5 h-5 flex items-center justify-center rounded-full" style={{ background: on ? 'rgba(0,0,0,.25)' : 'rgba(232, 184, 75,.2)', color: on ? '#132a1f' : 'var(--accent,#E8B84B)' }}>{badge}</span>)}
+                  </button>
                 );
               })}
             </div>
@@ -378,73 +437,74 @@ export default function AdminPanel() {
         )}
 
         {!isMobile && (
-          <div style={css(`margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 10px;border-top:1px solid rgba(255,255,255,.08);justify-content:${sbCollapsed ? 'center' : 'flex-start'}`)}>
-            <div style={css('width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#E8B84B,#b57f42);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#132a1f;flex-shrink:0')}>А</div>
+          <div className={`mt-auto flex items-center gap-2.5 px-2.5 py-3 border-t border-[rgba(255,255,255,.08)] ${sbCollapsed ? 'justify-center' : 'justify-start'}`}>
+            <div className="w-8 h-8 rounded-full bg-[linear-gradient(135deg,#E8B84B,#b57f42)] flex items-center justify-center text-xs font-extrabold text-[#132a1f] flex-shrink-0">А</div>
             {!sbCollapsed && (
               <div>
-                <div style={css('font-size:12px;font-weight:700')}>Админ</div>
-                <div style={css('font-size:10.5px;color:rgba(242,237,227,.45)')}>admin@bigbang.mn</div>
+                <div className="text-xs font-bold">Админ</div>
+                <div className="text-[10.5px] text-[rgba(242,237,227,.45)]">admin@bigbang.mn</div>
               </div>
             )}
           </div>
         )}
       </aside>
 
-      <main style={css(`flex:1;overflow:auto;box-sizing:border-box;padding:${isMobile ? '16px 16px 40px' : '32px 36px 60px'}`)}>
-        <div style={css('display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap')}>
+      <main className="flex-1 overflow-auto box-border" style={{ padding: isMobile ? '16px 16px 40px' : '32px 36px 60px' }}>
+        <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
           {tab !== 'dash' ? (
-            <div style={{ ...css('position:relative;flex:1;min-width:200px;max-width:340px'), }}>
-              <Search size={14} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'rgba(242,237,227,.4)', pointerEvents: 'none' }} />
+            <div className="relative flex-1 min-w-[200px] max-w-[340px]">
+              <Search size={14} className="absolute left-[13px] top-1/2 -translate-y-1/2 text-[rgba(242,237,227,.4)] pointer-events-none" />
               <input
                 ref={searchRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={SEARCH_PLACEHOLDER[tab] || 'Хайх...'}
-                style={{ ...css('width:100%;box-sizing:border-box;font-family:inherit;color:#f2ede3;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:9px 13px 9px 36px;outline:none'), fontSize: isMobile ? '16px' : '12.5px' }}
+                className="w-full box-border font-[inherit] text-cream bg-[rgba(255,255,255,.05)] border border-[rgba(255,255,255,.14)] rounded-full pt-[9px] pr-[13px] pb-[9px] pl-9 outline-none"
+                style={{ fontSize: isMobile ? '16px' : '12.5px' }}
               />
               {!isMobile && (
-                <span style={css('position:absolute;right:10px;top:50%;transform:translateY(-50%);font-family:ui-monospace,Menlo,monospace;font-size:10px;font-weight:700;color:rgba(242,237,227,.35);border:1px solid rgba(255,255,255,.16);border-radius:5px;padding:2px 6px;pointer-events:none')}>⌘K</span>
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 font-[ui-monospace,Menlo,monospace] text-[10px] font-bold text-[rgba(242,237,227,.35)] border border-[rgba(255,255,255,.16)] rounded-[5px] px-1.5 py-0.5 pointer-events-none">⌘K</span>
               )}
             </div>
           ) : <div />}
-          {tab === 'ads' && <Hover as="button" onClick={openAdForm} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)"><span style={css('font-size:15px;line-height:1')}>+</span>Зар нэмэх</Hover>}
-          {tab === 'places' && <Hover as="button" onClick={() => openSharedForm('place')} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)"><span style={css('font-size:15px;line-height:1')}>+</span>Газар нэмэх</Hover>}
-          {tab === 'scenic' && <Hover as="button" onClick={() => openSharedForm('scenic')} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)"><span style={css('font-size:15px;line-height:1')}>+</span>Үзэсгэлэнт газар үүсгэх</Hover>}
-          {tab === 'suggests' && <Hover as="button" onClick={openSuggestForm} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)"><span style={css('font-size:15px;line-height:1')}>+</span>Дэд карт нэмэх</Hover>}
-          {tab === 'events' && <Hover as="button" onClick={() => openSharedForm('event')} s="cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:8px 16px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s" h="transform:translateY(-2px)"><span style={css('font-size:15px;line-height:1')}>+</span>Эвент үүсгэх</Hover>}
+          {tab === 'ads' && <button onClick={openAdForm} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Зар нэмэх</button>}
+          {tab === 'places' && <button onClick={() => openSharedForm('place')} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Газар нэмэх</button>}
+          {tab === 'scenic' && <button onClick={() => openSharedForm('scenic')} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Үзэсгэлэнт газар үүсгэх</button>}
+          {tab === 'suggests' && <button onClick={openSuggestForm} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Дэд карт нэмэх</button>}
+          {tab === 'events' && <button onClick={() => openSharedForm('event')} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Эвент үүсгэх</button>}
         </div>
 
         {tab === 'dash' && (
           <>
-            <div style={{ ...css('display:grid;gap:16px'), gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)' }}>
+            <div className="grid gap-4" style={{ gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)' }}>
               {stats.map((s, i) => (
-                <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:13px 15px;background:rgba(255,255,255,.03)')}>
-                  <div style={css('font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(242,237,227,.5)')}>{s.label}</div>
-                  <div style={{ ...css('font-size:22px;font-weight:800;letter-spacing:-0.03em;margin-top:4px'), color: s.color }}>{s.value}</div>
-                  <div style={css('font-size:10.5px;color:rgba(242,237,227,.45);margin-top:2px')}>{s.sub}</div>
+                <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-[13px] py-[13px] px-[15px] bg-[rgba(255,255,255,.03)]">
+                  <div className="text-[10px] font-bold tracking-[.07em] uppercase text-[rgba(242,237,227,.5)]">{s.label}</div>
+                  <div className="text-[22px] font-extrabold tracking-[-0.03em] mt-1" style={{ color: s.color }}>{s.value}</div>
+                  <div className="text-[10.5px] text-[rgba(242,237,227,.45)] mt-0.5">{s.sub}</div>
                 </div>
               ))}
             </div>
-            <div style={{ ...css('display:grid;gap:16px;margin-top:16px'), gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
-              <div style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.03);overflow:hidden')}>
-                <div style={css('padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);font-size:13.5px;font-weight:800')}>Сүүлд ирсэн хүсэлтүүд</div>
+            <div className="grid gap-4 mt-4" style={{ gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
+              <div className="border border-[rgba(255,255,255,.1)] rounded-2xl bg-[rgba(255,255,255,.03)] overflow-hidden">
+                <div className="py-3.5 px-[18px] border-b border-[rgba(255,255,255,.08)] text-[13.5px] font-extrabold">Сүүлд ирсэн хүсэлтүүд</div>
                 {recentReqs.map((r, i) => (
-                  <Hover key={i} as="div" s="display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid rgba(255,255,255,.05);font-size:12.5px" h="background:rgba(255,255,255,.04)">
-                    <span style={{ ...css('width:6px;height:6px;border-radius:50%;flex-shrink:0'), background: r.dot }}></span>
-                    <span style={css('font-weight:700')}>{r.name}</span>
-                    <span style={css('color:rgba(242,237,227,.45)')}>{r.kind}</span>
-                    <span style={css('margin-left:auto;color:rgba(242,237,227,.4);font-size:11.5px')}>{r.when}</span>
-                  </Hover>
+                  <div key={i} className="flex items-center gap-3 py-[11px] px-[18px] border-b border-[rgba(255,255,255,.05)] text-[12.5px] hover:bg-[rgba(255,255,255,.04)]">
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: r.dot }}></span>
+                    <span className="font-bold">{r.name}</span>
+                    <span className="text-[rgba(242,237,227,.45)]">{r.kind}</span>
+                    <span className="ml-auto text-[rgba(242,237,227,.4)] text-[11.5px]">{r.when}</span>
+                  </div>
                 ))}
               </div>
-              <div style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.03);overflow:hidden')}>
-                <div style={css('padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);font-size:13.5px;font-weight:800')}>Идэвхтэй зарууд</div>
+              <div className="border border-[rgba(255,255,255,.1)] rounded-2xl bg-[rgba(255,255,255,.03)] overflow-hidden">
+                <div className="py-3.5 px-[18px] border-b border-[rgba(255,255,255,.08)] text-[13.5px] font-extrabold">Идэвхтэй зарууд</div>
                 {activeAds.map((a, i) => (
-                  <Hover key={i} as="div" s="display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid rgba(255,255,255,.05);font-size:12.5px" h="background:rgba(255,255,255,.04)">
-                    <div style={{ ...css('width:44px;height:30px;border-radius:6px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: thumb(a.img) }}></div>
-                    <span style={css('font-weight:700')}>{a.title}</span>
-                    <span style={css('margin-left:auto;color:var(--accent,#E8B84B);font-weight:800;font-size:11.5px')}>{a.views.toLocaleString()} үзэлт</span>
-                  </Hover>
+                  <div key={i} className="flex items-center gap-3 py-[11px] px-[18px] border-b border-[rgba(255,255,255,.05)] text-[12.5px] hover:bg-[rgba(255,255,255,.04)]">
+                    <div className="w-11 h-[30px] rounded-md bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(a.img) }}></div>
+                    <span className="font-bold">{a.title}</span>
+                    <span className="ml-auto text-[var(--accent,#E8B84B)] font-extrabold text-[11.5px]">{a.views.toLocaleString()} үзэлт</span>
+                  </div>
                 ))}
               </div>
             </div>
@@ -453,150 +513,119 @@ export default function AdminPanel() {
 
         {tab === 'places' && (
           <>
-            {createdPlaces.length > 0 && (
-              <div style={css('margin-bottom:22px')}>
-                <div style={rowLabel}>Админаас нэмсэн газрууд</div>
-                <div style={css('display:flex;flex-direction:column;gap:12px')}>
-                  {createdPlaces.filter((p) => matches(p.name)).map((p, i) => (
-                    <div key={i} style={css('display:flex;gap:16px;align-items:center;border:1px solid rgba(232, 184, 75,.28);border-radius:16px;padding:14px;background:rgba(232, 184, 75,.05)')}>
-                      <div style={{ ...css('width:120px;height:74px;border-radius:11px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: thumb(p.img) }}></div>
-                      <div style={css('flex:1;min-width:0')}>
-                        <div style={css('display:flex;align-items:center;gap:10px')}>
-                          <span style={css('font-size:15px;font-weight:800')}>{p.name}</span>
-                          <span style={catBadge}>{p.cat}</span>
-                          {p.access && <span title="Тусгай хэрэгцээт хүнд ээлтэй" style={css('display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:999px;background:rgba(0,0,0,.5);color:#8fd6c6;border:1px solid rgba(255,255,255,.26)')}><Accessibility size={13} /></span>}
+            {contentSyncError && <div className="mb-4 text-xs font-bold text-[#f08a8a]">{contentSyncError}</div>}
+            {placeActionErr && <div className="mb-4 text-xs font-bold text-[#f08a8a]">{placeActionErr}</div>}
+            {approvedPlaces.length > 0 && (
+              <div className="mb-[22px]">
+                <div className={rowLabel}>Батлагдсан газрууд</div>
+                <div className="flex flex-col gap-3">
+                  {approvedPlaces.filter((p) => matches(p.name)).map((p) => (
+                    <div key={p.id} className="flex gap-4 items-center border border-[rgba(232,184,75,.28)] rounded-2xl p-3.5 bg-[rgba(232,184,75,.05)]">
+                      <div className="w-[120px] h-[74px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.image || '') }}></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-[15px] font-extrabold">{p.name}</span>
+                          <span className={catBadge}>{p.category?.name}</span>
+                          {p.accessible && <span title="Тусгай хэрэгцээт хүнд ээлтэй" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[rgba(0,0,0,.5)] text-[#8fd6c6] border border-[rgba(255,255,255,.26)]"><Accessibility size={13} /></span>}
                         </div>
-                        <div style={css('font-size:12px;color:rgba(242,237,227,.55);margin-top:4px')}>{p.aimag} · {p.desc}</div>
+                        <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag?.name} · {p.description || '—'}</div>
                       </div>
-                      <span style={css('flex-shrink:0;font-size:11.5px;font-weight:800;padding:6px 15px;border-radius:999px;background:rgba(168,213,162,.15);color:#a8d5a2')}>Нийтлэгдсэн ✓</span>
+                      <span className="flex-shrink-0 text-[11.5px] font-extrabold py-1.5 px-[15px] rounded-full bg-[rgba(168,213,162,.15)] text-[#a8d5a2]">Нийтлэгдсэн ✓</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-            <div style={rowLabel}>Host-уудын илгээсэн хүсэлт</div>
-            <div style={css('display:flex;flex-direction:column;gap:14px')}>
-              {PLACE_REQS.map((p, i) => ({ p, i })).filter(({ p }) => matches(p.name)).map(({ p, i }) => {
-                const dec = placeDecisions[i];
-                return (
-                  <Hover key={i} as="div" s="display:flex;gap:16px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:14px;background:rgba(255,255,255,.03);transition:border-color .2s" h="border-color:rgba(242,237,227,.28)">
-                    <div style={{ ...css('width:120px;height:84px;border-radius:11px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: thumb(p.img) }}></div>
-                    <div style={css('flex:1;min-width:0')}>
-                      <div style={css('display:flex;align-items:center;gap:10px')}>
-                        <span style={css('font-size:15px;font-weight:800')}>{p.name}</span>
-                        <span style={catBadge}>{p.cat}</span>
-                      </div>
-                      <div style={css('font-size:12px;color:rgba(242,237,227,.55);margin-top:4px')}>{p.aimag} · {p.host} · {p.when}</div>
-                      <div style={css('font-size:12px;color:rgba(242,237,227,.45);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{p.desc}</div>
+            <div className={rowLabel}>Host-уудын илгээсэн хүсэлт</div>
+            <div className="flex flex-col gap-3.5">
+              {pendingPlaceRows.filter((p) => matches(p.name)).map((p) => (
+                <div key={p.id} className="flex gap-4 items-center border border-[rgba(255,255,255,.1)] rounded-2xl p-3.5 bg-[rgba(255,255,255,.03)] transition-colors duration-200 hover:border-[rgba(242,237,227,.28)]">
+                  <div className="w-[120px] h-[84px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.image || '') }}></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[15px] font-extrabold">{p.name}</span>
+                      <span className={catBadge}>{p.category?.name}</span>
                     </div>
-                    {!dec && (
-                      <div style={css('display:flex;gap:8px;flex-shrink:0')}>
-                        <button onClick={() => decidePlace(i, 'ok')} style={css('cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;padding:8px 18px;border-radius:999px;border:none;background:#a8d5a2;color:#132a1f')}>Батлах</button>
-                        <button onClick={() => decidePlace(i, 'no')} style={css('cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;padding:8px 18px;border-radius:999px;border:1px solid rgba(240,138,138,.5);background:transparent;color:#f08a8a')}>Татгалзах</button>
-                      </div>
-                    )}
-                    {dec && <span style={{ ...css('flex-shrink:0;font-size:12px;font-weight:800;padding:7px 16px;border-radius:999px'), background: dec === 'ok' ? 'rgba(168,213,162,.15)' : 'rgba(240,138,138,.14)', color: dec === 'ok' ? '#a8d5a2' : '#f08a8a' }}>{dec === 'ok' ? 'Батлагдсан ✓' : 'Татгалзсан'}</span>}
-                  </Hover>
-                );
-              })}
+                    <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag?.name} · илгээсэн: @{p.addedByUser?.username} · {new Date(p.createdAt).toLocaleDateString('mn-MN')}</div>
+                    <div className="text-xs text-[rgba(242,237,227,.45)] mt-[3px] whitespace-nowrap overflow-hidden text-ellipsis">{p.description || '—'}</div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button onClick={() => decidePlace(p.id, 'approved')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border-none bg-[#a8d5a2] text-[#132a1f]">Батлах</button>
+                    <button onClick={() => decidePlace(p.id, 'rejected')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border border-[rgba(240,138,138,.5)] bg-transparent text-[#f08a8a]">Татгалзах</button>
+                  </div>
+                </div>
+              ))}
+              {pendingPlaceRows.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Хүлээгдэж буй хүсэлт алга</div>}
             </div>
           </>
         )}
 
         {tab === 'scenic' && (
-          <div style={css('display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px')}>
-            {scenicList.filter((s) => matches(s.name)).map((s, i) => (
-              <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)')}>
-                <div style={{ ...css('position:relative;aspect-ratio:16/9;background-size:cover;background-position:center'), backgroundImage: thumb(s.img) }}>
-                  <span style={css('position:absolute;left:10px;top:10px;font-size:18px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.24)')}>{s.icon}</span>
-                  <span style={css('position:absolute;right:10px;top:10px;font-size:10px;font-weight:800;letter-spacing:.05em;padding:3px 10px;border-radius:999px;background:rgba(168,213,162,.85);color:#132a1f')}>Нийтлэгдсэн</span>
-                </div>
-                <div style={css('padding:13px 15px 15px')}>
-                  <div style={css('font-size:14px;font-weight:800')}>{s.name}</div>
-                  <div style={css('font-size:11.5px;color:rgba(242,237,227,.5);margin-top:3px')}>{s.aimag} · {s.desc}</div>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+            {scenicList.filter((s) => matches(s.name)).map((s) => (
+              <div key={s.id} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                <div className="relative aspect-[16/9] bg-cover bg-center" style={{ backgroundImage: itemThumbOf(s.image || '') }}></div>
+                <div className="pt-[13px] px-[15px] pb-[15px]">
+                  <div className="flex items-center gap-2">
+                    <span className={catBadge}>{s.type}</span>
+                  </div>
+                  <div className="text-sm font-extrabold mt-1.5">{s.name}</div>
+                  <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{s.aimag?.name} · {s.description || '—'}</div>
                 </div>
               </div>
             ))}
+            {scenicList.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Одоогоор үзэсгэлэнт газар алга</div>}
           </div>
         )}
 
         {tab === 'events' && (
-          <>
-            {adminEvents.length > 0 && (
-              <div style={css('margin-bottom:22px')}>
-                <div style={rowLabel}>Админаас үүсгэсэн эвентүүд</div>
-                <div style={css('display:flex;flex-direction:column;gap:12px')}>
-                  {adminEvents.filter((ev) => matches(ev.name)).map((ev, i) => (
-                    <div key={i} style={css('display:flex;gap:16px;align-items:center;border:1px solid rgba(232, 184, 75,.28);border-radius:16px;padding:14px;background:rgba(232, 184, 75,.05)')}>
-                      <div style={{ ...css('width:96px;height:64px;border-radius:11px;background-size:cover;background-position:center;flex-shrink:0'), backgroundImage: thumb(ev.img) }}></div>
-                      <div style={css('width:56px;flex-shrink:0;text-align:center;padding:8px 0;border-radius:11px;background:rgba(232, 184, 75,.14);border:1px solid rgba(232, 184, 75,.35)')}>
-                        <div style={css('font-size:20px;font-weight:800;color:var(--accent,#E8B84B);line-height:1')}>{ev.day}</div>
-                        <div style={css('font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(242,237,227,.6);margin-top:3px')}>{ev.mon}</div>
-                      </div>
-                      <div style={css('flex:1;min-width:0')}>
-                        <div style={css('display:flex;align-items:center;gap:10px')}>
-                          <span style={css('font-size:15px;font-weight:800')}>{ev.name}</span>
-                          <span style={catBadge}>{ev.tag}</span>
-                        </div>
-                        <div style={css('font-size:12px;color:rgba(242,237,227,.55);margin-top:4px')}>{ev.aimag} · {ev.meta}</div>
-                      </div>
-                      <span style={css('flex-shrink:0;font-size:11.5px;font-weight:800;padding:6px 15px;border-radius:999px;background:rgba(168,213,162,.15);color:#a8d5a2')}>Нийтлэгдсэн ✓</span>
+          <div className="flex flex-col gap-3">
+            {adminEvents.filter((ev) => matches(ev.name)).map((ev) => {
+              const d = new Date(ev.startDate);
+              const day = String(d.getDate()).padStart(2, '0');
+              const mon = String(d.getMonth() + 1) + '-р сар';
+              return (
+                <div key={ev.id} className="flex gap-4 items-center border border-[rgba(255,255,255,.1)] rounded-2xl p-3.5 bg-[rgba(255,255,255,.03)]">
+                  <div className="w-24 h-16 rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(ev.image || '') }}></div>
+                  <div className="w-14 flex-shrink-0 text-center py-2 px-0 rounded-[11px] bg-[rgba(232,184,75,.14)] border border-[rgba(232,184,75,.35)]">
+                    <div className="text-xl font-extrabold text-[var(--accent,#E8B84B)] leading-none">{day}</div>
+                    <div className="text-[10px] font-bold tracking-[.1em] uppercase text-[rgba(242,237,227,.6)] mt-[3px]">{mon}</div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[15px] font-extrabold">{ev.name}</span>
+                      {ev.tag && <span className={catBadge}>{ev.tag}</span>}
+                      {ev.featured && <span className="text-[10.5px] font-extrabold py-1 px-[11px] rounded-full bg-[rgba(232,184,75,.2)] text-[var(--accent,#E8B84B)]">Онцлох</span>}
                     </div>
-                  ))}
+                    <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{ev.aimag?.name} · {ev.meta || '—'}</div>
+                  </div>
                 </div>
-              </div>
-            )}
-            <div style={rowLabel}>Host-уудын илгээсэн хүсэлт</div>
-            <div style={css('display:flex;flex-direction:column;gap:14px')}>
-              {EVENT_REQS.map((ev, i) => ({ ev, i })).filter(({ ev }) => matches(ev.name)).map(({ ev, i }) => {
-                const dec = eventDecisions[i];
-                return (
-                  <Hover key={i} as="div" s="display:flex;gap:16px;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:14px;background:rgba(255,255,255,.03);transition:border-color .2s" h="border-color:rgba(242,237,227,.28)">
-                    <div style={css('width:56px;flex-shrink:0;text-align:center;padding:8px 0;border-radius:11px;background:rgba(232, 184, 75,.12);border:1px solid rgba(232, 184, 75,.3)')}>
-                      <div style={css('font-size:20px;font-weight:800;color:var(--accent,#E8B84B);line-height:1')}>{ev.day}</div>
-                      <div style={css('font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(242,237,227,.6);margin-top:3px')}>{ev.mon}</div>
-                    </div>
-                    <div style={css('flex:1;min-width:0')}>
-                      <div style={css('display:flex;align-items:center;gap:10px')}>
-                        <span style={css('font-size:15px;font-weight:800')}>{ev.name}</span>
-                        <span style={catBadge}>{ev.tag}</span>
-                      </div>
-                      <div style={css('font-size:12px;color:rgba(242,237,227,.55);margin-top:4px')}>{ev.aimag} · {ev.host} · {ev.meta}</div>
-                    </div>
-                    {!dec && (
-                      <div style={css('display:flex;gap:8px;flex-shrink:0')}>
-                        <button onClick={() => decideEvent(i, 'ok')} style={css('cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;padding:8px 18px;border-radius:999px;border:none;background:#a8d5a2;color:#132a1f')}>Зөвшөөрөх</button>
-                        <button onClick={() => decideEvent(i, 'no')} style={css('cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;padding:8px 18px;border-radius:999px;border:1px solid rgba(240,138,138,.5);background:transparent;color:#f08a8a')}>Татгалзах</button>
-                      </div>
-                    )}
-                    {dec && <span style={{ ...css('flex-shrink:0;font-size:12px;font-weight:800;padding:7px 16px;border-radius:999px'), background: dec === 'ok' ? 'rgba(168,213,162,.15)' : 'rgba(240,138,138,.14)', color: dec === 'ok' ? '#a8d5a2' : '#f08a8a' }}>{dec === 'ok' ? 'Зөвшөөрсөн ✓' : 'Татгалзсан'}</span>}
-                  </Hover>
-                );
-              })}
-            </div>
-          </>
+              );
+            })}
+            {adminEvents.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Одоогоор эвент алга</div>}
+          </div>
         )}
 
         {tab === 'suggests' && (
           <>
-            <div style={css('font-size:12px;color:rgba(242,237,227,.5);margin-bottom:16px;max-width:640px;line-height:1.5')}>
+            <div className="text-xs text-[rgba(242,237,227,.5)] mb-4 max-w-[640px] leading-[1.5]">
               Гол апп дээрх "Санал болгох" карт бүрийг дарахад доор харагдах дэд картуудыг ангилал тус бүрээр удирдана.
             </div>
-            <div style={css('display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap')}>
+            <div className="flex gap-2 mb-5 flex-wrap">
               {SUGGESTS.map((s) => {
                 const on = suggestActiveSlug === s.slug;
                 return (
-                  <button key={s.slug} onClick={() => setSuggestActiveSlug(s.slug)} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 18px;border-radius:999px;transition:all .2s'), border: `1px solid ${on ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: on ? 'var(--accent,#E8B84B)' : 'transparent', color: on ? '#132a1f' : 'rgba(242,237,227,.8)' }}>{s.title} · {(suggestCollections[s.slug] || []).length}</button>
+                  <button key={s.slug} onClick={() => setSuggestActiveSlug(s.slug)} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-[18px] rounded-full transition-all duration-200" style={{ border: `1px solid ${on ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: on ? 'var(--accent,#E8B84B)' : 'transparent', color: on ? '#132a1f' : 'rgba(242,237,227,.8)' }}>{s.title} · {(suggestCollections[s.slug] || []).length}</button>
                 );
               })}
             </div>
-            <div style={css('display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px')}>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
               {(suggestCollections[suggestActiveSlug] || []).filter((it) => matches(it.name)).map((it, i) => (
-                <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)')}>
-                  <div style={{ ...css('position:relative;aspect-ratio:16/10;background-size:cover;background-position:center'), backgroundImage: thumb(it.img) }}></div>
-                  <div style={css('padding:13px 15px 15px')}>
-                    <div style={css('font-size:14px;font-weight:800')}>{it.name}</div>
-                    <div style={css('font-size:11.5px;color:rgba(242,237,227,.5);margin-top:3px')}>{it.desc}</div>
+                <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                  <div className="relative aspect-[16/10] bg-cover bg-center" style={{ backgroundImage: thumb(it.img) }}></div>
+                  <div className="pt-[13px] px-[15px] pb-[15px]">
+                    <div className="text-sm font-extrabold">{it.name}</div>
+                    <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{it.desc}</div>
                   </div>
                 </div>
               ))}
@@ -606,35 +635,49 @@ export default function AdminPanel() {
 
         {tab === 'bg' && (
           <>
-            <div style={css('display:flex;gap:10px;margin-bottom:22px;flex-wrap:wrap')}>
-              <button onClick={() => setBgSub('cat')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'cat' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'cat' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'cat' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Ангиллын фон · {catBg.length}</button>
-              <button onClick={() => setBgSub('aimag')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'aimag' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'aimag' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'aimag' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Аймгийн фон · {aimagBg.length}</button>
-              <button onClick={() => setBgSub('about')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'about' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'about' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'about' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Тухай хуудасны фон · {aboutBg.length}</button>
-              <button onClick={() => setBgSub('home')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'home' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'home' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'home' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Нүүр хуудасны фон · {homeBg.length}</button>
-              <button onClick={() => setBgSub('flag')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'flag' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'flag' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'flag' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Монголын дэлбээ (Глобус) · {flagBg.length}</button>
-              <button onClick={() => setBgSub('suggest')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'suggest' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'suggest' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'suggest' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Санал болгохын фон · {suggestBg.length}</button>
-              <button onClick={() => setBgSub('loader')} style={{ ...css('cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 20px;border-radius:999px;transition:all .2s'), border: `1px solid ${bgSub === 'loader' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'loader' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'loader' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Ачаалж буй дэлгэцийн фон · {loaderBg.length}</button>
+            <div className="flex gap-2.5 mb-[22px] flex-wrap">
+              <button onClick={() => setBgSub('cat')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'cat' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'cat' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'cat' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Ангиллын фон · {catBg.length}</button>
+              <button onClick={() => setBgSub('aimag')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'aimag' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'aimag' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'aimag' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Аймгийн фон · {aimagBg.length}</button>
+              <button onClick={() => setBgSub('about')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'about' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'about' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'about' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Тухай хуудасны фон · {aboutBg.length}</button>
+              <button onClick={() => setBgSub('home')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'home' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'home' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'home' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Нүүр хуудасны фон · {homeBg.length}</button>
+              <button onClick={() => setBgSub('flag')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'flag' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'flag' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'flag' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Монголын дэлбээ (Глобус) · {flagBg.length}</button>
+              <button onClick={() => setBgSub('suggest')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'suggest' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'suggest' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'suggest' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Санал болгохын фон · {suggestBg.length}</button>
+              <button onClick={() => setBgSub('loader')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'loader' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'loader' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'loader' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Ачаалж буй дэлгэцийн фон · {loaderBg.length}</button>
+              <button onClick={() => setBgSub('login')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'login' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'login' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'login' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Нэвтрэх хуудасны фон · {loginBg.length}</button>
+              <button onClick={() => setBgSub('travelApps')} className="cursor-pointer font-[inherit] text-[12.5px] font-bold py-[9px] px-5 rounded-full transition-all duration-200" style={{ border: `1px solid ${bgSub === 'travelApps' ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`, background: bgSub === 'travelApps' ? 'var(--accent,#E8B84B)' : 'transparent', color: bgSub === 'travelApps' ? '#132a1f' : 'rgba(242,237,227,.8)' }}>Аяллын апп хэсгийн фон · {travelAppsBg.length}</button>
             </div>
-            <div style={css('font-size:12px;color:rgba(242,237,227,.5);margin-bottom:16px;max-width:640px;line-height:1.5')}>
-              {bgSub === 'cat' ? 'Хэрэглэгч ангилал сонгоход арын фонд харагдах зураг. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'aimag' ? '21 аймаг + Нийслэлийн арын фон. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'home' ? 'Ямар ч ангилал, аймаг сонгоогүй үед нүүр хуудсанд анхнаас нь харагдах фон зураг.' : bgSub === 'flag' ? '"Дэлхийн архив" 3D глобус дээр Монголыг сонгоход харагдах жинхэнэ дэлбээний зураг (зөвхөн зураг, видео биш) — оруулаагүй бол автоматаар зурсан Соёмбо харагдана.' : bgSub === 'suggest' ? 'Нүүр хуудасны "Санал болгох" том картуудын арын дэвсгэр зураг/бичлэг.' : bgSub === 'loader' ? 'Апп анх ачаалж байх үеийн Marauder\'s Map дэлгэцийн арын дэвсгэр зураг — оруулаагүй бол өнөөгийн бараан градиент харагдана.' : '"Бидний тухай" хуудасны үндсэн дэвсгэр зураг.'}
+            <div className="text-xs text-[rgba(242,237,227,.5)] mb-4 max-w-[640px] leading-[1.5]">
+              {bgSub === 'cat' ? 'Ангилал бүрт 2 тусдаа фон байна: Зураг — нүүр хуудсанд ангиллаа сонгоход харагдана; Бичлэг — тухайн ангилал руу орсны дараа тоглоно.' : bgSub === 'aimag' ? '21 аймаг + Нийслэлийн арын фон. Видео оруулбал автоматаар дугуйгаар тоглоно.' : bgSub === 'home' ? 'Ямар ч ангилал, аймаг сонгоогүй үед нүүр хуудсанд анхнаас нь харагдах фон зураг.' : bgSub === 'flag' ? '"Дэлхийн архив" 3D глобус дээр Монголыг сонгоход харагдах жинхэнэ дэлбээний зураг (зөвхөн зураг, видео биш) — оруулаагүй бол автоматаар зурсан Соёмбо харагдана.' : bgSub === 'suggest' ? 'Нүүр хуудасны "Санал болгох" том картуудын арын дэвсгэр зураг/бичлэг.' : bgSub === 'loader' ? 'Апп анх ачаалж байх үеийн Marauder\'s Map дэлгэцийн арын дэвсгэр зураг — оруулаагүй бол өнөөгийн бараан градиент харагдана.' : bgSub === 'login' ? 'Нэвтрэх / бүртгүүлэх хуудасны (Хэрэглэгч ба Host хоёр урсгал нэг дэлгэц) арын дэвсгэр зураг/бичлэг — оруулаагүй бол ерөнхий жишээ зураг харагдана.' : bgSub === 'travelApps' ? '"Санал болгох" хуудасны доод хэсэгт байрлах Аяллын апп-уудын (Organic Maps, OsmAnd г.м) карт тус бүрийн арын дэвсгэр зураг/бичлэг — апп бүрт тусад нь оруулна, оруулаагүй бол тухайн картын өнгөт градиент харагдана.' : '"Бидний тухай" хуудасны үндсэн дэвсгэр зураг.'}
             </div>
             {bgSyncError && (
-              <div style={css('font-size:11.5px;color:#f08a8a;margin-bottom:16px;padding:10px 14px;border-radius:10px;border:1px dashed rgba(240,138,138,.4);background:rgba(240,138,138,.06);max-width:640px')}>{bgSyncError}</div>
+              <div className="text-[11.5px] text-[#f08a8a] mb-4 py-2.5 px-3.5 rounded-[10px] border border-dashed border-[rgba(240,138,138,.4)] bg-[rgba(240,138,138,.06)] max-w-[640px]">{bgSyncError}</div>
             )}
-            <div style={css('display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px')}>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
               {bgArrFor(bgSub).map((it, i) => ({ it, i })).filter(({ it }) => matches(it.name)).map(({ it, i }) => (
-                <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)')}>
-                  <div style={css('position:relative;aspect-ratio:16/10;overflow:hidden;background:#0b0a08')}>
-                    {it.type === 'video' ? (
-                      <video src={it.src} autoPlay loop muted playsInline style={css('position:absolute;inset:0;width:100%;height:100%;object-fit:cover') as any} />
+                <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                  <div className="relative aspect-[16/10] overflow-hidden bg-ink">
+                    {bgSub === 'cat' ? (
+                      // Category thumbnail always shows the photo (Home never plays
+                      // its video) — a second badge just flags whether a video is
+                      // also on file for when the visitor enters the category.
+                      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(it.src, 700)}")` }}></div>
+                    ) : it.type === 'video' ? (
+                      <video src={it.src} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
-                      <div style={{ ...css('position:absolute;inset:0;background-size:cover;background-position:center'), backgroundImage: `url("${imgUrl(it.src, 700)}")` }}></div>
+                      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(it.src, 700)}")` }}></div>
                     )}
-                    <span style={css('position:absolute;left:9px;top:9px;font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:rgba(0,0,0,.62);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.2);color:#f2ede3;display:inline-flex;align-items:center;gap:5px')}>{it.type === 'video' ? <><Film size={11} /> Бичлэг</> : <><ImageIcon size={11} /> Зураг</>}</span>
+                    {bgSub === 'cat' ? (
+                      <div className="absolute left-[9px] top-[9px] flex gap-1.5">
+                        <span className="text-[9.5px] font-extrabold tracking-[.05em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(0,0,0,.62)] backdrop-blur-[6px] border border-[rgba(255,255,255,.2)] text-cream inline-flex items-center gap-[5px]"><ImageIcon size={11} /> Зураг</span>
+                        {it.video && <span className="text-[9.5px] font-extrabold tracking-[.05em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(0,0,0,.62)] backdrop-blur-[6px] border border-[rgba(255,255,255,.2)] text-cream inline-flex items-center gap-[5px]"><Film size={11} /> Бичлэгтэй</span>}
+                      </div>
+                    ) : (
+                      <span className="absolute left-[9px] top-[9px] text-[9.5px] font-extrabold tracking-[.05em] uppercase py-[3px] px-[9px] rounded-full bg-[rgba(0,0,0,.62)] backdrop-blur-[6px] border border-[rgba(255,255,255,.2)] text-cream inline-flex items-center gap-[5px]">{it.type === 'video' ? <><Film size={11} /> Бичлэг</> : <><ImageIcon size={11} /> Зураг</>}</span>
+                    )}
                   </div>
-                  <div style={css('display:flex;align-items:center;gap:10px;padding:11px 13px')}>
-                    <span style={css('flex:1;min-width:0;font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis')}>{it.name}</span>
-                    <Hover as="button" onClick={() => openBgEdit(bgSub, i)} s="cursor:pointer;font-family:inherit;flex-shrink:0;font-size:11.5px;font-weight:700;padding:6px 14px;border-radius:999px;border:1px solid rgba(242,237,227,.28);background:transparent;color:rgba(242,237,227,.85);transition:all .2s" h="border-color:var(--accent,#E8B84B);color:var(--accent,#E8B84B)">Засах</Hover>
+                  <div className="flex items-center gap-2.5 py-[11px] px-[13px]">
+                    <span className="flex-1 min-w-0 text-[13px] font-extrabold whitespace-nowrap overflow-hidden text-ellipsis">{it.name}</span>
+                    <button onClick={() => openBgEdit(bgSub, i)} className="cursor-pointer font-[inherit] flex-shrink-0 text-[11.5px] font-bold py-1.5 px-3.5 rounded-full border border-[rgba(242,237,227,.28)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">Засах</button>
                   </div>
                 </div>
               ))}
@@ -643,18 +686,18 @@ export default function AdminPanel() {
         )}
 
         {tab === 'ads' && (
-          <div style={css('display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px')}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-[18px]">
             {ads.map((a, i) => ({ a, i })).filter(({ a }) => matches(a.title)).map(({ a, i }) => (
-              <div key={i} style={css('border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.03)')}>
-                <div style={{ ...css('position:relative;aspect-ratio:16/8;background-size:cover;background-position:center'), backgroundImage: thumb(a.img) }}>
-                  <span style={{ ...css('position:absolute;left:10px;top:10px;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:999px'), background: a.active ? 'rgba(168,213,162,.85)' : 'rgba(120,120,120,.8)', color: a.active ? '#132a1f' : '#fff' }}>{a.active ? 'Идэвхтэй' : 'Идэвхгүй'}</span>
+              <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                <div className="relative aspect-[16/8] bg-cover bg-center" style={{ backgroundImage: thumb(a.img) }}>
+                  <span className="absolute left-2.5 top-2.5 text-[10px] font-extrabold tracking-[.06em] uppercase py-[3px] px-2.5 rounded-full" style={{ background: a.active ? 'rgba(168,213,162,.85)' : 'rgba(120,120,120,.8)', color: a.active ? '#132a1f' : '#fff' }}>{a.active ? 'Идэвхтэй' : 'Идэвхгүй'}</span>
                 </div>
-                <div style={css('padding:14px 16px 16px')}>
-                  <div style={css('font-size:14.5px;font-weight:800')}>{a.title}</div>
-                  <div style={css('font-size:11.5px;color:rgba(242,237,227,.5);margin-top:3px')}>{fmtD(a.from)} – {fmtD(a.to)} · {a.views.toLocaleString()} үзэлт</div>
-                  <div style={css('display:flex;gap:8px;margin-top:12px')}>
-                    <Hover as="button" onClick={() => editAd(i)} s="cursor:pointer;font-family:inherit;font-size:11.5px;font-weight:700;padding:7px 15px;border-radius:999px;border:1px solid rgba(242,237,227,.3);background:transparent;color:rgba(242,237,227,.85);transition:all .2s" h="border-color:var(--accent,#E8B84B);color:var(--accent,#E8B84B)">Засах</Hover>
-                    <Hover as="button" onClick={() => toggleAd(i)} s="cursor:pointer;font-family:inherit;font-size:11.5px;font-weight:700;padding:7px 15px;border-radius:999px;border:none;background:rgba(255,255,255,.08);color:rgba(242,237,227,.85);transition:all .2s" h="background:rgba(255,255,255,.14)">{a.active ? 'Идэвхгүй болгох' : 'Идэвхжүүлэх'}</Hover>
+                <div className="pt-3.5 px-4 pb-4">
+                  <div className="text-[14.5px] font-extrabold">{a.title}</div>
+                  <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{fmtD(a.from)} – {fmtD(a.to)} · {a.views.toLocaleString()} үзэлт</div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => editAd(i)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">Засах</button>
+                    <button onClick={() => toggleAd(i)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border-none bg-[rgba(255,255,255,.08)] text-[rgba(242,237,227,.85)] transition-all duration-200 hover:bg-[rgba(255,255,255,.14)]">{a.active ? 'Идэвхгүй болгох' : 'Идэвхжүүлэх'}</button>
                   </div>
                 </div>
               </div>
@@ -666,108 +709,159 @@ export default function AdminPanel() {
       {sharedFormOpen && <CreateForm kind={sharedFormKind} onClose={() => setSharedFormOpen(false)} onSubmit={onSharedSubmit} />}
 
       {suggestFormOpen && (
-        <div onClick={() => setSuggestFormOpen(false)} style={css(`position:fixed;inset:0;z-index:60;background:rgba(6,8,12,.7);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:${isMobile ? '14px' : '40px'};box-sizing:border-box;animation:bbFadeUp .25s ease both`)}>
-          <div onClick={(e) => e.stopPropagation()} style={css(`width:480px;max-width:100%;max-height:86vh;overflow:auto;background:#171410;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:${isMobile ? '18px 16px 20px' : '24px 26px 26px'};box-sizing:border-box;box-shadow:0 30px 80px rgba(0,0,0,.6)`)}>
-            <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:4px')}>
-              <div style={css('font-size:17px;font-weight:800')}>Дэд карт нэмэх</div>
-              <button onClick={() => setSuggestFormOpen(false)} style={css('cursor:pointer;font-family:inherit;font-size:17px;line-height:1;width:30px;height:30px;border-radius:50%;border:1px solid rgba(242,237,227,.2);background:transparent;color:rgba(242,237,227,.75)')}>×</button>
+        <div onClick={() => setSuggestFormOpen(false)} className="fixed inset-0 z-[60] bg-[rgba(6,8,12,.7)] backdrop-blur-[6px] flex items-center justify-center box-border animate-[bbFadeUp_0.25s_ease_both]" style={{ padding: isMobile ? '14px' : '40px' }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-[480px] max-w-full max-h-[86vh] overflow-auto bg-[#171410] border border-[rgba(255,255,255,.12)] rounded-[18px] box-border shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '24px 26px 26px' }}>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[17px] font-extrabold">Дэд карт нэмэх</div>
+              <button onClick={() => setSuggestFormOpen(false)} className="cursor-pointer font-[inherit] text-[17px] leading-none w-[30px] h-[30px] rounded-full border border-[rgba(242,237,227,.2)] bg-transparent text-[rgba(242,237,227,.75)]">×</button>
             </div>
-            <div style={css('font-size:12px;color:rgba(242,237,227,.5);margin-bottom:18px')}>{SUGGESTS.find((s) => s.slug === suggestActiveSlug)?.title}</div>
-            <div style={css('display:flex;flex-direction:column;gap:14px')}>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:11.5px;font-weight:700;color:rgba(242,237,227,.65)')}>Нэр</span>
-                <input value={sgName} onChange={(e) => setSgName(e.target.value)} placeholder="Ж: Хосоороо үзэх кино" style={inputStyle} />
+            <div className="text-xs text-[rgba(242,237,227,.5)] mb-[18px]">{SUGGESTS.find((s) => s.slug === suggestActiveSlug)?.title}</div>
+            <div className="flex flex-col gap-3.5">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Нэр</span>
+                <input value={sgName} onChange={(e) => setSgName(e.target.value)} placeholder="Ж: Хосоороо үзэх кино" className={inputClass} style={inputStyle} />
               </label>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:11.5px;font-weight:700;color:rgba(242,237,227,.65)')}>Тайлбар</span>
-                <input value={sgDesc} onChange={(e) => setSgDesc(e.target.value)} placeholder="Энэ картын тайлбар" style={inputStyle} />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Тайлбар</span>
+                <input value={sgDesc} onChange={(e) => setSgDesc(e.target.value)} placeholder="Энэ картын тайлбар" className={inputClass} style={inputStyle} />
               </label>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:11.5px;font-weight:700;color:rgba(242,237,227,.65)')}>Зураг</span>
-                <input type="file" accept="image/*" onChange={onSgImg} style={css(`font-family:inherit;font-size:${isMobile ? '14' : '12'}px;color:rgba(242,237,227,.7)`)} />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Зураг</span>
+                <input type="file" accept="image/*" onChange={onSgImg} className="font-[inherit] text-[rgba(242,237,227,.7)]" style={{ fontSize: isMobile ? '14px' : '12px' }} />
               </label>
-              {sgErr && <span style={css('font-size:11.5px;font-weight:700;color:#f08a8a')}>Нэр оруулна уу</span>}
-              <button onClick={saveSuggestCard} style={css('cursor:pointer;font-family:inherit;font-size:13px;font-weight:800;padding:12px;border-radius:12px;border:none;background:var(--accent,#E8B84B);color:#132a1f;margin-top:4px')}>Нийтлэх</button>
+              {sgErr && <span className="text-[11.5px] font-bold text-[#f08a8a]">Нэр оруулна уу</span>}
+              <button onClick={saveSuggestCard} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1">Нийтлэх</button>
             </div>
           </div>
         </div>
       )}
 
       {adFormOpen && (
-        <div onClick={() => setAdFormOpen(false)} style={css(`position:fixed;inset:0;z-index:60;background:rgba(6,8,12,.7);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:${isMobile ? '14px' : '40px'};box-sizing:border-box;animation:bbFadeUp .25s ease both`)}>
-          <div onClick={(e) => e.stopPropagation()} style={css(`width:480px;max-width:100%;max-height:86vh;overflow:auto;background:#171410;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:${isMobile ? '18px 16px 20px' : '24px 26px 26px'};box-sizing:border-box;box-shadow:0 30px 80px rgba(0,0,0,.6)`)}>
-            <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:18px')}>
-              <div style={css('font-size:17px;font-weight:800')}>{adEditIdx >= 0 ? 'Зар засах' : 'Шинэ зар оруулах'}</div>
-              <button onClick={() => setAdFormOpen(false)} style={css('cursor:pointer;font-family:inherit;font-size:17px;line-height:1;width:30px;height:30px;border-radius:50%;border:1px solid rgba(242,237,227,.2);background:transparent;color:rgba(242,237,227,.75)')}>×</button>
+        <div onClick={() => setAdFormOpen(false)} className="fixed inset-0 z-[60] bg-[rgba(6,8,12,.7)] backdrop-blur-[6px] flex items-center justify-center box-border animate-[bbFadeUp_0.25s_ease_both]" style={{ padding: isMobile ? '14px' : '40px' }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-[480px] max-w-full max-h-[86vh] overflow-auto bg-[#171410] border border-[rgba(255,255,255,.12)] rounded-[18px] box-border shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '24px 26px 26px' }}>
+            <div className="flex items-center justify-between mb-[18px]">
+              <div className="text-[17px] font-extrabold">{adEditIdx >= 0 ? 'Зар засах' : 'Шинэ зар оруулах'}</div>
+              <button onClick={() => setAdFormOpen(false)} className="cursor-pointer font-[inherit] text-[17px] leading-none w-[30px] h-[30px] rounded-full border border-[rgba(242,237,227,.2)] bg-transparent text-[rgba(242,237,227,.75)]">×</button>
             </div>
-            <div style={css('display:flex;flex-direction:column;gap:14px')}>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:11.5px;font-weight:700;color:rgba(242,237,227,.65)')}>Зарын гарчиг</span>
-                <input value={adTitle} onChange={(e) => setAdTitle(e.target.value)} placeholder="Ж: Шинэ жилийн онцгой санал" style={inputStyle} />
+            <div className="flex flex-col gap-3.5">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Зарын гарчиг</span>
+                <input value={adTitle} onChange={(e) => setAdTitle(e.target.value)} placeholder="Ж: Шинэ жилийн онцгой санал" className={inputClass} style={inputStyle} />
               </label>
-              <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                <span style={css('font-size:11.5px;font-weight:700;color:rgba(242,237,227,.65)')}>Тайлбар</span>
-                <textarea value={adDesc} onChange={(e) => setAdDesc(e.target.value)} rows={3} placeholder="Зарын дэлгэрэнгүй..." style={{ ...css('font-family:inherit;color:#f2ede3;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px 13px;outline:none;resize:vertical'), fontSize: isMobile ? '16px' : '13px' }}></textarea>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Тайлбар</span>
+                <textarea value={adDesc} onChange={(e) => setAdDesc(e.target.value)} rows={3} placeholder="Зарын дэлгэрэнгүй..." className="font-[inherit] text-cream bg-[rgba(255,255,255,.05)] border border-[rgba(255,255,255,.14)] rounded-[10px] px-[13px] py-2.5 outline-none resize-y" style={{ fontSize: isMobile ? '16px' : '13px' }}></textarea>
               </label>
-              <div style={{ ...css('display:grid;gap:12px'), gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:11.5px;font-weight:700;color:rgba(242,237,227,.65)')}>Эхлэх огноо</span>
-                  <input type="date" value={adFrom} onChange={(e) => setAdFrom(e.target.value)} style={{ ...css('font-family:inherit;color:#f2ede3;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:9px 13px;outline:none;color-scheme:dark'), fontSize: isMobile ? '16px' : '13px' }} />
+              <div className="grid gap-3" style={{ gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Эхлэх огноо</span>
+                  <input type="date" value={adFrom} onChange={(e) => setAdFrom(e.target.value)} className="font-[inherit] text-cream bg-[rgba(255,255,255,.05)] border border-[rgba(255,255,255,.14)] rounded-[10px] py-[9px] px-[13px] outline-none [color-scheme:dark]" style={{ fontSize: isMobile ? '16px' : '13px' }} />
                 </label>
-                <label style={css('display:flex;flex-direction:column;gap:6px')}>
-                  <span style={css('font-size:11.5px;font-weight:700;color:rgba(242,237,227,.65)')}>Дуусах огноо</span>
-                  <input type="date" value={adTo} onChange={(e) => setAdTo(e.target.value)} style={{ ...css('font-family:inherit;color:#f2ede3;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:9px 13px;outline:none;color-scheme:dark'), fontSize: isMobile ? '16px' : '13px' }} />
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Дуусах огноо</span>
+                  <input type="date" value={adTo} onChange={(e) => setAdTo(e.target.value)} className="font-[inherit] text-cream bg-[rgba(255,255,255,.05)] border border-[rgba(255,255,255,.14)] rounded-[10px] py-[9px] px-[13px] outline-none [color-scheme:dark]" style={{ fontSize: isMobile ? '16px' : '13px' }} />
                 </label>
               </div>
-              <button onClick={saveAd} style={css('cursor:pointer;font-family:inherit;font-size:13px;font-weight:800;padding:12px;border-radius:12px;border:none;background:var(--accent,#E8B84B);color:#132a1f;margin-top:4px')}>{adEditIdx >= 0 ? 'Хадгалах' : 'Зар нийтлэх'}</button>
+              <button onClick={saveAd} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1">{adEditIdx >= 0 ? 'Хадгалах' : 'Зар нийтлэх'}</button>
             </div>
           </div>
         </div>
       )}
 
       {bgEditOpen && (
-        <div onClick={() => setBgEditOpen(false)} style={css(`position:fixed;inset:0;z-index:60;background:rgba(6,8,12,.72);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:${isMobile ? '14px' : '40px'};box-sizing:border-box;animation:bbFadeUp .25s ease both`)}>
-          <div onClick={(e) => e.stopPropagation()} style={css(`width:560px;max-width:100%;max-height:90vh;overflow:auto;background:#171410;border:1px solid rgba(255,255,255,.14);border-radius:20px;padding:${isMobile ? '18px 16px 20px' : '26px 28px 28px'};box-sizing:border-box;box-shadow:0 30px 80px rgba(0,0,0,.6)`)}>
-            <div style={css('display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:4px')}>
+        <div onClick={() => setBgEditOpen(false)} className="fixed inset-0 z-[60] bg-[rgba(6,8,12,.72)] backdrop-blur-[8px] flex items-center justify-center box-border animate-[bbFadeUp_0.25s_ease_both]" style={{ padding: isMobile ? '14px' : '40px' }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-[560px] max-w-full max-h-[90vh] overflow-auto bg-[#171410] border border-[rgba(255,255,255,.14)] rounded-[20px] box-border shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '26px 28px 28px' }}>
+            <div className="flex items-start justify-between gap-4 mb-1">
               <div>
-                <div style={css('font-size:18px;font-weight:800;letter-spacing:-0.02em')}>Фон солих</div>
-                <div style={css('font-size:12.5px;color:rgba(242,237,227,.55);margin-top:4px')}>{bgArrFor(bgEditKind)[bgEditIdx]?.name} · {bgLabelFor(bgEditKind)}</div>
+                <div className="text-[18px] font-extrabold tracking-[-0.02em]">Фон солих</div>
+                <div className="text-[12.5px] text-[rgba(242,237,227,.55)] mt-1">{bgArrFor(bgEditKind)[bgEditIdx]?.name} · {bgLabelFor(bgEditKind)}</div>
               </div>
-              <button onClick={() => setBgEditOpen(false)} style={css('cursor:pointer;font-family:inherit;font-size:20px;line-height:1;width:34px;height:34px;border-radius:50%;border:1px solid rgba(242,237,227,.2);background:transparent;color:rgba(242,237,227,.7);flex-shrink:0')}>×</button>
+              <button onClick={() => setBgEditOpen(false)} className="cursor-pointer font-[inherit] text-xl leading-none w-[34px] h-[34px] rounded-full border border-[rgba(242,237,227,.2)] bg-transparent text-[rgba(242,237,227,.7)] flex-shrink-0">×</button>
             </div>
 
-            <div style={css('position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:#0b0a08;margin:18px 0 16px')}>
-              {bgDraftType === 'video' ? (
-                <video src={bgDraftSrc} autoPlay loop muted playsInline style={css('position:absolute;inset:0;width:100%;height:100%;object-fit:cover') as any} />
-              ) : (
-                <div style={{ ...css('position:absolute;inset:0;background-size:cover;background-position:center'), backgroundImage: `url("${imgUrl(bgDraftSrc || '1470071459604-3b5ec3a7fe05', 1200)}")` }}></div>
-              )}
-              {bgUploading && (
-                <div style={css('position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);font-size:12.5px;font-weight:700;color:#f2ede3')}>Cloudinary руу оруулж байна…</div>
-              )}
-            </div>
+            {bgEditKind === 'cat' ? (
+              <>
+                <div className="text-[10.5px] font-extrabold tracking-[.06em] uppercase text-[rgba(242,237,227,.5)] mt-[18px] mb-2">Зураг · нүүр хуудсанд харагдана</div>
+                <div className="relative aspect-[16/9] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink mb-2.5">
+                  <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(bgDraftSrc || '1470071459604-3b5ec3a7fe05', 1200)}")` }}></div>
+                  {bgUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
+                  )}
+                </div>
+                <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)] mb-4">
+                  <ImageIcon size={15} /> Зураг оруулах
+                  <input type="file" accept="image/*" onChange={onBgFile(false)} style={{ display: 'none' }} />
+                </label>
 
-            <div style={{ ...css('display:grid;gap:12px;margin-bottom:14px'), gridTemplateColumns: (bgEditKind === 'flag' || isMobile) ? '1fr' : '1fr 1fr' }}>
-              <Hover as="label" s="display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:12px;border:1.5px dashed rgba(242,237,227,.28);background:rgba(255,255,255,.03);cursor:pointer;font-size:12.5px;font-weight:700;color:rgba(242,237,227,.85);transition:border-color .2s" h="border-color:var(--accent,#E8B84B)">
-                <ImageIcon size={15} /> Зураг оруулах
-                <input type="file" accept="image/*" onChange={onBgFile(false)} style={{ display: 'none' }} />
-              </Hover>
-              {bgEditKind !== 'flag' && (
-                <Hover as="label" s="display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:12px;border:1.5px dashed rgba(242,237,227,.28);background:rgba(255,255,255,.03);cursor:pointer;font-size:12.5px;font-weight:700;color:rgba(242,237,227,.85);transition:border-color .2s" h="border-color:var(--accent,#E8B84B)">
-                  <Film size={15} /> Бичлэг оруулах
-                  <input type="file" accept="video/*" onChange={onBgFile(true)} style={{ display: 'none' }} />
-                </Hover>
-              )}
-            </div>
+                <div className="text-[10.5px] font-extrabold tracking-[.06em] uppercase text-[rgba(242,237,227,.5)] mb-2">Бичлэг · ангилал руу орсны дараа тоглоно</div>
+                <div className="relative aspect-[16/9] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink mb-2.5">
+                  {bgDraftVideoSrc ? (
+                    <video src={bgDraftVideoSrc} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center text-center px-4 text-[12px] text-[rgba(242,237,227,.4)]">Бичлэг оруулаагүй бол дээрх зураг харагдана</div>
+                  )}
+                  {bgUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
+                  )}
+                </div>
+                <div className="grid gap-3 mb-3.5" style={{ gridTemplateColumns: (isMobile || !bgDraftVideoSrc) ? '1fr' : '1fr 1fr' }}>
+                  <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                    <Film size={15} /> Бичлэг оруулах
+                    <input type="file" accept="video/*" onChange={onBgFile(true)} style={{ display: 'none' }} />
+                  </label>
+                  {bgDraftVideoSrc && (
+                    <button onClick={() => setBgDraftVideoSrc('')} className="cursor-pointer font-[inherit] h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(240,138,138,.4)] bg-transparent text-[12.5px] font-bold text-[#f08a8a] transition-colors duration-200 hover:border-[#f08a8a]">Бичлэг хасах</button>
+                  )}
+                </div>
 
-            <div style={css('display:flex;align-items:flex-start;gap:9px;font-size:11.5px;line-height:1.5;color:rgba(242,237,227,.6);padding:11px 13px;border-radius:11px;background:rgba(232, 184, 75,.06);border:1px solid rgba(232, 184, 75,.22);margin-bottom:20px')}>
-              <Play size={13} style={{ flex: 'none', marginTop: 2, color: 'var(--accent,#E8B84B)' }} fill="currentColor" />
-              <span>Бичлэг оруулбал апп дээр <b>автоматаар, дуугүй, давталттай</b> тоглоно.</span>
-            </div>
+                <div className="flex items-start gap-[9px] text-[11.5px] leading-[1.5] text-[rgba(242,237,227,.6)] py-[11px] px-[13px] rounded-[11px] bg-[rgba(232,184,75,.06)] border border-[rgba(232,184,75,.22)] mb-5">
+                  <Play size={13} style={{ flex: 'none', marginTop: 2, color: 'var(--accent,#E8B84B)' }} fill="currentColor" />
+                  <span>Нүүр хуудсан дээр ангиллаа сонгоход <b>зөвхөн зураг</b> харагдана. Бичлэг зөвхөн тухайн ангилал руу орсны дараа, <b>автоматаар, дуугүй, давталттай</b> тоглоно.</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="relative aspect-[16/9] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink mt-[18px] mb-4">
+                  {bgDraftType === 'video' ? (
+                    <video src={bgDraftSrc} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(bgDraftSrc || '1470071459604-3b5ec3a7fe05', 1200)}")` }}></div>
+                  )}
+                  {bgUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
+                  )}
+                </div>
 
-            <div style={css('display:flex;justify-content:flex-end;gap:12px')}>
-              <button onClick={() => setBgEditOpen(false)} style={css('cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;padding:11px 22px;border-radius:999px;border:1px solid rgba(242,237,227,.25);background:transparent;color:rgba(242,237,227,.75)')}>Болих</button>
-              <Hover as="button" onClick={saveBg} disabled={bgUploading} s={`cursor:pointer;font-family:inherit;font-size:13px;font-weight:800;padding:11px 26px;border-radius:999px;border:none;background:var(--accent,#E8B84B);color:#132a1f;transition:transform .2s;opacity:${bgUploading ? .6 : 1}`} h={bgUploading ? '' : 'transform:translateY(-2px)'}>Хадгалах</Hover>
+                <div className="grid gap-3 mb-3.5" style={{ gridTemplateColumns: (bgEditKind === 'flag' || isMobile) ? '1fr' : '1fr 1fr' }}>
+                  <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                    <ImageIcon size={15} /> Зураг оруулах
+                    <input type="file" accept="image/*" onChange={onBgFile(false)} style={{ display: 'none' }} />
+                  </label>
+                  {bgEditKind !== 'flag' && (
+                    <label className="flex items-center justify-center gap-2 h-[52px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                      <Film size={15} /> Бичлэг оруулах
+                      <input type="file" accept="video/*" onChange={onBgFile(true)} style={{ display: 'none' }} />
+                    </label>
+                  )}
+                </div>
+
+                <div className="flex items-start gap-[9px] text-[11.5px] leading-[1.5] text-[rgba(242,237,227,.6)] py-[11px] px-[13px] rounded-[11px] bg-[rgba(232,184,75,.06)] border border-[rgba(232,184,75,.22)] mb-5">
+                  <Play size={13} style={{ flex: 'none', marginTop: 2, color: 'var(--accent,#E8B84B)' }} fill="currentColor" />
+                  <span>Бичлэг оруулбал апп дээр <b>автоматаар, дуугүй, давталттай</b> тоглоно.</span>
+                </div>
+              </>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setBgEditOpen(false)} className="cursor-pointer font-[inherit] text-[13px] font-bold py-[11px] px-[22px] rounded-full border border-[rgba(242,237,227,.25)] bg-transparent text-[rgba(242,237,227,.75)]">Болих</button>
+              <button
+                onClick={saveBg}
+                disabled={bgUploading}
+                className={`cursor-pointer font-[inherit] text-[13px] font-extrabold py-[11px] px-[26px] rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 ${bgUploading ? '' : 'hover:-translate-y-0.5'}`}
+                style={{ opacity: bgUploading ? 0.6 : 1 }}
+              >
+                Хадгалах
+              </button>
             </div>
           </div>
         </div>
