@@ -6,14 +6,14 @@
 // criteria, image URL builder) instead of redefining them, and shares the
 // place/scenic/event creation modal with HostProfile via shared/CreateForm.
 import React, { useEffect, useRef, useState } from 'react';
-import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, Film, Search, PanelLeftClose, PanelLeftOpen, Pencil, Trash2, type LucideIcon } from 'lucide-react';
+import { Accessibility, Play, LayoutDashboard, MapPin, Mountain, CalendarDays, Star, Image as ImageIcon, Megaphone, ShoppingBag, Film, Search, PanelLeftClose, PanelLeftOpen, Pencil, Trash2, type LucideIcon } from 'lucide-react';
 import { useIsMobile } from '@/components/bigbang/ui';
 import { AIMAGS, AIMAG_BG, CATS, SUGGESTS, TRAVEL_APPS, U, imgUrl, isVideoUrl, itemThumbOf } from '@/components/bigbang/data';
 import CreateForm, { CreateFormData, CreateKind } from '@/components/CreateForm';
 import { apiGet, apiGetAuthed, apiPatch, apiPost, apiPut, apiDelete, uploadImage } from '@/lib/api';
 import { createPlace, createScenicPin, createEvent, updatePlace, updateScenicPin, updateEvent, deletePlace, deleteScenicPin, deleteEvent } from '@/lib/userContent';
 
-type Tab = 'dash' | 'places' | 'scenic' | 'events' | 'suggests' | 'bg' | 'ads';
+type Tab = 'dash' | 'places' | 'scenic' | 'events' | 'suggests' | 'brands' | 'bg' | 'ads';
 
 // `id` is the backend row id (category/aimag) once fetched — needed to PATCH the right row.
 // Absent for the 'about'/'home'/'flag'/'suggest' kinds, which PUT the singleton
@@ -35,6 +35,7 @@ const NAV: { key: Tab; icon: LucideIcon; label: string }[] = [
   { key: 'scenic', icon: Mountain, label: 'Үзэсгэлэнт газар' },
   { key: 'events', icon: CalendarDays, label: 'Эвент хүсэлт' },
   { key: 'suggests', icon: Star, label: 'Санал болгох' },
+  { key: 'brands', icon: ShoppingBag, label: 'Брэндийн сурталчилгаа' },
   { key: 'bg', icon: ImageIcon, label: 'Фон зураг' },
   { key: 'ads', icon: Megaphone, label: 'Зар сурталчилгаа' },
 ];
@@ -42,7 +43,7 @@ const NAV: { key: Tab; icon: LucideIcon; label: string }[] = [
 // uppercase label, same "Navigate / More" pattern as the reference dashboard.
 const NAV_GROUPS: { label: string; keys: Tab[] }[] = [
   { label: 'Удирдах самбар', keys: ['dash'] },
-  { label: 'Агуулга', keys: ['places', 'scenic', 'events', 'suggests'] },
+  { label: 'Агуулга', keys: ['places', 'scenic', 'events', 'suggests', 'brands'] },
   { label: 'Тохиргоо', keys: ['bg', 'ads'] },
 ];
 // What ⌘K search filters per tab — a name/title getter for that tab's list(s)
@@ -52,6 +53,7 @@ const SEARCH_PLACEHOLDER: Partial<Record<Tab, string>> = {
   scenic: 'Үзэсгэлэнт газар хайх...',
   events: 'Эвент хайх...',
   suggests: 'Дэд карт хайх...',
+  brands: 'Брэнд хайх...',
   bg: 'Фон хайх...',
   ads: 'Зар хайх...',
 };
@@ -101,6 +103,24 @@ export default function AdminPanel() {
   const [adImgFile, setAdImgFile] = useState<File | null>(null);
   const [adSaving, setAdSaving] = useState(false);
 
+  const [brandActionErr, setBrandActionErr] = useState('');
+  // Real Brand rows from the backend (see refetchContent below).
+  const [brands, setBrands] = useState<any[]>([]);
+  const [brandFormOpen, setBrandFormOpen] = useState(false);
+  // null while adding a new brand; the row's db id while editing one.
+  const [brandEditId, setBrandEditId] = useState<number | null>(null);
+  const [brandName, setBrandName] = useState('');
+  const [brandCategory, setBrandCategory] = useState('');
+  const [brandLink, setBrandLink] = useState('');
+  // Product photo (the card's background) and the brand's small round logo —
+  // two independent images, unlike every other admin form here which only
+  // ever uploads one.
+  const [brandImg, setBrandImg] = useState('');
+  const [brandImgFile, setBrandImgFile] = useState<File | null>(null);
+  const [brandLogoImg, setBrandLogoImg] = useState('');
+  const [brandLogoFile, setBrandLogoFile] = useState<File | null>(null);
+  const [brandSaving, setBrandSaving] = useState(false);
+
   // Real place/scenic/event rows — approvedPlaces + pendingPlaceRows both come
   // from Place (status 'approved' vs 'pending'); scenic pins and events have
   // no moderation queue, so they're just "everyone's, fetched fresh".
@@ -119,13 +139,15 @@ export default function AdminPanel() {
       apiGet<any[]>('/events'),
       apiGet<any[]>('/suggest-cards'),
       apiGetAuthed<any[]>('/ads'),
-    ]).then(([places, pending, pins, events, suggestCardRows, adRows]) => {
+      apiGetAuthed<any[]>('/brands'),
+    ]).then(([places, pending, pins, events, suggestCardRows, adRows, brandRows]) => {
       setApprovedPlaces(places);
       setPendingPlaceRows(pending);
       setScenicList(pins);
       setAdminEvents(events);
       setSuggestCards(suggestCardRows);
       setAds(adRows);
+      setBrands(brandRows);
     }).catch(() => setContentSyncError('Газар/эвент/үзэсгэлэнт газрын мэдээлэл татахад алдаа гарлаа.'));
   }, []);
   useEffect(() => { refetchContent(); }, [refetchContent]);
@@ -432,6 +454,59 @@ export default function AdminPanel() {
     const r = new FileReader(); r.onload = () => setAdImg(String(r.result)); r.readAsDataURL(f);
   };
 
+  const openBrandForm = () => {
+    setBrandEditId(null); setBrandName(''); setBrandCategory(''); setBrandLink('');
+    setBrandImg(''); setBrandImgFile(null); setBrandLogoImg(''); setBrandLogoFile(null);
+    setBrandFormOpen(true);
+  };
+  const editBrand = (b: any) => {
+    setBrandEditId(b.id); setBrandName(b.name); setBrandCategory(b.category); setBrandLink(b.link || '');
+    setBrandImg(b.image || ''); setBrandImgFile(null); setBrandLogoImg(b.logo || ''); setBrandLogoFile(null);
+    setBrandFormOpen(true);
+  };
+  // No token passed — falls back to AdminPanel's own bootstrapped admin
+  // token (see lib/api.ts), same as every other write this screen does.
+  const saveBrand = async () => {
+    if (!brandName.trim() || !brandCategory.trim()) { setBrandFormOpen(false); return; }
+    setBrandSaving(true);
+    setBrandActionErr('');
+    try {
+      const [image, logo] = await Promise.all([
+        brandImgFile ? uploadImage(brandImgFile, 'bigbang/brands') : brandImg || undefined,
+        brandLogoFile ? uploadImage(brandLogoFile, 'bigbang/brands') : brandLogoImg || undefined,
+      ]);
+      const payload = { name: brandName.trim(), category: brandCategory.trim(), image, logo, link: brandLink.trim() || undefined };
+      if (brandEditId != null) await apiPatch(`/brands/${brandEditId}`, payload);
+      else await apiPost('/brands', payload);
+      setBrandFormOpen(false); setBrandEditId(null); setBrandName(''); setBrandCategory(''); setBrandLink('');
+      setBrandImg(''); setBrandImgFile(null); setBrandLogoImg(''); setBrandLogoFile(null);
+      refetchContent();
+    } catch (err) {
+      alert('Хадгалахад алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setBrandSaving(false);
+    }
+  };
+  const toggleBrand = (b: any) => {
+    setBrandActionErr('');
+    apiPatch(`/brands/${b.id}`, { active: !b.active }).then(() => refetchContent()).catch((err) => setBrandActionErr(err instanceof Error ? err.message : String(err)));
+  };
+  const deleteBrand = (b: any) => {
+    if (!confirm(`"${b.name}" брэндийг устгах уу?`)) return;
+    setBrandActionErr('');
+    apiDelete(`/brands/${b.id}`).then(() => refetchContent()).catch((err) => setBrandActionErr(err instanceof Error ? err.message : String(err)));
+  };
+  const onBrandImg = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const f = ev.target.files && ev.target.files[0]; if (!f) return;
+    setBrandImgFile(f);
+    const r = new FileReader(); r.onload = () => setBrandImg(String(r.result)); r.readAsDataURL(f);
+  };
+  const onBrandLogo = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const f = ev.target.files && ev.target.files[0]; if (!f) return;
+    setBrandLogoFile(f);
+    const r = new FileReader(); r.onload = () => setBrandLogoImg(String(r.result)); r.readAsDataURL(f);
+  };
+
   const openSuggestForm = () => { setSgEditId(null); setSgName(''); setSgDesc(''); setSgImg(''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true); };
   const openSuggestEditForm = (card: any) => {
     setSgEditId(card.id); setSgName(card.name); setSgDesc(card.description || ''); setSgImg(card.image || ''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true);
@@ -601,6 +676,7 @@ export default function AdminPanel() {
             </div>
           ) : <div />}
           {tab === 'ads' && <button onClick={openAdForm} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Зар нэмэх</button>}
+          {tab === 'brands' && <button onClick={openBrandForm} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Брэнд нэмэх</button>}
           {tab === 'places' && <button onClick={() => openSharedForm('place')} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Газар нэмэх</button>}
           {tab === 'scenic' && <button onClick={() => openSharedForm('scenic')} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Үзэсгэлэнт газар үүсгэх</button>}
           {tab === 'suggests' && <button onClick={openSuggestForm} className="cursor-pointer font-[inherit] flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5"><span className="text-[15px] leading-none">+</span>Дэд карт нэмэх</button>}
@@ -877,6 +953,34 @@ export default function AdminPanel() {
             </div>
           </>
         )}
+
+        {tab === 'brands' && (
+          <>
+            {brandActionErr && <div className="mb-4 text-xs font-bold text-[#f08a8a]">{brandActionErr}</div>}
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-[18px]">
+              {brands.filter((b) => matches(b.name)).map((b) => (
+                <div key={b.id} className="flex flex-col border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
+                  <div className="relative aspect-[3/2] bg-cover bg-center" style={{ backgroundImage: thumb(b.image || '') }}>
+                    <span className="absolute left-2.5 top-2.5 text-[10px] font-extrabold tracking-[.06em] uppercase py-[3px] px-2.5 rounded-full" style={{ background: b.active ? 'rgba(168,213,162,.85)' : 'rgba(120,120,120,.8)', color: b.active ? '#132a1f' : '#fff' }}>{b.active ? 'Идэвхтэй' : 'Идэвхгүй'}</span>
+                    {b.logo && (
+                      <div className="absolute right-2.5 bottom-2.5 h-8 w-8 rounded-full overflow-hidden border border-[rgba(255,255,255,.4)] bg-[#f2ede3] bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(b.logo, 80)}")` }} />
+                    )}
+                  </div>
+                  <div className="flex flex-1 flex-col pt-3.5 px-4 pb-4">
+                    <div className="text-[14.5px] font-extrabold">{b.name}</div>
+                    <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{b.category}</div>
+                    <div className="flex gap-2 mt-auto pt-3 flex-wrap">
+                      <button onClick={() => editBrand(b)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">Засах</button>
+                      <button onClick={() => toggleBrand(b)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border-none bg-[rgba(255,255,255,.08)] text-[rgba(242,237,227,.85)] transition-all duration-200 hover:bg-[rgba(255,255,255,.14)]">{b.active ? 'Идэвхгүй болгох' : 'Идэвхжүүлэх'}</button>
+                      <button onClick={() => deleteBrand(b)} className="cursor-pointer font-[inherit] text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]">Устгах</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {brands.length === 0 && <div className="text-[12.5px] text-[rgba(242,237,227,.45)]">Одоогоор брэнд алга</div>}
+            </div>
+          </>
+        )}
       </main>
 
       {sharedFormOpen && <CreateForm kind={sharedFormKind} mode={sharedFormMode} initial={sharedFormInitial} onClose={() => setSharedFormOpen(false)} onSubmit={onSharedSubmit} />}
@@ -958,6 +1062,58 @@ export default function AdminPanel() {
                 </label>
               </div>
               <button onClick={saveAd} disabled={adSaving} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1 disabled:opacity-60">{adSaving ? '...' : adEditId != null ? 'Хадгалах' : 'Зар нийтлэх'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {brandFormOpen && (
+        <div onClick={() => setBrandFormOpen(false)} className="fixed inset-0 z-[60] bg-[rgba(6,8,12,.7)] backdrop-blur-[6px] flex items-center justify-center box-border animate-[bbFadeUp_0.25s_ease_both]" style={{ padding: isMobile ? '14px' : '40px' }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-[480px] max-w-full max-h-[86vh] overflow-auto bg-[#171410] border border-[rgba(255,255,255,.12)] rounded-[18px] box-border shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '24px 26px 26px' }}>
+            <div className="flex items-center justify-between mb-[18px]">
+              <div className="text-[17px] font-extrabold">{brandEditId != null ? 'Брэнд засах' : 'Шинэ брэнд нэмэх'}</div>
+              <button onClick={() => setBrandFormOpen(false)} className="cursor-pointer font-[inherit] text-[17px] leading-none w-[30px] h-[30px] rounded-full border border-[rgba(242,237,227,.2)] bg-transparent text-[rgba(242,237,227,.75)]">×</button>
+            </div>
+            <div className="flex flex-col gap-3.5">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Брэндийн нэр</span>
+                <input value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="Ж: Marshall" className={inputClass} style={inputStyle} />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Ангилал</span>
+                <input value={brandCategory} onChange={(e) => setBrandCategory(e.target.value)} placeholder="Ж: Технологи" className={inputClass} style={inputStyle} />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Холбоос (заавал биш)</span>
+                <input value={brandLink} onChange={(e) => setBrandLink(e.target.value)} placeholder="https://..." className={inputClass} style={inputStyle} />
+              </label>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Бүтээгдэхүүний зураг</span>
+                <div className="relative aspect-[3/2] rounded-[14px] overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink">
+                  <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(brandImg || '1441974231531-c6227db76b6e', 700)}")` }}></div>
+                  {brandSaving && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,.6)] backdrop-blur-[3px] text-[12.5px] font-bold text-cream">Cloudinary руу оруулж байна…</div>
+                  )}
+                </div>
+                <label className="flex items-center justify-center gap-2 h-[46px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                  <ImageIcon size={15} /> {brandImg ? 'Зураг солих' : 'Зураг оруулах'}
+                  <input type="file" accept="image/*" onChange={onBrandImg} className="hidden" />
+                </label>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Брэндийн лого</span>
+                <div className="flex items-center gap-3">
+                  <div className="relative h-[58px] w-[58px] flex-none rounded-full overflow-hidden border border-[rgba(255,255,255,.12)] bg-ink">
+                    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${imgUrl(brandLogoImg || '1441974231531-c6227db76b6e', 200)}")` }}></div>
+                    {brandSaving && <div className="absolute inset-0 bg-[rgba(0,0,0,.6)]"></div>}
+                  </div>
+                  <label className="flex-1 flex items-center justify-center gap-2 h-[46px] rounded-xl border-[1.5px] border-dashed border-[rgba(242,237,227,.28)] bg-[rgba(255,255,255,.03)] cursor-pointer text-[12.5px] font-bold text-[rgba(242,237,227,.85)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                    <ImageIcon size={15} /> {brandLogoImg ? 'Лого солих' : 'Лого оруулах'}
+                    <input type="file" accept="image/*" onChange={onBrandLogo} className="hidden" />
+                  </label>
+                </div>
+              </div>
+              <button onClick={saveBrand} disabled={brandSaving} className="cursor-pointer font-[inherit] text-[13px] font-extrabold p-3 rounded-xl border-none bg-[var(--accent,#E8B84B)] text-[#132a1f] mt-1 disabled:opacity-60">{brandSaving ? '...' : brandEditId != null ? 'Хадгалах' : 'Нийтлэх'}</button>
             </div>
           </div>
         </div>

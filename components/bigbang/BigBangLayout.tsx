@@ -119,7 +119,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // Real place/event/scenic-pin rows fetched from the backend (see
     // fetchLiveContent) — replaces the old static PINS/EVENTS/CATS[].items
     // mock arrays as the single source of truth for content everywhere below.
-    livePlaces: [], liveEvents: [], liveScenicPins: [],
+    livePlaces: [], liveEvents: [], liveScenicPins: [], liveBrands: [],
     // This session's own place submissions (pending/approved), fetched once
     // signed in — see fetchMyPlaces. Shown on the Profile page.
     myPlaces: [],
@@ -289,8 +289,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
       apiGet<any[]>('/places'),
       apiGet<any[]>('/events'),
       apiGet<any[]>('/scenic-pins'),
-    ]).then(([livePlaces, liveEvents, liveScenicPins]) => {
-      this.setState({ livePlaces, liveEvents, liveScenicPins });
+      apiGet<any[]>('/brands/active'),
+    ]).then(([livePlaces, liveEvents, liveScenicPins, liveBrands]) => {
+      this.setState({ livePlaces, liveEvents, liveScenicPins, liveBrands });
     }).catch(() => {});
   };
 
@@ -1174,6 +1175,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
         const key = 'e:' + ev.name;
         return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]), onClick: () => this.openEventDetail(i) };
       }),
+      // "Алдартай брэндээс санал болгож байна" rail on the Suggest page —
+      // admin-managed sponsor/product spotlights (see Admin Panel's
+      // "Брэндийн сурталчилгаа" tab), not to be confused with the unrelated
+      // Ad model (that one only powers the first-visit popup, see AdModal).
+      brands: (this.state.liveBrands || []).map((b: any) => ({
+        name: b.name, category: b.category, link: b.link || undefined,
+        thumb: 'linear-gradient(rgba(0,0,0,.05),rgba(0,0,0,.15)), url("' + imgUrl(b.image || '', 500) + '")',
+        logoUrl: b.logo ? imgUrl(b.logo, 80) : '',
+      })),
       suggests, cats, navCats, bgLayers, previewCards, topItems: topItems2,
       travelApps: TRAVEL_APPS.map((a) => {
         const raw = (this.state.travelAppsBgOverride || {})[a.slug] || '';

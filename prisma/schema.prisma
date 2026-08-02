@@ -60,6 +60,7 @@ model User {
   events       Event[]       @relation("EventAddedBy")
   suggestCards SuggestCard[] @relation("SuggestCardAddedBy")
   ads          Ad[]          @relation("AdAddedBy")
+  brands       Brand[]       @relation("BrandAddedBy")
   favorites    Favorite[]
   ratings      Rating[]
 
@@ -295,9 +296,9 @@ model SuggestCard {
   @@map("suggest_cards")
 }
 
-// Admin panel's "Зар сурталчилгаа" tab — like SuggestCard, admin-only content
-// with no public-facing display yet, but still a real table so it persists
-// across sessions/refreshes instead of living only in that tab's React state.
+// Admin panel's "Зар сурталчилгаа" tab — admin-only content, no public listing
+// endpoint; shown to visitors only via the first-visit AdModal popup (see
+// app/api/ads/active/route.ts), not embedded in any page's normal content.
 model Ad {
   id          Int       @id @default(autoincrement())
   title       String
@@ -313,4 +314,29 @@ model Ad {
   updatedAt   DateTime  @updatedAt
 
   @@map("ads")
+}
+
+// Admin panel's "Брэндийн сурталчилгаа" tab — sponsored/featured brand or
+// product spotlights, shown as a horizontal rail on the /suggest page (see
+// app/(bigbang)/suggest/page.tsx). A separate content type from Ad (which
+// only powers the first-visit popup) — this one is a normal, always-visible
+// page section, so unlike Ad it needs a public GET (see app/api/brands).
+model Brand {
+  id          Int      @id @default(autoincrement())
+  name        String
+  // Short tag shown under the name, e.g. "Технологи", "Хувцас загвар" — free
+  // text, not a Category FK, since these are sponsor labels, not app categories.
+  category    String
+  image       String?
+  logo        String?
+  // Optional click-through — an internal path or an external site both work
+  // (rendered as a plain <a href>, see the suggest page).
+  link        String?
+  active      Boolean  @default(true)
+  addedBy     Int
+  addedByUser User     @relation("BrandAddedBy", fields: [addedBy], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("brands")
 }
