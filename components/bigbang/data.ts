@@ -108,8 +108,8 @@ export const AIMAG_MN_SCRIPT: Record<string, string> = {
 };
 
 export interface Pin {
-  name: string; type: string; aimag: string; x?: string; y?: string; img: string; desc: string;
-  cat?: string; hours?: string; phone?: string; mapUrl?: string; access?: boolean;
+  id?: number; name: string; type: string; aimag: string; x?: string; y?: string; img: string; desc: string;
+  cat?: string; idx?: number; hours?: string; phone?: string; mapUrl?: string; access?: boolean;
   lat?: number; lng?: number; px?: number; py?: number; addedBy?: string;
 }
 

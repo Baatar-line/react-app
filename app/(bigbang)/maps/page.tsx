@@ -61,7 +61,9 @@ export default function MapsPage() {
               <MapPin size={14} /><span>{V.L.openMaps}</span><span className="ml-auto opacity-70">→</span>
             </a>
             <div className="mt-1 flex gap-2">
-              <button className="cursor-pointer rounded-full border border-[var(--accent,#E8B84B)] bg-[var(--accent,#E8B84B)] px-[18px] py-1.5 font-[inherit] text-xs font-bold text-[#132a1f] transition-all duration-250 hover:opacity-85">{V.L.detail} →</button>
+              {V.pinSel.openDetail && (
+                <button onClick={V.pinSel.openDetail} className="cursor-pointer rounded-full border border-[var(--accent,#E8B84B)] bg-[var(--accent,#E8B84B)] px-[18px] py-1.5 font-[inherit] text-xs font-bold text-[#132a1f] transition-all duration-250 hover:opacity-85">{V.L.detail} →</button>
+              )}
               <button onClick={V.closePin} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-4 py-1.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.75)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">{V.L.close}</button>
             </div>
           </div>

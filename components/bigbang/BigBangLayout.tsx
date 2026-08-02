@@ -657,7 +657,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Real ScenicPin rows shaped into Pin[] — replaces PINS.concat(userPins).
   allPins(): Pin[] {
     return (this.state.liveScenicPins || []).map((p: any): Pin => ({
-      name: p.name, type: p.type, aimag: p.aimag ? p.aimag.name : 'Улаанбаатар',
+      id: p.id, name: p.name, type: p.type, aimag: p.aimag ? p.aimag.name : 'Улаанбаатар',
       img: p.image || '', desc: p.description || '',
       mapUrl: p.googleMapUrl || undefined,
       lat: p.lat ?? undefined, lng: p.lng ?? undefined,
@@ -668,16 +668,20 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const mode = this.state.pinMode || 'scenic';
     if (mode === 'places') {
       const out: any[] = [];
-      this.liveCats().forEach((c) => c.items.forEach((it) => out.push({
+      // `idx` — this item's position within its own category's items array —
+      // rides along so the sidebar's "Дэлгэрэнгүй" button can build the same
+      // /category/:slug/place/:index URL openPlace()/the category grid use;
+      // the flattened `out` array's own index doesn't match that per-category one.
+      this.liveCats().forEach((c) => c.items.forEach((it, idx) => out.push({
         name: it.name, type: it.sub || c.name, aimag: it.aimag || 'Улаанбаатар',
-        img: it.img || '', desc: it.meta, cat: c.slug,
+        img: it.img || '', desc: it.meta, cat: c.slug, idx,
         lat: it.lat, lng: it.lng, mapUrl: it.mapUrl, hours: it.hours, access: it.access,
       })));
       return out;
     }
     if (mode === 'events') {
       return (this.state.liveEvents || []).map((ev: any) => ({
-        name: ev.name, type: ev.tag || 'Эвент', aimag: ev.aimag ? ev.aimag.name : 'Улаанбаатар',
+        id: ev.id, name: ev.name, type: ev.tag || 'Эвент', aimag: ev.aimag ? ev.aimag.name : 'Улаанбаатар',
         img: ev.image || '', desc: [fmtEventDate(ev.startDate), ev.meta].filter(Boolean).join(' · '),
         lat: ev.lat, lng: ev.lng,
       }));
@@ -803,6 +807,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
     try { window.scrollTo(0, 0); } catch (err) { /* ignore */ }
   };
 
+  // Same index-in-the-URL approach — ScenicDetail reads the matching entry
+  // off V.scenicPins (built from this.allPins(), same order/index).
+  openScenicDetail = (i: number) => {
+    this.props.navigate('/scenic/' + i);
+    try { window.scrollTo(0, 0); } catch (err) { /* ignore */ }
+  };
+
   renderVals(): any {
     const { active, aimag, lang, locOpen, pin, saved, mapAimag, vw } = this.state;
     const { pathname, navigate } = this.props;
@@ -909,12 +920,36 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const go = (r: string) => { navigate(ROUTE_PATH[r] || '/'); this.setState({ locOpen: false, active: -1 }); try { window.scrollTo(0, 0); } catch (err) { /* ignore */ } };
 
     const selP = pin >= 0 ? this.mapPins()[pin] : null;
+    // Which detail page (if any) the sidebar's "Дэлгэрэнгүй" button should
+    // open — depends on which of the 3 pin modes selP came from. Events:
+    // matched by id against the same featured-event-excluded list V.events
+    // itself is built from (duplicated here, not shared — that list isn't
+    // computed until later in this method), so the index lines up with what
+    // openEventDetail(i) expects; the featured event itself has no reachable
+    // index there, so its own pin just won't get a working button (rare).
+    let pinDetailOpen: (() => void) | undefined;
+    if (selP) {
+      const mode = this.state.pinMode || 'scenic';
+      if (mode === 'scenic' && selP.id != null) {
+        pinDetailOpen = () => this.openScenicDetail(pin);
+      } else if (mode === 'places' && selP.cat && selP.idx != null) {
+        const catForPin = selP.cat; const idxForPin = selP.idx;
+        pinDetailOpen = () => this.openPlace({ slug: catForPin }, idxForPin);
+      } else if (mode === 'events' && selP.id != null) {
+        const liveEventsForPin: any[] = this.state.liveEvents || [];
+        const featuredForPin = liveEventsForPin.find((ev: any) => ev.featured) || liveEventsForPin[0] || null;
+        const gridEventsForPin = featuredForPin ? liveEventsForPin.filter((ev: any) => ev !== featuredForPin) : liveEventsForPin;
+        const evIdx = gridEventsForPin.findIndex((ev: any) => ev.id === selP.id);
+        if (evIdx >= 0) pinDetailOpen = () => this.openEventDetail(evIdx);
+      }
+    }
     const pinSel = selP ? {
       ...selP, rating: ratingOf(selP.name),
       accShow: (selP.access || isAccessible(selP.name)) ? 'inline-flex' : 'none',
       toggleFav: toggleFav('s:' + selP.name), ...heartOf(!!favs['s:' + selP.name]),
       aimag: aimagName(selP.aimag, lang), hours: selP.hours || '', mapUrl: mapsUrlFor(selP),
       thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.35)), url("' + imgUrl(selP.img, 640) + '")',
+      openDetail: pinDetailOpen,
     } : false;
 
     const st = this.state;
@@ -1003,14 +1038,20 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // grid below so it doesn't render a second time as a small card.
     const gridEvents = featuredEvent ? liveEvents.filter((ev) => ev !== featuredEvent) : liveEvents;
 
-    const topScenic = this.allPins().map((p) => ({ p, rating: ratingOf(p.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
-      .map((o) => ({ name: o.p.name, sub: o.p.type, rating: o.rating, kind: L.favScenic, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.p.img, 500) + '")', onClick: () => { this.setState({ pinMode: 'scenic' }); go('pin'); } }));
+    // idx captured before the sort/slice (same trick topPlaces already used
+    // below) — the top-3-by-rating list's own position isn't the item's real
+    // index, so onClick needs the index into the *stable* full array instead.
+    const topScenic = this.allPins().map((p, idx) => ({ p, idx, rating: ratingOf(p.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
+      .map((o) => ({ name: o.p.name, sub: o.p.type, rating: o.rating, kind: L.favScenic, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.p.img, 500) + '")', onClick: () => this.openScenicDetail(o.idx) }));
     const flatPlaces: any[] = [];
     cats.forEach((c) => c.items.forEach((it, i) => flatPlaces.push({ it, cat: c, idx: i })));
     const topPlaces = flatPlaces.map((o) => ({ ...o, rating: ratingOf(o.it.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
       .map((o) => ({ name: o.it.name, sub: o.it.sub, rating: o.rating, kind: L.favPlaces, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.it.img || '', 500) + '")', onClick: () => this.openPlace(o.cat, o.idx) }));
-    const topEvents = liveEvents.map((ev) => ({ ev, rating: ratingOf(ev.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
-      .map((o) => ({ name: o.ev.name, sub: o.ev.tag || L.eTagFallback, rating: o.rating, kind: L.eventTitle, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.ev.image || '', 500) + '")', onClick: () => go('event') }));
+    // Sourced from gridEvents (not liveEvents) so a captured idx lines up
+    // exactly with V.events' own indices, which openEventDetail(i) expects —
+    // gridEvents already drops the featured event, same as V.events does.
+    const topEvents = gridEvents.map((ev: any, idx: number) => ({ ev, idx, rating: ratingOf(ev.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
+      .map((o) => ({ name: o.ev.name, sub: o.ev.tag || L.eTagFallback, rating: o.rating, kind: L.eventTitle, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.ev.image || '', 500) + '")', onClick: () => this.openEventDetail(o.idx) }));
     const topItems2: any[] = [];
     for (let i = 0; i < 3; i++) { topItems2.push(topScenic[i], topPlaces[i], topEvents[i]); }
 
@@ -1175,6 +1216,14 @@ export default class BigBangLayout extends React.Component<Props, any> {
         const key = 'e:' + ev.name;
         return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]), onClick: () => this.openEventDetail(i) };
       }),
+      // Backs ScenicDetail (/scenic/:index) — same index-into-this-array
+      // convention as V.events, built straight off this.allPins() so the
+      // index openScenicDetail(i) navigates with always matches.
+      openScenicDetail: this.openScenicDetail,
+      scenicPins: this.allPins().map((p) => ({
+        ...p, rating: ratingOf(p.name),
+        thumb: 'linear-gradient(rgba(0,0,0,.06),rgba(0,0,0,.2)), url("' + imgUrl(p.img, 1200) + '")',
+      })),
       // "Алдартай брэндээс санал болгож байна" rail on the Suggest page —
       // admin-managed sponsor/product spotlights (see Admin Panel's
       // "Брэндийн сурталчилгаа" tab), not to be confused with the unrelated
@@ -1289,7 +1338,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
             <div className="flex min-w-0 items-center gap-4">
               {V.isHome && (
                 <div className="relative">
-                  <button onClick={V.toggleLoc} className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.06)] px-3 py-1.5 font-[inherit] text-xs font-semibold text-[rgba(242,237,227,.85)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)]">
+                  <button onClick={V.toggleLoc} className="flex h-[28px] cursor-pointer items-center gap-1.5 rounded-full border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.06)] px-2.5 font-[inherit] text-xs font-semibold text-[rgba(242,237,227,.85)] transition-all duration-250 hover:border-[var(--accent,#E8B84B)]">
                     <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent,#E8B84B)]"></span>
                     <span>{V.aimagLabel}</span>
                     <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
@@ -1323,17 +1372,17 @@ export default class BigBangLayout extends React.Component<Props, any> {
                 </>
               )}
 
-              <div className="flex overflow-hidden rounded-full border border-[rgba(242,237,227,.25)]">
-                <button onClick={V.setMn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold transition-all duration-250" style={{ background: V.mnBg, color: V.mnColor }}>MN</button>
-                <button onClick={V.setEn} className="cursor-pointer border-none px-[11px] py-1.5 font-[inherit] text-[11px] font-bold transition-all duration-250" style={{ background: V.enBg, color: V.enColor }}>EN</button>
+              <div className="flex h-[28px] overflow-hidden rounded-full border border-[rgba(242,237,227,.25)]">
+                <button onClick={V.setMn} className="flex h-full cursor-pointer items-center border-none px-2 font-[inherit] text-[11px] font-bold transition-all duration-250" style={{ background: V.mnBg, color: V.mnColor }}>MN</button>
+                <button onClick={V.setEn} className="flex h-full cursor-pointer items-center border-none px-2 font-[inherit] text-[11px] font-bold transition-all duration-250" style={{ background: V.enBg, color: V.enColor }}>EN</button>
               </div>
 
               {!V.isTablet && !V.loggedIn && (
-                <Link href="/login" className="cursor-pointer rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-4 py-1.5 font-[inherit] text-[13px] font-semibold text-cream no-underline transition-all duration-250">{V.L.signin}</Link>
+                <Link href="/login" className="flex h-[28px] cursor-pointer items-center rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-3 font-[inherit] text-[13px] font-semibold text-cream no-underline transition-all duration-250">{V.L.signin}</Link>
               )}
 
               {V.loggedIn && (
-                <button onClick={V.openProfile} title={V.L.profile} className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-all duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
+                <button onClick={V.openProfile} title={V.L.profile} className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-all duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
               )}
             </div>
           )}
