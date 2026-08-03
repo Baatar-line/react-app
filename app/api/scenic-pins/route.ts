@@ -20,13 +20,16 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
-    const { name, type, description, image, aimagId, lat, lng, googleMapUrl } = await request.json();
-    if (!name || !type || !aimagId) {
-      return NextResponse.json({ error: 'Нэр, төрөл, аймаг шаардлагатай' }, { status: 400 });
+    const { name, type, description, images, aimagId, lat, lng, googleMapUrl } = await request.json();
+    if (!name || !type || !description || !aimagId) {
+      return NextResponse.json({ error: 'Нэр, төрөл, тайлбар, аймаг шаардлагатай' }, { status: 400 });
+    }
+    if (!Array.isArray(images) || images.length < 1 || images.length > 4) {
+      return NextResponse.json({ error: 'Дор хаяж 1, хамгийн ихдээ 4 зураг оруулна уу' }, { status: 400 });
     }
     const pin = await prisma.scenicPin.create({
       data: {
-        name, type, description, image,
+        name, type, description, images,
         aimagId: Number(aimagId),
         lat: lat != null ? Number(lat) : undefined,
         lng: lng != null ? Number(lng) : undefined,

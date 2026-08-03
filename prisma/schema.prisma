@@ -174,7 +174,10 @@ model Place {
   id           Int         @id @default(autoincrement())
   name         String
   description  String?
-  image        String?
+  // Up to 4 photo URLs (enforced client-side in CreateForm + server-side in
+  // the POST/PATCH routes) — images[0] doubles as the cover thumbnail
+  // wherever only one photo is shown (cards, admin list rows).
+  images       String[]    @default([])
   categoryId   Int
   category     Category    @relation(fields: [categoryId], references: [id])
   aimagId      Int
@@ -208,7 +211,7 @@ model ScenicPin {
   name         String
   type         String
   description  String?
-  image        String?
+  images       String[] @default([])
   aimagId      Int
   aimag        Aimag    @relation(fields: [aimagId], references: [id])
   lat          Float?
@@ -259,7 +262,7 @@ model Event {
   name      String
   tag       String?
   meta      String?
-  image     String?
+  images    String[]  @default([])
   startDate DateTime
   endDate   DateTime?
   aimagId   Int

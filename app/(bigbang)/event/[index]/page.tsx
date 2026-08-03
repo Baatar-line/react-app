@@ -8,7 +8,7 @@ import { useContext, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Users, MapPin, Star } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { mapsUrlFor } from '@/components/bigbang/data';
+import { mapsUrlFor, imgUrl } from '@/components/bigbang/data';
 import { BgMedia } from '@/components/bigbang/ui';
 import { getRatingSummary, ratingTargetKey, submitRating, type RatingSummary } from '@/lib/ratings';
 
@@ -18,6 +18,8 @@ export default function EventDetail() {
   const { index } = useParams<{ index: string }>();
   const [hoverStar, setHoverStar] = useState(0);
   const [ratingSummary, setRatingSummary] = useState<RatingSummary>({ average: null, count: 0, mine: null });
+  const [pdImgIdx, setPdImgIdx] = useState(0);
+  useEffect(() => { setPdImgIdx(0); }, [index]);
 
   const events: any[] = V.events || [];
   const i = Math.max(0, Math.min(Number(index) || 0, events.length - 1));
@@ -60,18 +62,38 @@ export default function EventDetail() {
     { label: L.evTag, value: ev.tag },
   ];
 
+  const gallery: string[] = ev.images && ev.images.length ? ev.images : [];
+  const sel = Math.min(pdImgIdx, Math.max(0, gallery.length - 1));
+  const mainBg = gallery.length
+    ? 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + imgUrl(gallery[sel], 1200) + '")'
+    : ev.thumb;
+
   return (
     <section data-screen-label="Эвентийн дэлгэрэнгүй" className="box-border min-h-screen" style={{ padding: V.isMobile ? '88px 18px 40px' : '96px 48px 60px' }}>
       <button onClick={() => router.push('/event')} className="mb-[26px] inline-flex cursor-pointer items-center gap-2 border-0 bg-transparent text-[13px] font-semibold text-[rgba(242,237,227,.6)] transition-colors duration-[250ms] hover:text-[var(--accent,#E8B84B)]">{L.back}</button>
       <div className={V.isTablet ? 'flex flex-col gap-7' : 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] items-start gap-12'}>
         <div className="flex flex-col gap-2.5">
           <div className="relative aspect-[4/3] max-h-[420px] overflow-hidden rounded-[22px] border border-[rgba(255,255,255,.1)]">
-            <BgMedia bg={ev.thumb} className="absolute inset-0" imgClassName="bg-cover bg-center" />
+            <BgMedia bg={mainBg} className="absolute inset-0" imgClassName="bg-cover bg-center" />
             <div className="absolute left-[18px] top-[18px] flex min-w-[58px] h-[58px] flex-col items-center justify-center rounded-[13px] border border-[rgba(232,184,75,.45)] bg-[rgba(0,0,0,.62)] backdrop-blur-[8px]">
               <span className="text-[20px] font-extrabold leading-none text-[var(--accent,#E8B84B)]">{ev.day}</span>
               <span className="mt-[3px] text-[10px] font-semibold text-[rgba(242,237,227,.7)]">{ev.mon}</span>
             </div>
           </div>
+          {gallery.length > 1 && (
+            <div className="flex gap-2.5">
+              {gallery.map((id, k) => (
+                <button
+                  key={k}
+                  onClick={() => setPdImgIdx(k)}
+                  className={`relative aspect-[4/3] max-h-24 flex-1 cursor-pointer overflow-hidden rounded-xl p-0 ${k === sel ? 'opacity-100' : 'opacity-60'}`}
+                  style={{ border: `1.5px solid ${k === sel ? accent : 'rgba(255,255,255,.14)'}` }}
+                >
+                  <BgMedia bg={`url("${imgUrl(id, 300)}")`} className="absolute inset-0" imgClassName="bg-cover bg-center" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <h1 className="m-0 text-[clamp(32px,3.4vw,50px)] font-extrabold leading-[1.08] tracking-[-0.03em] text-cream">{ev.name}</h1>

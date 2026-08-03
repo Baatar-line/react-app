@@ -24,19 +24,12 @@ async function resolveAimagId(name: string): Promise<number> {
   return match.id;
 }
 
-async function firstImageUrl(data: CreateFormData, token: string | undefined, folder: string): Promise<string | undefined> {
-  const file = data.imageFiles[0];
-  if (!file) return undefined;
-  return uploadImage(file, folder, token);
-}
-
-// Edit-mode variant of firstImageUrl — a new file always wins; otherwise
-// falls back to whatever CreateForm carried through as `existingImage`
-// (undefined if the admin removed the existing photo with no replacement).
-async function editedImageUrl(data: CreateFormData, token: string | undefined, folder: string): Promise<string | undefined> {
-  const file = data.imageFiles[0];
-  if (file) return uploadImage(file, folder, token);
-  return data.existingImage;
+// Uploads every newly-picked file (in parallel) and appends the results
+// after whatever pre-existing photos CreateForm still has kept, capped at 4 —
+// used for both create (existingImages is always []) and edit.
+async function uploadImages(data: CreateFormData, token: string | undefined, folder: string): Promise<string[]> {
+  const uploaded = await Promise.all(data.imageFiles.map((f) => uploadImage(f, folder, token)));
+  return [...data.existingImages, ...uploaded].slice(0, 4);
 }
 
 // Place is the one kind with mandatory contact info (phone/Instagram/
@@ -45,15 +38,15 @@ async function editedImageUrl(data: CreateFormData, token: string | undefined, f
 // `pending` until an admin approves it (unlike scenic pins/events, which
 // publish immediately for any signed-in account).
 export async function createPlace(token: string | undefined, data: CreateFormData): Promise<void> {
-  const [categoryId, aimagId, image] = await Promise.all([
+  const [categoryId, aimagId, images] = await Promise.all([
     resolveCategoryId(data.catSlug),
     resolveAimagId(data.aimag),
-    firstImageUrl(data, token, 'bigbang/places'),
+    uploadImages(data, token, 'bigbang/places'),
   ]);
   await apiPost('/places', {
     name: data.name,
     description: data.desc || undefined,
-    image,
+    images,
     categoryId,
     aimagId,
     lat: data.lat ?? undefined,
@@ -70,15 +63,15 @@ export async function createPlace(token: string | undefined, data: CreateFormDat
 }
 
 export async function createScenicPin(token: string | undefined, data: CreateFormData): Promise<void> {
-  const [aimagId, image] = await Promise.all([
+  const [aimagId, images] = await Promise.all([
     resolveAimagId(data.aimag),
-    firstImageUrl(data, token, 'bigbang/scenic'),
+    uploadImages(data, token, 'bigbang/scenic'),
   ]);
   await apiPost('/scenic-pins', {
     name: data.name,
     type: data.scenicType || 'Үзэсгэлэнт газар',
     description: data.desc || undefined,
-    image,
+    images,
     aimagId,
     lat: data.lat ?? undefined,
     lng: data.lng ?? undefined,
@@ -86,9 +79,9 @@ export async function createScenicPin(token: string | undefined, data: CreateFor
 }
 
 export async function createEvent(token: string | undefined, data: CreateFormData): Promise<void> {
-  const [aimagId, image] = await Promise.all([
+  const [aimagId, images] = await Promise.all([
     resolveAimagId(data.aimag),
-    firstImageUrl(data, token, 'bigbang/events'),
+    uploadImages(data, token, 'bigbang/events'),
   ]);
   let startDate = new Date();
   if (data.date) {
@@ -100,7 +93,7 @@ export async function createEvent(token: string | undefined, data: CreateFormDat
   await apiPost('/events', {
     name: data.name,
     meta: meta || undefined,
-    image,
+    images,
     startDate: startDate.toISOString(),
     aimagId,
     lat: data.lat ?? undefined,
@@ -112,15 +105,15 @@ export async function createEvent(token: string | undefined, data: CreateFormDat
 // instead of creating a new one. `data.id` is required (set by CreateForm
 // only when opened in edit mode).
 export async function updatePlace(token: string | undefined, id: number, data: CreateFormData): Promise<void> {
-  const [categoryId, aimagId, image] = await Promise.all([
+  const [categoryId, aimagId, images] = await Promise.all([
     resolveCategoryId(data.catSlug),
     resolveAimagId(data.aimag),
-    editedImageUrl(data, token, 'bigbang/places'),
+    uploadImages(data, token, 'bigbang/places'),
   ]);
   await apiPatch(`/places/${id}`, {
     name: data.name,
     description: data.desc || undefined,
-    image,
+    images,
     categoryId,
     aimagId,
     lat: data.lat ?? undefined,
@@ -137,15 +130,15 @@ export async function updatePlace(token: string | undefined, id: number, data: C
 }
 
 export async function updateScenicPin(token: string | undefined, id: number, data: CreateFormData): Promise<void> {
-  const [aimagId, image] = await Promise.all([
+  const [aimagId, images] = await Promise.all([
     resolveAimagId(data.aimag),
-    editedImageUrl(data, token, 'bigbang/scenic'),
+    uploadImages(data, token, 'bigbang/scenic'),
   ]);
   await apiPatch(`/scenic-pins/${id}`, {
     name: data.name,
     type: data.scenicType || 'Үзэсгэлэнт газар',
     description: data.desc || undefined,
-    image,
+    images,
     aimagId,
     lat: data.lat ?? undefined,
     lng: data.lng ?? undefined,
@@ -153,9 +146,9 @@ export async function updateScenicPin(token: string | undefined, id: number, dat
 }
 
 export async function updateEvent(token: string | undefined, id: number, data: CreateFormData): Promise<void> {
-  const [aimagId, image] = await Promise.all([
+  const [aimagId, images] = await Promise.all([
     resolveAimagId(data.aimag),
-    editedImageUrl(data, token, 'bigbang/events'),
+    uploadImages(data, token, 'bigbang/events'),
   ]);
   let startDate = new Date();
   if (data.date) {
@@ -170,7 +163,7 @@ export async function updateEvent(token: string | undefined, id: number, data: C
   await apiPatch(`/events/${id}`, {
     name: data.name,
     meta: data.desc.trim() || undefined,
-    image,
+    images,
     startDate: startDate.toISOString(),
     aimagId,
     lat: data.lat ?? undefined,

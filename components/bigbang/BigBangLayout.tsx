@@ -320,7 +320,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
             sub: p.subCategory || c.subs[0],
             aimag: p.aimag ? p.aimag.name : 'Улаанбаатар',
             hours, phone: p.phone || '', desc: p.description || '',
-            access: !!p.accessible, img: p.image || '',
+            access: !!p.accessible, img: (p.images && p.images[0]) || '', images: p.images || [],
             lat: p.lat ?? undefined, lng: p.lng ?? undefined, mapUrl: p.googleMapUrl || undefined,
             id: p.id,
           } as CatItem;
@@ -658,7 +658,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   allPins(): Pin[] {
     return (this.state.liveScenicPins || []).map((p: any): Pin => ({
       id: p.id, name: p.name, type: p.type, aimag: p.aimag ? p.aimag.name : 'Улаанбаатар',
-      img: p.image || '', desc: p.description || '',
+      img: (p.images && p.images[0]) || '', images: p.images || [], desc: p.description || '',
       mapUrl: p.googleMapUrl || undefined,
       lat: p.lat ?? undefined, lng: p.lng ?? undefined,
     }));
@@ -682,7 +682,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     if (mode === 'events') {
       return (this.state.liveEvents || []).map((ev: any) => ({
         id: ev.id, name: ev.name, type: ev.tag || 'Эвент', aimag: ev.aimag ? ev.aimag.name : 'Улаанбаатар',
-        img: ev.image || '', desc: [fmtEventDate(ev.startDate), ev.meta].filter(Boolean).join(' · '),
+        img: (ev.images && ev.images[0]) || '', desc: [fmtEventDate(ev.startDate), ev.meta].filter(Boolean).join(' · '),
         lat: ev.lat, lng: ev.lng,
       }));
     }
@@ -1032,7 +1032,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const liveEvents: any[] = this.state.liveEvents || [];
     const featuredEvent = liveEvents.find((ev) => ev.featured) || liveEvents[0] || null;
     const fe = featuredEvent
-      ? { name: featuredEvent.name, date: fmtEventDate(featuredEvent.startDate), meta: featuredEvent.meta || '', img: featuredEvent.image || '' }
+      ? { name: featuredEvent.name, date: fmtEventDate(featuredEvent.startDate), meta: featuredEvent.meta || '', img: (featuredEvent.images && featuredEvent.images[0]) || '' }
       : { name: '', date: '', meta: '', img: '' };
     // The featured card already shows this event up top — drop it from the
     // grid below so it doesn't render a second time as a small card.
@@ -1051,7 +1051,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // exactly with V.events' own indices, which openEventDetail(i) expects —
     // gridEvents already drops the featured event, same as V.events does.
     const topEvents = gridEvents.map((ev: any, idx: number) => ({ ev, idx, rating: ratingOf(ev.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
-      .map((o) => ({ name: o.ev.name, sub: o.ev.tag || L.eTagFallback, rating: o.rating, kind: L.eventTitle, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.ev.image || '', 500) + '")', onClick: () => this.openEventDetail(o.idx) }));
+      .map((o) => ({ name: o.ev.name, sub: o.ev.tag || L.eTagFallback, rating: o.rating, kind: L.eventTitle, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl((o.ev.images && o.ev.images[0]) || '', 500) + '")', onClick: () => this.openEventDetail(o.idx) }));
     const topItems2: any[] = [];
     for (let i = 0; i < 3; i++) { topItems2.push(topScenic[i], topPlaces[i], topEvents[i]); }
 
@@ -1084,13 +1084,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // everyone else sees, since those have no separate "mine" endpoint.
     const mySession = getSession();
     const myPlaceItems = (st.myPlaces || []).map((p: any) => ({
-      name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.image),
+      name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.images && p.images[0]),
       pending: p.status === 'pending', rejected: p.status === 'rejected',
       statusLabel: p.status === 'approved' ? 'Батлагдсан ✓' : p.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
     }));
     const myScenicItems = mySession
       ? (this.state.liveScenicPins || []).filter((p: any) => p.addedBy === mySession.user.id)
-        .map((p: any) => ({ name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.image) }))
+        .map((p: any) => ({ name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.images && p.images[0]) }))
       : [];
     const myEventItems = mySession
       ? liveEvents.filter((ev: any) => ev.addedBy === mySession.user.id)
@@ -1210,7 +1210,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
         return {
           id: ev.id, day, mon, name: ev.name, meta: ev.meta || '', tag: ev.tag || L.eTagFallback,
           aimag: ev.aimag ? ev.aimag.name : undefined,
-          thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + imgUrl(ev.image || '', 800) + '")',
+          images: ev.images || [],
+          thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + imgUrl((ev.images && ev.images[0]) || '', 800) + '")',
         };
       }).map((ev: any, i: number) => {
         const key = 'e:' + ev.name;

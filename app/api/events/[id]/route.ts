@@ -21,11 +21,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const user = await requireAuth(request);
     requireRole(user, 'admin');
     const { id } = await params;
-    const { name, tag, meta, image, startDate, endDate, aimagId, lat, lng, featured } = await request.json();
+    const { name, tag, meta, images, startDate, endDate, aimagId, lat, lng, featured } = await request.json();
+    if (images !== undefined && (!Array.isArray(images) || images.length < 1 || images.length > 4)) {
+      return NextResponse.json({ error: 'Дор хаяж 1, хамгийн ихдээ 4 зураг оруулна уу' }, { status: 400 });
+    }
     const event = await prisma.event.update({
       where: { id: Number(id) },
       data: {
-        name, tag, meta, image,
+        name, tag, meta, images,
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
         aimagId: aimagId != null ? Number(aimagId) : undefined,

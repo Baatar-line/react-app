@@ -22,13 +22,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     requireRole(user, 'admin');
     const { id } = await params;
     const {
-      name, description, image, categoryId, aimagId, lat, lng, openTime, closeTime, googleMapUrl,
+      name, description, images, categoryId, aimagId, lat, lng, openTime, closeTime, googleMapUrl,
       subCategory, phone, instagramUrl, facebookUrl, contactEmail, accessible,
     } = await request.json();
+    if (images !== undefined && (!Array.isArray(images) || images.length < 1 || images.length > 4)) {
+      return NextResponse.json({ error: 'Дор хаяж 1, хамгийн ихдээ 4 зураг оруулна уу' }, { status: 400 });
+    }
     const place = await prisma.place.update({
       where: { id: Number(id) },
       data: {
-        name, description, image,
+        name, description, images,
         categoryId: categoryId != null ? Number(categoryId) : undefined,
         aimagId: aimagId != null ? Number(aimagId) : undefined,
         lat: lat != null ? Number(lat) : undefined,

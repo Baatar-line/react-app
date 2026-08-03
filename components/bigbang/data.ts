@@ -109,6 +109,9 @@ export const AIMAG_MN_SCRIPT: Record<string, string> = {
 
 export interface Pin {
   id?: number; name: string; type: string; aimag: string; x?: string; y?: string; img: string; desc: string;
+  // Full photo set (up to 4) — `img` above stays the single cover photo used
+  // by cards/markers; only the detail page's gallery needs the rest.
+  images?: string[];
   cat?: string; idx?: number; hours?: string; phone?: string; mapUrl?: string; access?: boolean;
   lat?: number; lng?: number; px?: number; py?: number; addedBy?: string;
 }
@@ -211,7 +214,7 @@ export const TRAVEL_APPS: TravelApp[] = [
   { slug: 'drive-mongolia', icon: Route, name: 'Drive Mongolia', mn: 'Өөрөө жолоодох & хөтөчтэй аялал', en: 'Self-drive & guided tours', tint: 'rgba(232,183,125,.24)', ring: 'rgba(232,183,125,.6)', url: 'https://www.drivemongolia.com/?utm_source=chatgpt.com' },
 ];
 
-export interface CatItem { name: string; meta: string; sub: string; aimag?: string; hours?: string; phone?: string; desc?: string; access?: boolean; img?: string; id?: number; lat?: number; lng?: number; mapUrl?: string; }
+export interface CatItem { name: string; meta: string; sub: string; aimag?: string; hours?: string; phone?: string; desc?: string; access?: boolean; img?: string; images?: string[]; id?: number; lat?: number; lng?: number; mapUrl?: string; }
 export interface Cat {
   slug: string; num: string; name: string; nameEn: string; desc: string; descEn: string;
   glow: string; hero: string; pool: string[]; subs: string[];

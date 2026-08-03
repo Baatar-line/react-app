@@ -24,14 +24,14 @@ export interface CreateFormData {
   // Raw File objects paired 1:1 with the *tail* of `images` (base64 previews
   // of newly-picked files) — the caller needs the real File to upload to
   // Cloudinary; CreateForm itself only renders previews and stays otherwise
-  // dumb about where data ends up. In edit mode `images` may start with one
-  // extra entry (the already-uploaded photo) that has no File counterpart.
+  // dumb about where data ends up. In edit mode `images` starts with however
+  // many already-uploaded photos have no File counterpart.
   imageFiles: File[];
-  // Raw, already-uploaded image value carried through from `initial` in edit
-  // mode — kept for the caller to fall back to when no new file was picked.
-  // Untouched by the form itself; cleared to undefined if the existing
-  // preview was removed with no replacement.
-  existingImage?: string;
+  // Raw, already-uploaded image URLs carried through from `initial` in edit
+  // mode, minus any the user removed — kept for the caller to combine with
+  // freshly-uploaded imageFiles into the final images list. Untouched by the
+  // form itself beyond removal.
+  existingImages: string[];
   catName?: string;
   catSlug?: string;
   sub?: string;
@@ -55,8 +55,8 @@ interface Props {
   kind: CreateKind;
   mode?: 'create' | 'edit';
   // Pre-fills the form for editing an existing row — same shape as the data
-  // submit() produces, plus `id`/`existingImage` for round-tripping the
-  // unchanged photo. Ignored when mode is 'create' (or omitted).
+  // submit() produces, plus `id`/`existingImages` for round-tripping the
+  // unchanged photos. Ignored when mode is 'create' (or omitted).
   initial?: Partial<CreateFormData>;
   onClose: () => void;
   onSubmit: (data: CreateFormData) => void | Promise<void>;
@@ -74,6 +74,7 @@ const EDIT_TITLES: Record<CreateKind, string> = {
 };
 
 const SCENIC_ICONS = ['🏔️', '🏞️', '🌄', '⛺', '🌅', '🏝️', '🎭', '🌲', '⛰️', '🏛️', '🌌', '🎯'];
+const MAX_IMAGES = 4;
 
 export default function CreateForm({ kind, mode = 'create', initial, onClose, onSubmit }: Props) {
   const isMobile = useIsMobile();
@@ -101,10 +102,10 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const [max, setMax] = useState(initial?.max || '');
   const [images, setImages] = useState<string[]>(initial?.images || []);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
-  // Tracks whether the pre-existing photo (initial.existingImage, if any) is
-  // still meant to be kept — set false if its preview gets removed with no
-  // replacement picked, so submit() knows to actually clear the image.
-  const [keepExistingImage, setKeepExistingImage] = useState(!!initial?.existingImage);
+  // The still-kept subset of initial.existingImages — trimmed in lockstep
+  // with the "existing" prefix of `images` whenever one gets removed (see
+  // removeImg), so it always lines up positionally with that prefix.
+  const [existingImages, setExistingImages] = useState<string[]>(initial?.existingImages || []);
   const [lat, setLat] = useState<number | null>(initial?.lat ?? null);
   const [lng, setLng] = useState<number | null>(initial?.lng ?? null);
   const [err, setErr] = useState(false);
@@ -206,6 +207,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const onImgFile = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const f = ev.target.files && ev.target.files[0];
     if (!f) return;
+    if (images.length >= MAX_IMAGES) { ev.target.value = ''; return; }
     setImageFiles((s) => [...s, f]);
     const r = new FileReader();
     r.onload = () => setImages((s) => [...s, String(r.result)]);
@@ -213,11 +215,11 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
     ev.target.value = '';
   };
   const removeImg = (i: number) => {
-    // `images` may lead with one entry that has no `imageFiles` counterpart
-    // (the pre-existing photo in edit mode) — only the entries after that
-    // offset correspond 1:1 with imageFiles.
+    // `images` leads with however many pre-existing photos have no
+    // `imageFiles` counterpart (edit mode) — only entries after that offset
+    // correspond 1:1 with imageFiles.
     const fileOffset = images.length - imageFiles.length;
-    if (i < fileOffset) setKeepExistingImage(false);
+    if (i < fileOffset) setExistingImages((s) => s.filter((_, k) => k !== i));
     else setImageFiles((s) => s.filter((_, k) => k !== i - fileOffset));
     setImages((s) => s.filter((_, k) => k !== i));
   };
@@ -233,16 +235,24 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const placePhoneInvalid = kind === 'place' && !!phone.trim() && !PHONE_RE.test(phone.trim());
   const placeEmailInvalid = kind === 'place' && !!contactEmail.trim() && !EMAIL_RE.test(contactEmail.trim());
   const placeContactInvalid = placeContactMissing || placePhoneInvalid || placeEmailInvalid;
+  const placeHoursMissing = kind === 'place' && (!openTime || !closeTime);
+  const eventMissing = kind === 'event' && (!date || !time || !max.trim());
+  const descMissing = !desc.trim();
+  const imagesMissing = images.length < 1;
+  const imagesMaxed = images.length >= MAX_IMAGES;
 
   const submit = async () => {
     if (submitting) return;
     if (!name.trim()) { setErr(true); return; }
+    if (descMissing) { setErr(true); return; }
+    if (imagesMissing) { setErr(true); return; }
     if (kind === 'scenic' && !scenicType.trim()) { setErr(true); return; }
-    if (placeContactInvalid) { setErr(true); return; }
+    if (kind === 'place' && (placeContactInvalid || placeHoursMissing)) { setErr(true); return; }
+    if (kind === 'event' && eventMissing) { setErr(true); return; }
     const data: CreateFormData = {
       kind, name: name.trim(), desc: desc.trim(), aimag, images, imageFiles, lat, lng,
       id: initial?.id,
-      existingImage: keepExistingImage ? initial?.existingImage : undefined,
+      existingImages,
     };
     if (kind === 'place') {
       data.catName = curCat.name; data.catSlug = curCat.slug; data.sub = sub; data.access = access && crit.every(Boolean);
@@ -251,7 +261,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
     } else if (kind === 'scenic') {
       data.icon = icon; data.scenicType = scenicType.trim();
     } else {
-      data.date = date; data.time = time; data.max = max.trim() || '20';
+      data.date = date; data.time = time; data.max = max.trim();
     }
     setSubmitting(true);
     try {
@@ -329,11 +339,11 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
               </div>
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <label className="flex flex-col gap-1.5">
-                  <span className={labelSpanClass}>Нээх цаг</span>
+                  <span className={labelSpanClass}>Нээх цаг <span className="text-[#f08a8a]">*</span></span>
                   <input type="time" value={openTime} onChange={(e) => setOpenTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className={labelSpanClass}>Хаах цаг</span>
+                  <span className={labelSpanClass}>Хаах цаг <span className="text-[#f08a8a]">*</span></span>
                   <input type="time" value={closeTime} onChange={(e) => setCloseTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
                 </label>
               </div>
@@ -360,15 +370,15 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
           {kind === 'event' && (
             <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
               <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Огноо</span>
+                <span className={labelSpanClass}>Огноо <span className="text-[#f08a8a]">*</span></span>
                 <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Цаг</span>
+                <span className={labelSpanClass}>Цаг <span className="text-[#f08a8a]">*</span></span>
                 <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Дээд тал (хүн)</span>
+                <span className={labelSpanClass}>Дээд тал (хүн) <span className="text-[#f08a8a]">*</span></span>
                 <input value={max} onChange={(e) => setMax(e.target.value)} placeholder="20" inputMode="numeric" className={`${smallInputClass} ${smallInputFontClass}`} />
               </label>
             </div>
@@ -382,7 +392,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className={labelSpanClass}>Тайлбар</span>
+            <span className={labelSpanClass}>Тайлбар <span className="text-[#f08a8a]">*</span></span>
             <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="Энэ газрын онцлог, юугаараа гоё вэ..." className={`${smallInputClass} ${smallInputFontClass} resize-y leading-[1.5]`}></textarea>
           </label>
 
@@ -408,17 +418,19 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <span className={labelSpanClass}>Зураг</span>
+            <span className={labelSpanClass}>Зураг <span className="text-[#f08a8a]">*</span> <span className="text-[rgba(242,237,227,.4)] font-normal">(дор хаяж 1, хамгийн ихдээ {MAX_IMAGES} зураг) — {images.length}/{MAX_IMAGES}</span></span>
             <div className="flex flex-wrap gap-2.5">
               {images.map((img, i) => (
                 <div key={i} className="relative h-[84px] w-[84px] flex-shrink-0 rounded-[10px] bg-cover bg-center" style={{ backgroundImage: `url("${img}")` }}>
                   <button onClick={() => removeImg(i)} className="absolute -top-1.5 -right-1.5 h-5 w-5 cursor-pointer rounded-full border-none bg-[#f08a8a] text-[11px] font-extrabold text-[#132a1f]">×</button>
                 </div>
               ))}
-              <label className="flex h-[84px] w-[84px] flex-shrink-0 cursor-pointer items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-[rgba(242,237,227,.25)] bg-[rgba(255,255,255,.03)] text-center text-[11px] text-[rgba(242,237,227,.5)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
-                ＋ зураг
-                <input type="file" accept="image/*" onChange={onImgFile} className="hidden" />
-              </label>
+              {!imagesMaxed && (
+                <label className="flex h-[84px] w-[84px] flex-shrink-0 cursor-pointer items-center justify-center rounded-[10px] border-[1.5px] border-dashed border-[rgba(242,237,227,.25)] bg-[rgba(255,255,255,.03)] text-center text-[11px] text-[rgba(242,237,227,.5)] transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]">
+                  ＋ зураг
+                  <input type="file" accept="image/*" onChange={onImgFile} className="hidden" />
+                </label>
+              )}
             </div>
           </div>
 
@@ -454,11 +466,21 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
               <span className="text-[11.5px] font-bold text-[#f08a8a]">
                 {!name.trim()
                   ? 'Нэр оруулна уу'
-                  : placePhoneInvalid || placeEmailInvalid
+                  : descMissing
+                  ? 'Тайлбар оруулна уу'
+                  : imagesMissing
+                  ? 'Дор хаяж 1 зураг оруулна уу'
+                  : kind === 'scenic' && !scenicType.trim()
+                  ? 'Төрлөө оруулна уу'
+                  : kind === 'place' && (placePhoneInvalid || placeEmailInvalid)
                   ? 'Дээрх талбаруудыг зөв бөглөнө үү'
-                  : placeContactMissing
+                  : kind === 'place' && placeContactMissing
                   ? 'Утас, имэйл, Instagram, Facebook-оо бөглөнө үү'
-                  : 'Төрлөө оруулна уу'}
+                  : kind === 'place' && placeHoursMissing
+                  ? 'Нээх, хаах цагаа сонгоно уу'
+                  : kind === 'event' && eventMissing
+                  ? 'Огноо, цаг, дээд тал хүний тоог бөглөнө үү'
+                  : 'Талбаруудаа бүрэн бөглөнө үү'}
               </span>
             )}
           </div>

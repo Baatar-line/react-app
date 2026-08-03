@@ -308,8 +308,8 @@ export default function AdminPanel() {
     aimag: row.aimag?.name || 'Улаанбаатар',
     lat: row.lat ?? null,
     lng: row.lng ?? null,
-    images: row.image ? [imgUrl(row.image, 500)] : [],
-    existingImage: row.image || undefined,
+    images: (row.images || []).map((u: string) => imgUrl(u, 500)),
+    existingImages: row.images || [],
     ...(kind === 'place' ? {
       desc: row.description || '',
       catSlug: row.category?.slug,
@@ -730,14 +730,24 @@ export default function AdminPanel() {
                 <div className="flex flex-col gap-3">
                   {approvedPlaces.filter((p) => matches(p.name)).map((p) => (
                     <div key={p.id} className="flex gap-4 items-center border border-[rgba(232,184,75,.28)] rounded-2xl p-3.5 bg-[rgba(232,184,75,.05)]">
-                      <div className="w-[120px] h-[74px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.image || '') }}></div>
+                      <div className="w-[120px] h-[74px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.images?.[0] || '') }}></div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2.5">
                           <span className="text-[15px] font-extrabold">{p.name}</span>
                           <span className={catBadge}>{p.category?.name}</span>
+                          {p.subCategory && <span className={catBadge}>{p.subCategory}</span>}
                           {p.accessible && <span title="Тусгай хэрэгцээт хүнд ээлтэй" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[rgba(0,0,0,.5)] text-[#8fd6c6] border border-[rgba(255,255,255,.26)]"><Accessibility size={13} /></span>}
                         </div>
                         <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag?.name} · {p.description || '—'}</div>
+                        <div className="text-[11px] text-[rgba(242,237,227,.45)] mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                          {p.phone && <span>☎ {p.phone}</span>}
+                          {(p.openTime || p.closeTime) && <span>🕒 {p.openTime || '—'}–{p.closeTime || '—'}</span>}
+                          {p.instagramUrl && <span>IG: {p.instagramUrl}</span>}
+                          {p.facebookUrl && <span>FB: {p.facebookUrl}</span>}
+                          {p.contactEmail && <span>✉ {p.contactEmail}</span>}
+                          {p.lat != null && p.lng != null && <span>📍 {p.lat.toFixed(3)}, {p.lng.toFixed(3)}</span>}
+                          {p.googleMapUrl && <span>🗺 {p.googleMapUrl}</span>}
+                        </div>
                       </div>
                       <span className="flex-shrink-0 text-[11.5px] font-extrabold py-1.5 px-[15px] rounded-full bg-[rgba(168,213,162,.15)] text-[#a8d5a2]">Нийтлэгдсэн ✓</span>
                       <div className="flex gap-2 flex-shrink-0">
@@ -753,14 +763,25 @@ export default function AdminPanel() {
             <div className="flex flex-col gap-3.5">
               {pendingPlaceRows.filter((p) => matches(p.name)).map((p) => (
                 <div key={p.id} className="flex gap-4 items-center border border-[rgba(255,255,255,.1)] rounded-2xl p-3.5 bg-[rgba(255,255,255,.03)] transition-colors duration-200 hover:border-[rgba(242,237,227,.28)]">
-                  <div className="w-[120px] h-[84px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.image || '') }}></div>
+                  <div className="w-[120px] h-[84px] rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(p.images?.[0] || '') }}></div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2.5">
                       <span className="text-[15px] font-extrabold">{p.name}</span>
                       <span className={catBadge}>{p.category?.name}</span>
+                      {p.subCategory && <span className={catBadge}>{p.subCategory}</span>}
+                      {p.accessible && <span title="Тусгай хэрэгцээт хүнд ээлтэй" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[rgba(0,0,0,.5)] text-[#8fd6c6] border border-[rgba(255,255,255,.26)]"><Accessibility size={13} /></span>}
                     </div>
                     <div className="text-xs text-[rgba(242,237,227,.55)] mt-1">{p.aimag?.name} · илгээсэн: @{p.addedByUser?.username} · {new Date(p.createdAt).toLocaleDateString('mn-MN')}</div>
                     <div className="text-xs text-[rgba(242,237,227,.45)] mt-[3px] whitespace-nowrap overflow-hidden text-ellipsis">{p.description || '—'}</div>
+                    <div className="text-[11px] text-[rgba(242,237,227,.45)] mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                      {p.phone && <span>☎ {p.phone}</span>}
+                      {(p.openTime || p.closeTime) && <span>🕒 {p.openTime || '—'}–{p.closeTime || '—'}</span>}
+                      {p.instagramUrl && <span>IG: {p.instagramUrl}</span>}
+                      {p.facebookUrl && <span>FB: {p.facebookUrl}</span>}
+                      {p.contactEmail && <span>✉ {p.contactEmail}</span>}
+                      {p.lat != null && p.lng != null && <span>📍 {p.lat.toFixed(3)}, {p.lng.toFixed(3)}</span>}
+                      {p.googleMapUrl && <span>🗺 {p.googleMapUrl}</span>}
+                    </div>
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
                     <button onClick={() => decidePlace(p.id, 'approved')} className="cursor-pointer font-[inherit] text-xs font-bold py-2 px-[18px] rounded-full border-none bg-[#a8d5a2] text-[#132a1f]">Батлах</button>
@@ -781,7 +802,7 @@ export default function AdminPanel() {
             <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
               {scenicList.filter((s) => matches(s.name)).map((s) => (
                 <div key={s.id} className="flex flex-col border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
-                  <div className="relative aspect-[16/9] bg-cover bg-center" style={{ backgroundImage: itemThumbOf(s.image || '') }}></div>
+                  <div className="relative aspect-[16/9] bg-cover bg-center" style={{ backgroundImage: itemThumbOf(s.images?.[0] || '') }}></div>
                   <div className="flex flex-1 flex-col pt-[13px] px-[15px] pb-[15px]">
                     <div className="flex items-center gap-2">
                       <span className={catBadge}>{s.type}</span>
@@ -809,7 +830,7 @@ export default function AdminPanel() {
               const mon = String(d.getMonth() + 1) + '-р сар';
               return (
                 <div key={ev.id} className="flex gap-4 items-center border border-[rgba(255,255,255,.1)] rounded-2xl p-3.5 bg-[rgba(255,255,255,.03)]">
-                  <div className="w-24 h-16 rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(ev.image || '') }}></div>
+                  <div className="w-24 h-16 rounded-[11px] bg-cover bg-center flex-shrink-0" style={{ backgroundImage: thumb(ev.images?.[0] || '') }}></div>
                   <div className="w-14 flex-shrink-0 text-center py-2 px-0 rounded-[11px] bg-[rgba(232,184,75,.14)] border border-[rgba(232,184,75,.35)]">
                     <div className="text-xl font-extrabold text-[var(--accent,#E8B84B)] leading-none">{day}</div>
                     <div className="text-[10px] font-bold tracking-[.1em] uppercase text-[rgba(242,237,227,.6)] mt-[3px]">{mon}</div>

@@ -20,13 +20,16 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
-    const { name, tag, meta, image, startDate, endDate, aimagId, lat, lng, featured } = await request.json();
-    if (!name || !startDate || !aimagId) {
-      return NextResponse.json({ error: 'Нэр, эхлэх огноо, аймаг шаардлагатай' }, { status: 400 });
+    const { name, tag, meta, images, startDate, endDate, aimagId, lat, lng, featured } = await request.json();
+    if (!name || !meta || !startDate || !aimagId) {
+      return NextResponse.json({ error: 'Нэр, тайлбар, эхлэх огноо, аймаг шаардлагатай' }, { status: 400 });
+    }
+    if (!Array.isArray(images) || images.length < 1 || images.length > 4) {
+      return NextResponse.json({ error: 'Дор хаяж 1, хамгийн ихдээ 4 зураг оруулна уу' }, { status: 400 });
     }
     const event = await prisma.event.create({
       data: {
-        name, tag, meta, image,
+        name, tag, meta, images,
         startDate: new Date(startDate),
         endDate: endDate ? new Date(endDate) : undefined,
         aimagId: Number(aimagId),

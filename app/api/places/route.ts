@@ -30,11 +30,14 @@ export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
     const {
-      name, description, image, categoryId, aimagId, lat, lng, openTime, closeTime, googleMapUrl,
+      name, description, images, categoryId, aimagId, lat, lng, openTime, closeTime, googleMapUrl,
       subCategory, phone, instagramUrl, facebookUrl, contactEmail, accessible,
     } = await request.json();
-    if (!name || !categoryId || !aimagId) {
-      return NextResponse.json({ error: 'Нэр, ангилал, аймаг шаардлагатай' }, { status: 400 });
+    if (!name || !description || !categoryId || !aimagId || !openTime || !closeTime) {
+      return NextResponse.json({ error: 'Нэр, тайлбар, ангилал, аймаг, нээх/хаах цаг шаардлагатай' }, { status: 400 });
+    }
+    if (!Array.isArray(images) || images.length < 1 || images.length > 4) {
+      return NextResponse.json({ error: 'Дор хаяж 1, хамгийн ихдээ 4 зураг оруулна уу' }, { status: 400 });
     }
     // Contact info is mandatory for a place (unlike scenic pins/events) —
     // it's how admin actually reaches whoever's asking to be listed. Format-
@@ -52,7 +55,7 @@ export async function POST(request: Request) {
     }
     const place = await prisma.place.create({
       data: {
-        name, description, image,
+        name, description, images,
         categoryId: Number(categoryId),
         aimagId: Number(aimagId),
         lat: lat != null ? Number(lat) : undefined,

@@ -18,11 +18,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const user = await requireAuth(request);
     requireRole(user, 'admin');
     const { id } = await params;
-    const { name, type, description, image, aimagId, lat, lng, googleMapUrl } = await request.json();
+    const { name, type, description, images, aimagId, lat, lng, googleMapUrl } = await request.json();
+    if (images !== undefined && (!Array.isArray(images) || images.length < 1 || images.length > 4)) {
+      return NextResponse.json({ error: 'Дор хаяж 1, хамгийн ихдээ 4 зураг оруулна уу' }, { status: 400 });
+    }
     const pin = await prisma.scenicPin.update({
       where: { id: Number(id) },
       data: {
-        name, type, description, image,
+        name, type, description, images,
         aimagId: aimagId != null ? Number(aimagId) : undefined,
         lat: lat != null ? Number(lat) : undefined,
         lng: lng != null ? Number(lng) : undefined,

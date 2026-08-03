@@ -31,9 +31,7 @@ export default function PlaceDetail() {
   if (!it) return null;
 
   const access = !!it.access;
-  // Place only carries one real photo — a single-item "gallery" so the
-  // existing thumbnail-strip layout below still renders sensibly.
-  const gallery = [it.img || ''];
+  const gallery = it.images && it.images.length ? it.images : [it.img || ''];
   const favKey = 'p:' + cat.slug + ':' + it.name;
   const favOn = !!V.favs[favKey];
   const targetKey = ratingTargetKey('place', it.id);
