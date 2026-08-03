@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
-import { requireAuth, requireRole, jsonError } from '../../../lib/auth-helpers';
+import { requireAuth, jsonError } from '../../../lib/auth-helpers';
 
 export async function GET(request: Request) {
   try {
@@ -22,13 +22,33 @@ export async function GET(request: Request) {
   }
 }
 
+// No role check — there's no "host" tier, any signed-in account can submit a
+// place. It just lands as `pending` (see status below) until an admin
+// approves it, unlike scenic pins/events which any signed-in account can
+// publish immediately (see /api/scenic-pins, /api/events).
 export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
-    requireRole(user, 'host', 'admin');
-    const { name, description, image, categoryId, aimagId, lat, lng, openTime, closeTime, googleMapUrl } = await request.json();
+    const {
+      name, description, image, categoryId, aimagId, lat, lng, openTime, closeTime, googleMapUrl,
+      subCategory, phone, instagramUrl, facebookUrl, contactEmail, accessible,
+    } = await request.json();
     if (!name || !categoryId || !aimagId) {
       return NextResponse.json({ error: 'Нэр, ангилал, аймаг шаардлагатай' }, { status: 400 });
+    }
+    // Contact info is mandatory for a place (unlike scenic pins/events) —
+    // it's how admin actually reaches whoever's asking to be listed. Format-
+    // checked too, not just presence — mirrors CreateForm.tsx's own
+    // client-side check, but this is the check that actually can't be
+    // bypassed by calling the API directly.
+    if (!phone || !instagramUrl || !facebookUrl || !contactEmail) {
+      return NextResponse.json({ error: 'Утасны дугаар, Instagram, Facebook, имэйл хаяг заавал шаардлагатай' }, { status: 400 });
+    }
+    if (!/^\d{8}$/.test(phone)) {
+      return NextResponse.json({ error: 'Утасны дугаар 8 оронтой тоо байх ёстой — жишээ: 99112233' }, { status: 400 });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+      return NextResponse.json({ error: 'Имэйл хаяг буруу байна — жишээ: tanii@email.mn' }, { status: 400 });
     }
     const place = await prisma.place.create({
       data: {
@@ -38,8 +58,9 @@ export async function POST(request: Request) {
         lat: lat != null ? Number(lat) : undefined,
         lng: lng != null ? Number(lng) : undefined,
         openTime, closeTime, googleMapUrl,
+        subCategory, phone, instagramUrl, facebookUrl, contactEmail, accessible: !!accessible,
         addedBy: user.userId,
-        // admins publish immediately, hosts go through the approval queue
+        // admins publish immediately, everyone else goes through the approval queue
         status: user.role === 'admin' ? 'approved' : 'pending',
       },
     });

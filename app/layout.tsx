@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Manrope, Playfair_Display } from 'next/font/google';
+import { Manrope, Playfair_Display, Rubik_Bubbles } from 'next/font/google';
 import Script from 'next/script';
 import 'leaflet/dist/leaflet.css';
 import './globals.css';
@@ -12,6 +12,8 @@ import AppShell from '../components/AppShell';
 // Fonts <link> from index.html.
 const manrope = Manrope({ subsets: ['latin'], weight: ['400', '500', '600', '700', '800'], variable: '--font-manrope' });
 const playfairDisplay = Playfair_Display({ subsets: ['latin'], weight: ['700'], style: ['italic', 'normal'], variable: '--font-playfair' });
+// Bubbly display face for MarauderLoader's 0-100% counter (see components/MarauderLoader.tsx).
+const rubikBubbles = Rubik_Bubbles({ subsets: ['latin'], weight: ['400'], variable: '--font-rubik-bubbles' });
 
 export const metadata: Metadata = {
   title: 'Big Bang — Minii Bolzoo',
@@ -19,7 +21,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="mn" className={`${manrope.variable} ${playfairDisplay.variable}`}>
+    <html lang="mn" className={`${manrope.variable} ${playfairDisplay.variable} ${rubikBubbles.variable}`}>
       <body>
         {/* Map / globe / travel engines — vanilla global scripts (see
             components/bigbang/BigBangLayout.tsx, GlobePage, AboutPage). Every

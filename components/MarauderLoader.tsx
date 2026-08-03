@@ -45,10 +45,13 @@ const BOOT =
   'M0,-25 C5,-25 9,-22 9.5,-15 C10,-9 9.5,-3 8,1 C7,3.5 5,4.8 0,4.8 ' +
   'C-5,4.8 -7,3.5 -8,1 C-9.5,-3 -10,-9 -9.5,-15 C-9,-22 -5,-25 0,-25 Z ' +
   'M0,8.5 C4,8.5 7,11 7,15.5 C7,20 4,23.5 0,23.5 C-4,23.5 -7,20 -7,15.5 C-7,11 -4,8.5 0,8.5 Z';
+// A high-heel print: a narrow, pointed ball-of-foot oval (pointed-toe shoe)
+// sitting well clear of a small round heel mark — the stiletto's thin heel
+// leaves only a tiny point, not the wide continuous heel blob a boot does.
 const HEEL =
-  'M0,-26 C3,-25 5.5,-22 6,-17 C6.6,-12 6.6,-7 5.5,-2 C4.5,2 3,4 2.6,7 ' +
-  'C2.2,10 2.6,13 3.6,16 C4.6,19 3.6,22 1,22.6 C-0.6,23 -2,23 -3.6,22 ' +
-  'C-5,20 -4.6,17 -3.6,14 C-2.6,11 -2.2,9 -2.6,6 C-3,2 -5,-2 -5.6,-7 C-6,-12 -5,-20 0,-26 Z';
+  'M0,-26 C4,-25 7,-21 7.5,-15 C8,-9 7,-4 5,0 C3.5,3 1.5,4.6 0,4.6 ' +
+  'C-1.5,4.6 -3.5,3 -5,0 C-7,-4 -8,-9 -7.5,-15 C-7,-21 -4,-25 0,-26 Z ' +
+  'M0,10 C2.4,10 4.2,12 4.2,14.8 C4.2,17.6 2.4,19.8 0,19.8 C-2.4,19.8 -4.2,17.6 -4.2,14.8 C-4.2,12 -2.4,10 0,10 Z';
 const SHAPES: { d: string; rule: 'evenodd' | 'nonzero' }[] = [
   { d: BOOT, rule: 'evenodd' }, // top-right trail: men's shoe
   { d: HEEL, rule: 'nonzero' }, // bottom-left trail: women's shoe
@@ -219,6 +222,8 @@ export default function MarauderLoader({ loop = true, onFinish, duration = 5000,
 
       <div className={`mloader__oath top${finished ? ' gone' : ''}`}>i solemnly swear that</div>
       <div className={`mloader__oath bottom${finished ? ' gone' : ''}`}>i am up to no good</div>
+
+      <div className={`mloader__pct${finished ? ' gone' : ''}`}>{Math.round(progress * 100)}%</div>
     </div>
   );
 }
@@ -283,6 +288,13 @@ const CSS = `
 }
 .mloader__oath.top{ top:6.5%; left:7%; } .mloader__oath.bottom{ bottom:6.5%; right:7%; }
 .mloader__oath.gone{ opacity:0; }
+
+.mloader__pct{
+  position:absolute; z-index:4; left:50%; bottom:6.5%; transform:translateX(-50%);
+  font-family:var(--font-rubik-bubbles),"Comic Sans MS",cursive; font-size:clamp(18px,3.4vw,26px);
+  letter-spacing:.02em; color:var(--ml-ink); opacity:.9; transition:opacity .5s ease;
+}
+.mloader__pct.gone{ opacity:0; }
 
 @media (prefers-reduced-motion:reduce){
   .mloader__foot.on,.mloader__bloom.go,.mloader__pin.drop .body{ animation-duration:.01s; }

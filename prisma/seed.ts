@@ -55,6 +55,32 @@ const CATEGORIES: { slug: string; name: string; nameEn: string; subs: string[] }
     subs: ['Science cafe', 'Одон дурандах төв', 'Планетари', 'Шинжлэх ухааны лекц', 'Сансрын ажиглалт', 'Лаборатори тур'] },
 ];
 
+// Same starter content the frontend used to hardcode in bigbang/data.ts's
+// SUGGEST_COLLECTIONS before Suggest cards moved to the database (see
+// SuggestCard model) — seeded once so the public /suggest/[slug] page isn't
+// empty on a fresh database; admin panel manages real rows from here on.
+const SUGGEST_CARDS: { collectionSlug: string; name: string; description: string; image: string }[] = [
+  { collectionSlug: 'games', name: 'PC тоглоом', description: 'Компьютер дээр хамт тоглох тоглоомууд', image: '1550745165-9bc0b252726f' },
+  { collectionSlug: 'games', name: 'Утасны тоглоом', description: 'Гар утсаараа хамт тоглох хурдан тоглоомууд', image: '1511512578047-dfb367046420' },
+  { collectionSlug: 'games', name: 'Хамгийн хөгжилтэй тоглоомнууд', description: 'Хамтдаа наргиж тоглох шилдэг сонголтууд', image: '1493711662062-fa541adb3fc8' },
+  { collectionSlug: 'movies', name: 'Хосоороо үзэх кино', description: 'Хайр дурлалын сэдэвтэй шилдэг кинонууд', image: '1489599849927-2ee91cede3ba' },
+  { collectionSlug: 'movies', name: 'Найзуудтайгаа үзэх кино', description: 'Инээдтэй, адал явдалт кинонууд', image: '1517604931442-7e0c8ed2963c' },
+  { collectionSlug: 'movies', name: 'Гэр бүлээрээ үзэх кино', description: 'Насны ялгаагүй хамт үзэх кинонууд', image: '1489599849927-2ee91cede3ba' },
+  { collectionSlug: 'boardgame', name: 'Хосоороо тоглох board game', description: '2 хүнд тохирсон ширээний тоглоом', image: '1529699211952-734e80c4d42b' },
+  { collectionSlug: 'boardgame', name: 'Найзуудтайгаа тоглох board game', description: 'Олон хүний зугаа цэнгэлийн тоглоом', image: '1610890716171-6b1bb98ffd09' },
+  { collectionSlug: 'boardgame', name: 'Тоглоомын дүрэм', description: 'Тоглоом бүрийн заавар, дүрмийн товч тайлбар', image: '1529699211952-734e80c4d42b' },
+];
+
+// Same starter rows the admin panel's "Зар сурталчилгаа" tab used to hardcode
+// in a local INITIAL_ADS constant before ads moved to the database (see Ad
+// model) — seeded once on an empty table so the tab isn't blank on a fresh
+// database; the admin panel manages real rows from here on.
+const ADS: { title: string; image: string; startDate: string; endDate: string; views: number; active: boolean }[] = [
+  { title: 'Шинэ жилийн онцгой санал', image: '1477959858617-67f85cf4f1df', startDate: '2026-07-01', endDate: '2026-07-31', views: 1240, active: true },
+  { title: 'Хосын багц — 2 хүн', image: '1533105079780-92b9be482077', startDate: '2026-07-05', endDate: '2026-07-15', views: 862, active: true },
+  { title: 'Түүхэнд амьдарсан түдэглэл', image: '1519681393784-d120267933ba', startDate: '2026-06-20', endDate: '2026-07-10', views: 430, active: false },
+];
+
 async function main() {
   for (const [name, nameEn] of AIMAGS) {
     await prisma.aimag.upsert({
@@ -72,7 +98,7 @@ async function main() {
     });
   }
 
-  await prisma.user.upsert({
+  const admin = await prisma.user.upsert({
     where: { email: SEED_ADMIN_EMAIL },
     update: { role: 'admin' },
     create: { email: SEED_ADMIN_EMAIL, username: 'admin', role: 'admin', password: await hashPassword(SEED_ADMIN_PASSWORD) },
@@ -84,7 +110,24 @@ async function main() {
     create: { id: 1 },
   });
 
-  console.log(`Seeded ${AIMAGS.length} aimags, ${CATEGORIES.length} categories, 1 admin user, site settings.`);
+  // No natural unique key on SuggestCard/Ad — only seed the starter sets
+  // once, on a database that has none yet, so re-running this script never
+  // duplicates or clobbers rows an admin has since created/edited.
+  const suggestCardCount = await prisma.suggestCard.count();
+  if (suggestCardCount === 0) {
+    await prisma.suggestCard.createMany({
+      data: SUGGEST_CARDS.map((c) => ({ ...c, addedBy: admin.id })),
+    });
+  }
+
+  const adCount = await prisma.ad.count();
+  if (adCount === 0) {
+    await prisma.ad.createMany({
+      data: ADS.map((a) => ({ ...a, startDate: new Date(a.startDate), endDate: new Date(a.endDate), addedBy: admin.id })),
+    });
+  }
+
+  console.log(`Seeded ${AIMAGS.length} aimags, ${CATEGORIES.length} categories, 1 admin user, site settings, ${suggestCardCount === 0 ? SUGGEST_CARDS.length : 0} suggest cards, ${adCount === 0 ? ADS.length : 0} ads.`);
 }
 
 main()

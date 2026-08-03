@@ -25,9 +25,11 @@ datasource db {
   provider = "postgresql"
 }
 
+// No 'host' tier — every signed-in account is a plain 'user' and can create
+// scenic pins/events freely and submit places (which need admin approval);
+// 'admin' is only ever assigned via the seed script, never self-service.
 enum Role {
   user
-  host
   admin
 }
 
@@ -39,20 +41,49 @@ enum PlaceStatus {
 
 model User {
   id          Int      @id @default(autoincrement())
-  email       String   @unique
-  password    String
+  // Regular accounts sign up/in via OTP (see OtpCode below) with either a
+  // phone or an email as their one identifying "contact" — so only one of
+  // the two is guaranteed to be set, not both. `password` stays for the
+  // seeded admin account only (see prisma/seed.ts), which logs in the old
+  // email+password way (POST /api/auth/login) rather than via OTP.
+  email       String?  @unique
+  password    String?
   username    String   @unique
-  phoneNumber String?
+  phoneNumber String?  @unique
   role        Role     @default(user)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  profile    Profile?
-  places     Place[]     @relation("PlaceAddedBy")
-  scenicPins ScenicPin[] @relation("ScenicPinAddedBy")
-  favorites  Favorite[]
+  profile      Profile?
+  places       Place[]       @relation("PlaceAddedBy")
+  scenicPins   ScenicPin[]   @relation("ScenicPinAddedBy")
+  events       Event[]       @relation("EventAddedBy")
+  suggestCards SuggestCard[] @relation("SuggestCardAddedBy")
+  ads          Ad[]          @relation("AdAddedBy")
+  brands       Brand[]       @relation("BrandAddedBy")
+  favorites    Favorite[]
+  ratings      Rating[]
 
   @@map("users")
+}
+
+// One-time login codes for the OTP flow (see /api/auth/request-otp,
+// /api/auth/verify-otp). `contact` is a raw phone number or email — DB-backed
+// (not in-memory) since Vercel serverless functions don't share process
+// memory across invocations. `codeHash` so a DB read alone can't leak a
+// still-valid code; `attempts` caps guessing per issued code.
+model OtpCode {
+  id        Int      @id @default(autoincrement())
+  contact   String
+  method    String
+  codeHash  String
+  attempts  Int      @default(0)
+  consumed  Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([contact])
+  @@map("otp_codes")
 }
 
 model Profile {
@@ -81,6 +112,24 @@ model Favorite {
 
   @@unique([userId, placeId])
   @@map("favorites")
+}
+
+// Generic 1-5 rating a signed-in user leaves on a place/scenic pin/event —
+// targetKey follows the same "<kind>:<id>" convention as Favorite.placeId
+// (e.g. "place:5", "scenic:12", "event:3") so one table covers all three
+// kinds instead of three near-identical ones. Unique per (user, target) so
+// re-rating updates the existing row instead of stacking duplicates.
+model Rating {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetKey String
+  score     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, targetKey])
+  @@map("ratings")
 }
 
 model Category {
@@ -135,6 +184,16 @@ model Place {
   openTime     String?
   closeTime    String?
   googleMapUrl String?
+  // Sub-category label (from the owning Category's subCategories list).
+  subCategory  String?
+  // Contact info — required at submission time (enforced in the POST /places
+  // route, not just here) so admin has a real way to reach whoever's asking
+  // to be listed before approving them.
+  phone        String
+  instagramUrl String
+  facebookUrl  String
+  contactEmail String
+  accessible   Boolean     @default(false)
   addedBy      Int
   addedByUser  User        @relation("PlaceAddedBy", fields: [addedBy], references: [id])
   status       PlaceStatus @default(pending)
@@ -208,8 +267,76 @@ model Event {
   lat       Float?
   lng       Float?
   featured  Boolean   @default(false)
+  addedBy     Int
+  addedByUser User    @relation("EventAddedBy", fields: [addedBy], references: [id])
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   @@map("events")
+}
+
+// Sub-cards shown when a "Санал болгох" card (SUGGESTS in bigbang/data.ts —
+// games/movies/boardgame, a small fixed set defined in code, not this table)
+// is opened. Admin-panel-only content — there's no public submission flow
+// for these like there is for places/scenic pins/events, so creation is
+// gated to admin in the API route rather than any signed-in account.
+model SuggestCard {
+  id             Int      @id @default(autoincrement())
+  // Matches one of SUGGESTS' static slugs (games/movies/boardgame) — not a
+  // foreign key since that list lives in code, not a db table.
+  collectionSlug String
+  name           String
+  description    String?
+  image          String?
+  addedBy        Int
+  addedByUser    User     @relation("SuggestCardAddedBy", fields: [addedBy], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("suggest_cards")
+}
+
+// Admin panel's "Зар сурталчилгаа" tab — admin-only content, no public listing
+// endpoint; shown to visitors only via the first-visit AdModal popup (see
+// app/api/ads/active/route.ts), not embedded in any page's normal content.
+model Ad {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  image       String?
+  startDate   DateTime?
+  endDate     DateTime?
+  active      Boolean   @default(true)
+  views       Int       @default(0)
+  addedBy     Int
+  addedByUser User      @relation("AdAddedBy", fields: [addedBy], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("ads")
+}
+
+// Admin panel's "Брэндийн сурталчилгаа" tab — sponsored/featured brand or
+// product spotlights, shown as a horizontal rail on the /suggest page (see
+// app/(bigbang)/suggest/page.tsx). A separate content type from Ad (which
+// only powers the first-visit popup) — this one is a normal, always-visible
+// page section, so unlike Ad it needs a public GET (see app/api/brands).
+model Brand {
+  id          Int      @id @default(autoincrement())
+  name        String
+  // Short tag shown under the name, e.g. "Технологи", "Хувцас загвар" — free
+  // text, not a Category FK, since these are sponsor labels, not app categories.
+  category    String
+  image       String?
+  logo        String?
+  // Optional click-through — an internal path or an external site both work
+  // (rendered as a plain <a href>, see the suggest page).
+  link        String?
+  active      Boolean  @default(true)
+  addedBy     Int
+  addedByUser User     @relation("BrandAddedBy", fields: [addedBy], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("brands")
 }

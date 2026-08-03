@@ -1,11 +1,14 @@
 'use client';
 
 // Big Bang — Suggest collection detail (/suggest/:slug).
-import { useContext } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { SUGGESTS, SUGGEST_COLLECTIONS, imgUrl } from '@/components/bigbang/data';
+import { SUGGESTS, imgUrl } from '@/components/bigbang/data';
 import { BgMedia } from '@/components/bigbang/ui';
+import { apiGet } from '@/lib/api';
+
+interface SuggestCardRow { id: number; name: string; description: string | null; image: string | null; }
 
 export default function SuggestDetail() {
   const V: any = useContext(BigBangContext);
@@ -14,8 +17,16 @@ export default function SuggestDetail() {
   const L = V.L;
 
   const info = SUGGESTS.find((s) => s.slug === slug);
-  const items = (SUGGEST_COLLECTIONS[slug || ''] || []).map((it) => ({
-    ...it, cover: 'linear-gradient(rgba(0,0,0,.12), rgba(0,0,0,.3)), url("' + imgUrl(it.img, 700) + '")',
+  const [cards, setCards] = useState<SuggestCardRow[]>([]);
+  useEffect(() => {
+    if (!slug) return;
+    apiGet<SuggestCardRow[]>(`/suggest-cards?collectionSlug=${encodeURIComponent(slug)}`)
+      .then(setCards)
+      .catch(() => setCards([]));
+  }, [slug]);
+  const items = cards.map((it) => ({
+    name: it.name, desc: it.description || '—',
+    cover: 'linear-gradient(rgba(0,0,0,.12), rgba(0,0,0,.3)), url("' + imgUrl(it.image || '', 700) + '")',
   }));
 
   return (
@@ -30,6 +41,11 @@ export default function SuggestDetail() {
       <p className="m-0 mb-[30px] max-w-[560px] text-[13.5px] leading-[1.5] text-[rgba(242,237,227,.55)]">
         {V.lang === 'en' ? 'Curated picks for this category.' : 'Энэ ангилалд зориулсан тусгайлан бэлтгэсэн жагсаалтууд.'}
       </p>
+      {items.length === 0 && (
+        <div className="p-[22px] border border-dashed border-[rgba(242,237,227,.22)] rounded-[14px] text-[13px] text-[rgba(242,237,227,.45)] max-w-[560px]">
+          {V.lang === 'en' ? 'No cards here yet.' : 'Одоогоор дэд карт алга байна.'}
+        </div>
+      )}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-5">
         {items.map((it: any, i: number) => (
           <div key={i} className="overflow-hidden rounded-[18px] border border-[rgba(255,255,255,.1)] bg-[rgba(255,255,255,.03)]">

@@ -1,13 +1,14 @@
 'use client';
 
-// Login / Signup — OTP user flow. Signup always creates a plain user
-// account; becoming a host happens later from /profile (see "Host болох"
-// there), not as a separate signup path here.
+// Login / Signup — real OTP flow (phone or email). There's no "host" tier —
+// signing in here is the same account that can submit places/scenic
+// pins/events from /profile (a place just lands pending admin approval).
 // Converted from Login.dc.html to React + TypeScript + Tailwind.
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { PLACEHOLDER_IMG, isVideoUrl } from '@/components/bigbang/data';
 import { apiGet } from '@/lib/api';
+import { getSession, saveSession } from '@/lib/session';
 
 const ACCENT = '#E8B84B';
 
@@ -26,23 +27,29 @@ export default function Login() {
       .catch(() => {});
   }, []);
 
-  // Signup only ever creates a plain user account now — becoming a host
-  // happens later, from the same account, via the "Host болох" flow on
-  // /profile (see BigBangLayout's hostForm state) instead of a separate
-  // signup path here.
   const [method, setMethod] = useState<'phone' | 'email'>('phone');
   const [contact, setContact] = useState('');
   const [contactErr, setContactErr] = useState('');
   const [step, setStep] = useState<'input' | 'otp' | 'done'>('input');
   const [otp, setOtp] = useState(['', '', '', '']);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [devCode, setDevCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [otpErr, setOtpErr] = useState('');
+
+  // Already signed in (e.g. reached /login directly by URL, or the "Гарах"
+  // button hasn't been clicked) — skip straight to the "done" screen instead
+  // of making them go through the OTP flow again and overwrite the session.
+  useEffect(() => {
+    if (getSession()) setStep('done');
+  }, []);
 
   const isPhone = method === 'phone';
   const contactShown = contact || (isPhone ? '99112233' : 'tanii@email.mn');
 
   // Rejects an obviously malformed phone number / email instead of silently
   // accepting whatever was typed and pretending a code was sent.
-  const requestCode = () => {
+  const requestCode = async () => {
     const v = contact.trim();
     if (!v) { setContactErr(isPhone ? 'Утасны дугаараа оруулна уу' : 'Имэйл хаягаа оруулна уу'); return; }
     if (isPhone ? !/^\d{8}$/.test(v) : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
@@ -50,13 +57,48 @@ export default function Login() {
       return;
     }
     setContactErr('');
-    setStep('otp');
+    setBusy(true);
+    try {
+      const res = await fetch('/api/auth/request-otp', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method, contact: v }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Код илгээхэд алдаа гарлаа');
+      // Dev mode — no SMS/email provider connected yet, so the backend hands
+      // the code straight back instead of actually sending it.
+      setDevCode(json.devCode || '');
+      setStep('otp');
+    } catch (e) {
+      setContactErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onOtp = (i: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const d = e.target.value.replace(/\D/g, '').slice(-1);
     setOtp((o) => { const n = o.slice(); n[i] = d; return n; });
     if (d && i < 3) otpRefs.current[i + 1]?.focus();
+  };
+
+  const verifyCode = async () => {
+    const code = otp.join('');
+    if (code.length < 4) { setOtpErr('4 оронтой кодоо бүтэн оруулна уу'); return; }
+    setBusy(true);
+    setOtpErr('');
+    try {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ method, contact: contact.trim(), code }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Код буруу байна');
+      saveSession(json.token, json.user);
+      setStep('done');
+    } catch (e) {
+      setOtpErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const chip = (active: boolean) => ({
@@ -127,9 +169,16 @@ export default function Login() {
                 <span className="text-[12px] font-bold text-cream/70">{isPhone ? 'Утасны дугаар' : 'Имэйл хаяг'}</span>
                 <input
                   value={contact}
-                  onChange={(e) => { setContact(e.target.value); if (contactErr) setContactErr(''); }}
+                  onChange={(e) => {
+                    // Utас field only ever accepts digits, capped at 8 —
+                    // rejected as you type, not just on submit.
+                    const next = isPhone ? e.target.value.replace(/\D/g, '').slice(0, 8) : e.target.value;
+                    setContact(next);
+                    if (contactErr) setContactErr('');
+                  }}
                   placeholder={isPhone ? '99112233' : 'tanii@email.mn'}
                   inputMode={isPhone ? 'numeric' : 'email'}
+                  maxLength={isPhone ? 8 : undefined}
                   className={`${inputCls} text-[16px]`}
                 />
               </label>
@@ -139,9 +188,10 @@ export default function Login() {
 
               <button
                 onClick={requestCode}
-                className="w-full rounded-xl border-none bg-accent py-[11px] text-[14px] font-extrabold text-[#132a1f] transition-transform hover:-translate-y-0.5"
+                disabled={busy}
+                className="w-full rounded-xl border-none bg-accent py-[11px] text-[14px] font-extrabold text-[#132a1f] transition-transform hover:-translate-y-0.5 disabled:opacity-60"
               >
-                Код авах →
+                {busy ? '...' : 'Код авах →'}
               </button>
             </>
           )}
@@ -152,6 +202,12 @@ export default function Login() {
               <p className="mb-[22px] mt-1.5 text-[13px] leading-relaxed text-cream/60">
                 <span className="font-bold text-accent">{contactShown}</span> руу 4 оронтой код илгээлээ.
               </p>
+
+              {devCode && (
+                <div className="mb-4 rounded-[10px] border border-dashed border-accent/50 bg-accent/10 px-3 py-2 text-[11.5px] font-bold text-accent">
+                  Dev горим — SMS/имэйл үйлчилгээ холбогдоогүй тул код шууд энд: {devCode}
+                </div>
+              )}
 
               <div className="mb-5 flex justify-center gap-2.5">
                 {otp.map((v, i) => (
@@ -168,20 +224,22 @@ export default function Login() {
                 ))}
               </div>
 
+              {otpErr && <div className="mb-3.5 text-[11.5px] font-bold text-[#f08a8a]">{otpErr}</div>}
               <button
-                onClick={() => otp.every((d) => d) && setStep('done')}
-                className="w-full rounded-xl border-none bg-accent py-[11px] text-[14px] font-extrabold text-[#132a1f] transition-transform hover:-translate-y-0.5"
+                onClick={verifyCode}
+                disabled={busy}
+                className="w-full rounded-xl border-none bg-accent py-[11px] text-[14px] font-extrabold text-[#132a1f] transition-transform hover:-translate-y-0.5 disabled:opacity-60"
               >
-                Нэвтрэх →
+                {busy ? '...' : 'Нэвтрэх →'}
               </button>
               <div className="mt-3.5 flex justify-between">
                 <button
-                  onClick={() => { setStep('input'); setOtp(['', '', '', '']); }}
+                  onClick={() => { setStep('input'); setOtp(['', '', '', '']); setOtpErr(''); }}
                   className="border-none bg-transparent p-0 text-[12px] font-bold text-cream/[.55] hover:text-accent"
                 >
                   ← Буцах
                 </button>
-                <button className="border-none bg-transparent p-0 text-[12px] font-bold text-accent">Дахин илгээх</button>
+                <button onClick={requestCode} disabled={busy} className="border-none bg-transparent p-0 text-[12px] font-bold text-accent disabled:opacity-60">Дахин илгээх</button>
               </div>
             </>
           )}

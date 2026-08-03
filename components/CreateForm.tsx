@@ -2,9 +2,10 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Shared "add place / scenic spot / event" modal — used by both AdminPanel and
-// HostProfile so the map-pin-picker + image-upload + accessibility-criteria logic
-// (already implemented once, inline, in BigBang's own add-place form) isn't duplicated
-// a third and fourth time. Reuses the same static data as BigBang (bigbang/data.ts).
+// BigBangLayout (Profile page's add-content flow) so the map-pin-picker +
+// image-upload + accessibility-criteria logic isn't duplicated a second time.
+// Reuses the same static data as BigBang (bigbang/data.ts). No "host" tier —
+// place submissions from any signed-in account land pending admin approval.
 import React, { useCallback, useRef, useState } from 'react';
 import { Accessibility } from 'lucide-react';
 import { useIsMobile } from './bigbang/ui';
@@ -14,18 +15,35 @@ export type CreateKind = 'place' | 'scenic' | 'event';
 
 export interface CreateFormData {
   kind: CreateKind;
+  // Present only in edit mode — the row being updated instead of created.
+  id?: number;
   name: string;
   desc: string;
   aimag: string;
   images: string[];
+  // Raw File objects paired 1:1 with the *tail* of `images` (base64 previews
+  // of newly-picked files) — the caller needs the real File to upload to
+  // Cloudinary; CreateForm itself only renders previews and stays otherwise
+  // dumb about where data ends up. In edit mode `images` may start with one
+  // extra entry (the already-uploaded photo) that has no File counterpart.
+  imageFiles: File[];
+  // Raw, already-uploaded image value carried through from `initial` in edit
+  // mode — kept for the caller to fall back to when no new file was picked.
+  // Untouched by the form itself; cleared to undefined if the existing
+  // preview was removed with no replacement.
+  existingImage?: string;
   catName?: string;
+  catSlug?: string;
   sub?: string;
   access?: boolean;
   phone?: string;
-  social?: string;
+  instagram?: string;
+  facebook?: string;
+  contactEmail?: string;
   openTime?: string;
   closeTime?: string;
   icon?: string;
+  scenicType?: string;
   date?: string;
   time?: string;
   max?: string;
@@ -35,8 +53,13 @@ export interface CreateFormData {
 
 interface Props {
   kind: CreateKind;
+  mode?: 'create' | 'edit';
+  // Pre-fills the form for editing an existing row — same shape as the data
+  // submit() produces, plus `id`/`existingImage` for round-tripping the
+  // unchanged photo. Ignored when mode is 'create' (or omitted).
+  initial?: Partial<CreateFormData>;
   onClose: () => void;
-  onSubmit: (data: CreateFormData) => void;
+  onSubmit: (data: CreateFormData) => void | Promise<void>;
 }
 
 const TITLES: Record<CreateKind, string> = {
@@ -44,34 +67,52 @@ const TITLES: Record<CreateKind, string> = {
   scenic: 'Үзэсгэлэнт газар нэмэх',
   event: 'Эвент нэмэх',
 };
+const EDIT_TITLES: Record<CreateKind, string> = {
+  place: 'Газар засах',
+  scenic: 'Үзэсгэлэнт газар засах',
+  event: 'Эвент засах',
+};
 
 const SCENIC_ICONS = ['🏔️', '🏞️', '🌄', '⛺', '🌅', '🏝️', '🎭', '🌲', '⛰️', '🏛️', '🌌', '🎯'];
 
-export default function CreateForm({ kind, onClose, onSubmit }: Props) {
+export default function CreateForm({ kind, mode = 'create', initial, onClose, onSubmit }: Props) {
   const isMobile = useIsMobile();
   // Inputs below 16px make iOS Safari zoom the whole page in on focus — bump
   // to 16px only on small screens so the desktop layout stays as designed.
   const inputFontClass = isMobile ? 'text-base' : 'text-[13.5px]';
   const smallInputFontClass = isMobile ? 'text-base' : 'text-[13px]';
-  const [name, setName] = useState('');
-  const [desc, setDesc] = useState('');
-  const [aimag, setAimag] = useState('Улаанбаатар');
-  const [phone, setPhone] = useState('');
-  const [social, setSocial] = useState('');
-  const [catSlug, setCatSlug] = useState(CATS[0].slug);
-  const [sub, setSub] = useState(CATS[0].subs[0]);
-  const [openTime, setOpenTime] = useState('');
-  const [closeTime, setCloseTime] = useState('');
-  const [access, setAccess] = useState(false);
-  const [crit, setCrit] = useState<boolean[]>(() => FCRIT.map(() => false));
-  const [icon, setIcon] = useState(SCENIC_ICONS[0]);
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [max, setMax] = useState('');
-  const [images, setImages] = useState<string[]>([]);
-  const [lat, setLat] = useState<number | null>(null);
-  const [lng, setLng] = useState<number | null>(null);
+  const [name, setName] = useState(initial?.name || '');
+  const [desc, setDesc] = useState(initial?.desc || '');
+  const [aimag, setAimag] = useState(initial?.aimag || 'Улаанбаатар');
+  const [phone, setPhone] = useState(initial?.phone || '');
+  const [instagram, setInstagram] = useState(initial?.instagram || '');
+  const [facebook, setFacebook] = useState(initial?.facebook || '');
+  const [contactEmail, setContactEmail] = useState(initial?.contactEmail || '');
+  const [catSlug, setCatSlug] = useState(initial?.catSlug || CATS[0].slug);
+  const [sub, setSub] = useState(initial?.sub || (CATS.find((c) => c.slug === initial?.catSlug) || CATS[0]).subs[0]);
+  const [openTime, setOpenTime] = useState(initial?.openTime || '');
+  const [closeTime, setCloseTime] = useState(initial?.closeTime || '');
+  const [access, setAccess] = useState(!!initial?.access);
+  const [crit, setCrit] = useState<boolean[]>(() => FCRIT.map(() => !!initial?.access));
+  const [icon, setIcon] = useState(initial?.icon || SCENIC_ICONS[0]);
+  const [scenicType, setScenicType] = useState(initial?.scenicType || '');
+  const [date, setDate] = useState(initial?.date || '');
+  const [time, setTime] = useState(initial?.time || '');
+  const [max, setMax] = useState(initial?.max || '');
+  const [images, setImages] = useState<string[]>(initial?.images || []);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  // Tracks whether the pre-existing photo (initial.existingImage, if any) is
+  // still meant to be kept — set false if its preview gets removed with no
+  // replacement picked, so submit() knows to actually clear the image.
+  const [keepExistingImage, setKeepExistingImage] = useState(!!initial?.existingImage);
+  const [lat, setLat] = useState<number | null>(initial?.lat ?? null);
+  const [lng, setLng] = useState<number | null>(initial?.lng ?? null);
   const [err, setErr] = useState(false);
+  // Guards the create/save button against double-submits — a fast double
+  // click before the (async, image-upload-bearing) onSubmit resolves used to
+  // fire two separate creates, e.g. two identical scenic pins a couple
+  // seconds apart, each with its own freshly-uploaded Cloudinary image.
+  const [submitting, setSubmitting] = useState(false);
   const [w3w, setW3w] = useState('');
   const [w3wLoading, setW3wLoading] = useState(false);
   const [w3wErr, setW3wErr] = useState('');
@@ -152,6 +193,11 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
         reverseW3w(ev.latlng.lat, ev.latlng.lng);
       });
       mapRef.current = m;
+      // Edit mode: drop the existing pin instead of leaving the map on its
+      // default Mongolia-wide view. `lat`/`lng` here are the values captured
+      // at this callback's one-time creation (from `initial`), since attachMap
+      // only ever runs its init() once per mount.
+      if (lat != null && lng != null) { placeMarker(lat, lng); m.setView([lat, lng], 15); }
       setTimeout(() => m.invalidateSize(), 150);
     };
     init();
@@ -160,27 +206,59 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
   const onImgFile = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const f = ev.target.files && ev.target.files[0];
     if (!f) return;
+    setImageFiles((s) => [...s, f]);
     const r = new FileReader();
     r.onload = () => setImages((s) => [...s, String(r.result)]);
     r.readAsDataURL(f);
     ev.target.value = '';
   };
-  const removeImg = (i: number) => setImages((s) => s.filter((_, k) => k !== i));
+  const removeImg = (i: number) => {
+    // `images` may lead with one entry that has no `imageFiles` counterpart
+    // (the pre-existing photo in edit mode) — only the entries after that
+    // offset correspond 1:1 with imageFiles.
+    const fileOffset = images.length - imageFiles.length;
+    if (i < fileOffset) setKeepExistingImage(false);
+    else setImageFiles((s) => s.filter((_, k) => k !== i - fileOffset));
+    setImages((s) => s.filter((_, k) => k !== i));
+  };
 
   const curCat = CATS.find((c) => c.slug === catSlug) || CATS[0];
 
-  const submit = () => {
+  // Place is the one kind with mandatory contact info — admin has no other
+  // way to reach whoever's asking to be listed before approving them (see
+  // app/api/places/route.ts, which requires + format-checks these too).
+  const PHONE_RE = /^\d{8}$/;
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const placeContactMissing = kind === 'place' && (!phone.trim() || !instagram.trim() || !facebook.trim() || !contactEmail.trim());
+  const placePhoneInvalid = kind === 'place' && !!phone.trim() && !PHONE_RE.test(phone.trim());
+  const placeEmailInvalid = kind === 'place' && !!contactEmail.trim() && !EMAIL_RE.test(contactEmail.trim());
+  const placeContactInvalid = placeContactMissing || placePhoneInvalid || placeEmailInvalid;
+
+  const submit = async () => {
+    if (submitting) return;
     if (!name.trim()) { setErr(true); return; }
-    const data: CreateFormData = { kind, name: name.trim(), desc: desc.trim(), aimag, images, lat, lng };
+    if (kind === 'scenic' && !scenicType.trim()) { setErr(true); return; }
+    if (placeContactInvalid) { setErr(true); return; }
+    const data: CreateFormData = {
+      kind, name: name.trim(), desc: desc.trim(), aimag, images, imageFiles, lat, lng,
+      id: initial?.id,
+      existingImage: keepExistingImage ? initial?.existingImage : undefined,
+    };
     if (kind === 'place') {
-      data.catName = curCat.name; data.sub = sub; data.access = access && crit.every(Boolean);
-      data.phone = phone.trim(); data.social = social.trim(); data.openTime = openTime; data.closeTime = closeTime;
+      data.catName = curCat.name; data.catSlug = curCat.slug; data.sub = sub; data.access = access && crit.every(Boolean);
+      data.phone = phone.trim(); data.instagram = instagram.trim(); data.facebook = facebook.trim(); data.contactEmail = contactEmail.trim();
+      data.openTime = openTime; data.closeTime = closeTime;
     } else if (kind === 'scenic') {
-      data.icon = icon;
+      data.icon = icon; data.scenicType = scenicType.trim();
     } else {
       data.date = date; data.time = time; data.max = max.trim() || '20';
     }
-    onSubmit(data);
+    setSubmitting(true);
+    try {
+      await onSubmit(data);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const stop = (ev: React.MouseEvent) => ev.stopPropagation();
@@ -193,7 +271,7 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
     <div onClick={onClose} className="fixed inset-0 z-[60] box-border flex items-center justify-center bg-[rgba(6,8,12,.72)] backdrop-blur-[8px] [animation:bbFadeUp_.25s_ease_both]" style={{ padding: isMobile ? '14px' : '36px' }}>
       <div onClick={stop} className="box-border w-[640px] max-w-full max-h-[90vh] overflow-auto rounded-2xl border border-[rgba(255,255,255,.14)] bg-[#171410] shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '26px 28px 28px' }}>
         <div className="mb-5 flex items-center justify-between">
-          <div className="text-lg font-extrabold tracking-[-0.02em] text-cream-2">{TITLES[kind]}</div>
+          <div className="text-lg font-extrabold tracking-[-0.02em] text-cream-2">{mode === 'edit' ? EDIT_TITLES[kind] : TITLES[kind]}</div>
           <button onClick={onClose} className="h-8 w-8 cursor-pointer rounded-full border border-[rgba(242,237,227,.2)] bg-transparent font-[inherit] text-lg leading-none text-[rgba(242,237,227,.75)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">×</button>
         </div>
 
@@ -205,14 +283,36 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
 
           {kind === 'place' && (
             <>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Утасны дугаар</span>
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="99112233" inputMode="numeric" className={`${inputClass} ${inputFontClass}`} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Instagram / Facebook</span>
-                <input value={social} onChange={(e) => setSocial(e.target.value)} placeholder="Ж: instagram.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
-              </label>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Утасны дугаар <span className="text-[#f08a8a]">*</span></span>
+                  <input
+                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    className={`${inputClass} ${inputFontClass}`}
+                    style={{ borderColor: err && placePhoneInvalid ? '#f08a8a' : undefined }}
+                  />
+                  {err && placePhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Имэйл хаяг <span className="text-[#f08a8a]">*</span></span>
+                  <input
+                    value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="tanii@email.mn" inputMode="email"
+                    className={`${inputClass} ${inputFontClass}`}
+                    style={{ borderColor: err && placeEmailInvalid ? '#f08a8a' : undefined }}
+                  />
+                  {err && placeEmailInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">Имэйл хаяг буруу байна — жишээ: tanii@email.mn</span>}
+                </label>
+              </div>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Instagram <span className="text-[#f08a8a]">*</span></span>
+                  <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="instagram.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Facebook <span className="text-[#f08a8a]">*</span></span>
+                  <input value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="facebook.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
+                </label>
+              </div>
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Ангилал</span>
@@ -241,14 +341,20 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
           )}
 
           {kind === 'scenic' && (
-            <label className="flex flex-col gap-2">
-              <span className={labelSpanClass}>Тэмдэг</span>
-              <div className="flex flex-wrap gap-2">
-                {SCENIC_ICONS.map((g) => (
-                  <button key={g} onClick={() => setIcon(g)} className="flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-[10px] text-lg transition-all duration-200" style={{ border: `1.5px solid ${icon === g ? 'var(--accent,#E8B84B)' : 'rgba(255,255,255,.16)'}`, background: icon === g ? 'rgba(232, 184, 75,.2)' : 'rgba(255,255,255,.04)' }}>{g}</button>
-                ))}
-              </div>
-            </label>
+            <>
+              <label className="flex flex-col gap-1.5">
+                <span className={labelSpanClass}>Төрөл <span className="text-[#f08a8a]">*</span></span>
+                <input value={scenicType} onChange={(e) => setScenicType(e.target.value)} placeholder="Ж: Нар жаргах цэг, Уулын харагдац" className={`${inputClass} ${inputFontClass}`} />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className={labelSpanClass}>Тэмдэг</span>
+                <div className="flex flex-wrap gap-2">
+                  {SCENIC_ICONS.map((g) => (
+                    <button key={g} onClick={() => setIcon(g)} className="flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-[10px] text-lg transition-all duration-200" style={{ border: `1.5px solid ${icon === g ? 'var(--accent,#E8B84B)' : 'rgba(255,255,255,.16)'}`, background: icon === g ? 'rgba(232, 184, 75,.2)' : 'rgba(255,255,255,.04)' }}>{g}</button>
+                  ))}
+                </div>
+              </label>
+            </>
           )}
 
           {kind === 'event' && (
@@ -342,9 +448,19 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
           )}
 
           <div className="mt-1 flex items-center gap-3">
-            <button onClick={submit} className="cursor-pointer rounded-full border-none bg-[var(--accent,#E8B84B)] px-7 py-[11px] font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5">Үүсгэх →</button>
-            <button onClick={onClose} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-5 py-2.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.7)]">Болих</button>
-            {err && <span className="text-[11.5px] font-bold text-[#f08a8a]">Нэр оруулна уу</span>}
+            <button onClick={submit} disabled={submitting} className="cursor-pointer rounded-full border-none bg-[var(--accent,#E8B84B)] px-7 py-[11px] font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:translate-y-0">{submitting ? 'Хадгалж байна…' : mode === 'edit' ? 'Хадгалах' : 'Үүсгэх →'}</button>
+            <button onClick={onClose} disabled={submitting} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-5 py-2.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.7)] disabled:cursor-not-allowed disabled:opacity-60">Болих</button>
+            {err && (
+              <span className="text-[11.5px] font-bold text-[#f08a8a]">
+                {!name.trim()
+                  ? 'Нэр оруулна уу'
+                  : placePhoneInvalid || placeEmailInvalid
+                  ? 'Дээрх талбаруудыг зөв бөглөнө үү'
+                  : placeContactMissing
+                  ? 'Утас, имэйл, Instagram, Facebook-оо бөглөнө үү'
+                  : 'Төрлөө оруулна уу'}
+              </span>
+            )}
           </div>
         </div>
       </div>

@@ -32,6 +32,42 @@ export default function SuggestPage() {
       className="box-border min-h-screen"
       style={{ padding: V.isMobile ? '96px 18px 14px' : '110px 48px 18px' }}
     >
+      {V.brands.length > 0 && (
+        <div className="mb-10">
+          <h2 className="m-0 text-lg font-extrabold tracking-[-0.02em] text-cream">{V.L.brandsTitle}</h2>
+          <p className="mt-1.5 mb-3.5 text-[13px] text-[rgba(242,237,227,.55)]">{V.L.brandsSub}</p>
+          <div className="bb-hscroll flex gap-4 overflow-x-auto pt-3 pb-1.5">
+            {V.brands.map((b: any, i: number) => {
+              // The sizing/flex-item classes live on whichever element ends
+              // up as the actual direct child of the scroll rail (<a> when
+              // there's a link, <div> otherwise) — putting them one level
+              // deeper instead left the wrapper with no size of its own.
+              const cardClass = 'relative block grow-0 shrink-0 basis-[190px] aspect-[3/4] cursor-pointer overflow-hidden rounded-2xl border border-[rgba(255,255,255,.1)] no-underline transition-transform duration-300 ease-[cubic-bezier(.22,.8,.3,1)] hover:-translate-y-2';
+              const inner = (
+                <>
+                  <BgMedia bg={b.thumb} className="absolute inset-0" imgClassName="bg-cover bg-center" />
+                  <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,.05)_0%,rgba(0,0,0,0)_45%,rgba(0,0,0,.85)_100%)]"></div>
+                  <div className="absolute left-3 right-3 bottom-3 flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 flex-none items-center justify-center overflow-hidden rounded-full border border-[rgba(255,255,255,.25)] bg-[#f2ede3]">
+                      {b.logoUrl ? <img src={b.logoUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-xs font-extrabold text-[#171410]">{b.name.charAt(0)}</span>}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-[13.5px] font-extrabold leading-[1.2] text-cream-2">{b.name}</div>
+                      <div className="truncate text-[11px] text-[rgba(242,237,227,.6)]">{b.category}</div>
+                    </div>
+                  </div>
+                </>
+              );
+              return b.link ? (
+                <a key={i} href={b.link} target="_blank" rel="noopener noreferrer" className={cardClass}>{inner}</a>
+              ) : (
+                <div key={i} className={cardClass}>{inner}</div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="mb-10">
         <h2 className="m-0 mb-3.5 text-lg font-extrabold tracking-[-0.02em] text-cream">{V.L.topRowTitle}</h2>
         {/* overflow-x:auto here forces overflow-y to compute as 'auto' too (CSS
