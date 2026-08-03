@@ -23,6 +23,7 @@ import {
 import { apiGet, apiGetAuthed } from '../../lib/api';
 import { getSession, saveSession, clearSession } from '../../lib/session';
 import { createPlace, createScenicPin, createEvent } from '../../lib/userContent';
+import { getFavoriteKeys, addFavorite, removeFavorite } from '../../lib/favorites';
 import { BgMedia } from './ui';
 
 // Replaces react-router's <Outlet context={V}/> + useOutletContext() pair —
@@ -169,7 +170,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // lib/session.ts), not kept in this component's own state — this just
     // loads this session's own place submissions once, on mount.
     const session = getSession();
-    if (session) this.fetchMyPlaces(session.token);
+    if (session) { this.fetchMyPlaces(session.token); this.fetchMyFavorites(session.token); }
     this._mnVertResize = () => { this.updateHeroVertPos(); };
     window.addEventListener('resize', this._mnVertResize);
     this._vwResize = () => { if (this.state.vw !== window.innerWidth) this.setState({ vw: window.innerWidth }); };
@@ -302,6 +303,18 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Place is filtered server-side instead since only approved ones are public).
   fetchMyPlaces = (token: string) => {
     apiGetAuthed<any[]>('/places/mine', token).then((myPlaces) => this.setState({ myPlaces })).catch(() => {});
+  };
+
+  // This session's real, backend-persisted favorites (Favorite rows keyed by
+  // the same 'p:slug:name'/'s:name' strings toggleFav already used for the
+  // old local-only version) — shown as a boolean map so every `favs[key]`
+  // read elsewhere in this file keeps working unchanged.
+  fetchMyFavorites = (token: string) => {
+    getFavoriteKeys(token).then((keys) => {
+      const favs: Record<string, boolean> = {};
+      keys.forEach((k) => { favs[k] = true; });
+      this.setState({ favs });
+    }).catch(() => {});
   };
 
   // CATS shell (slug/name/subs/hero/pool/...) with real Place rows grouped
@@ -885,7 +898,21 @@ export default class BigBangLayout extends React.Component<Props, any> {
     });
 
     const favs = this.state.favs || {};
-    const toggleFav = (key: string) => (ev: any) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState((s: any) => ({ favs: { ...s.favs, [key]: !s.favs[key] } })); };
+    // Favoriting requires being signed in — same OTP gate as rating (see
+    // rateThis in PlaceDetail/EventDetail) and place/scenic/event submission.
+    // Updates optimistically, then reverts if the backend call fails, rather
+    // than waiting on the round-trip before the heart icon flips (this fires
+    // from many small card buttons at once, not one big form submit).
+    const toggleFav = (key: string) => (ev: any) => {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      const session = getSession();
+      if (!session) { this.setState({ showUserAuthForm: true }); return; }
+      const nowOn = !favs[key];
+      this.setState((s: any) => ({ favs: { ...s.favs, [key]: nowOn } }));
+      (nowOn ? addFavorite(session.token, key) : removeFavorite(session.token, key)).catch(() => {
+        this.setState((s: any) => ({ favs: { ...s.favs, [key]: !nowOn } }));
+      });
+    };
     const heartOf = (on: boolean) => ({ favOn: on, heartColor: on ? accent : 'rgba(242,237,227,.9)' });
 
     const joined = this.state.joined || {};
@@ -1006,6 +1033,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       saveSession(token, user);
       this.setState({ showUserAuthForm: false });
       this.fetchMyPlaces(token);
+      this.fetchMyFavorites(token);
       const pending = this._pendingCreate;
       this._pendingCreate = null;
       if (!pending) return;
@@ -1022,11 +1050,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // Clears the session (lib/session.ts) and this session's own fetched
     // place list — myScenic/myEvents don't need clearing since they're
     // re-derived from getSession() fresh on every render (see mySession
-    // below), but myPlaces is state fetched once via fetchMyPlaces and would
-    // otherwise keep showing the logged-out account's places until a refresh.
+    // below), but myPlaces/favs are state fetched once via fetchMyPlaces/
+    // fetchMyFavorites and would otherwise keep showing the logged-out
+    // account's data until a refresh.
     const logout = () => {
       clearSession();
-      this.setState({ myPlaces: [] });
+      this.setState({ myPlaces: [], favs: {} });
     };
     const evThumb = (img: any) => img ? 'url("' + img + '")' : 'linear-gradient(135deg, rgba(232, 184, 75,.25), rgba(120,200,170,.15))';
     const liveEvents: any[] = this.state.liveEvents || [];
