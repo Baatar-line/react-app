@@ -71,6 +71,7 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
 
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
+  const submittedRef = useRef(false);
 
   const placeMarker = useCallback((lt: number, lg: number) => {
     if (!mapRef.current || !window.L) return;
@@ -117,6 +118,8 @@ export default function CreateForm({ kind, onClose, onSubmit }: Props) {
 
   const submit = () => {
     if (!name.trim()) { setErr(true); return; }
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     const data: CreateFormData = { kind, name: name.trim(), desc: desc.trim(), aimag, images, lat, lng };
     if (kind === 'place') {
       data.catName = curCat.name; data.sub = sub; data.access = access && crit.every(Boolean);
