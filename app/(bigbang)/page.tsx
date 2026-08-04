@@ -71,30 +71,58 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Tablet/mobile: the map moves into normal document flow below the
+          category list (the desktop block below is absolutely positioned
+          against a fixed-height hero, which a phone-width screen can't fit)
+          — same interactive map either way, just not side-by-side with
+          preview cards, which stay desktop-only. Hidden until the header's
+          "Бүгд" (aimag) button opens it — same V.locOpen toggle that already
+          drives that button's chip-list dropdown. */}
+      {V.isTablet && V.locOpen && (
+        <div className="relative z-10 mx-auto mt-1 w-full max-w-[480px] px-6 pb-8">
+          <div className="mb-2 text-center text-[11px] text-[rgba(242,237,227,.5)]">{V.L.mapHint}</div>
+          <div ref={V.pickerWrapRef} className="relative aspect-[4/3] w-full">
+            {V.pickerSvg}
+            {V.heroVertLabel && V.heroVertPos && (
+              <div
+                className="absolute z-[6] pointer-events-none [writing-mode:vertical-lr] font-[Mongolian_Baiti,Menksoft_Tigst,sans-serif] text-[16px] text-[var(--accent,#E8B84B)] [text-shadow:0_1px_4px_rgba(6,9,14,.8),_0_0_2px_rgba(6,9,14,.8)]"
+                style={{ left: V.heroVertPos.left, top: V.heroVertPos.top - 10 }}
+                title="Уламжлалт бичиг — AI орчуулга, шалгагдаагvй"
+              >{V.heroVertLabel}</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* map picker + preview cards — the absolute side-by-side hero
-          layout doesn't fit a phone screen, so both stay desktop/tablet
-          only for now; the category list above already covers browsing
-          and picking a category on mobile without them. */}
+          layout doesn't fit a phone screen, so this desktop version stays
+          desktop/tablet only; the block above covers the map on mobile.
+          Preview cards stay unaffected by locOpen — only the map itself is
+          gated behind the "Бүгд" button. */}
       {!V.isTablet && (
         <>
-          {/* top/bottom shifted together (not just top) so nudging the map
-              down the page doesn't also squash the picker's height. */}
-          <div className="absolute left-[30%] right-[30px] top-[136px] bottom-[114px] z-[6]">
-            <div ref={V.pickerWrapRef} className="relative h-full">
-              {V.pickerSvg}
-              {V.heroVertLabel && V.heroVertPos && (
-                <div
-                  className="absolute z-[6] pointer-events-none [writing-mode:vertical-lr] font-[Mongolian_Baiti,Menksoft_Tigst,sans-serif] text-[16px] text-[var(--accent,#E8B84B)] [text-shadow:0_1px_4px_rgba(6,9,14,.8),_0_0_2px_rgba(6,9,14,.8)]"
-                  style={{ left: V.heroVertPos.left, top: V.heroVertPos.top - 10 }}
-                  title="Уламжлалт бичиг — AI орчуулга, шалгагдаагvй"
-                >{V.heroVertLabel}</div>
-              )}
-            </div>
-          </div>
+          {V.locOpen && (
+            <>
+              {/* top/bottom shifted together (not just top) so nudging the
+                  map down the page doesn't also squash the picker's height. */}
+              <div className="absolute left-[30%] right-[30px] top-[136px] bottom-[114px] z-[6]">
+                <div ref={V.pickerWrapRef} className="relative h-full">
+                  {V.pickerSvg}
+                  {V.heroVertLabel && V.heroVertPos && (
+                    <div
+                      className="absolute z-[6] pointer-events-none [writing-mode:vertical-lr] font-[Mongolian_Baiti,Menksoft_Tigst,sans-serif] text-[16px] text-[var(--accent,#E8B84B)] [text-shadow:0_1px_4px_rgba(6,9,14,.8),_0_0_2px_rgba(6,9,14,.8)]"
+                      style={{ left: V.heroVertPos.left, top: V.heroVertPos.top - 10 }}
+                      title="Уламжлалт бичиг — AI орчуулга, шалгагдаагvй"
+                    >{V.heroVertLabel}</div>
+                  )}
+                </div>
+              </div>
 
-          {/* Sits in the otherwise-empty background above the map's
-              right edge — the spot the map itself doesn't reach. */}
-          <div className="absolute right-[80px] top-[110px] z-[7] max-w-[240px] text-right text-[12px] text-[rgba(242,237,227,.45)]">{V.L.mapHint}</div>
+              {/* Sits in the otherwise-empty background above the map's
+                  right edge — the spot the map itself doesn't reach. */}
+              <div className="absolute right-[80px] top-[110px] z-[7] max-w-[240px] text-right text-[12px] text-[rgba(242,237,227,.45)]">{V.L.mapHint}</div>
+            </>
+          )}
 
           <div className="absolute right-12 bottom-11 z-10 flex items-end gap-[14px]">{V.previewCards}</div>
         </>

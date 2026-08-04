@@ -738,7 +738,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
         style: { cursor: 'pointer', transition: 'fill .25s' },
         onMouseEnter: () => this.setState({ heroHover: id }),
         onMouseLeave: () => this.setState({ heroHover: null }),
-        onClick: () => this.setState((s: any) => ({ aimag: s.aimag === id ? 'Бүгд' : id, locOpen: false })),
+        // Selecting an aimag no longer closes the map (locOpen) — only the
+        // "Бүгд" button toggle does that now, so picking one aimag after
+        // another stays on the map instead of needing to reopen it each time.
+        onClick: () => this.setState((s: any) => ({ aimag: s.aimag === id ? 'Бүгд' : id })),
       }));
     });
     geo.shapes.forEach((sh: any) => {
@@ -886,16 +889,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
     const placeCountFor = (a: string) => cats.reduce((n, c) => n + c.items.filter((it) => (it.aimag || 'Улаанбаатар') === a).length, 0);
     const totalPlaces = cats.reduce((n, c) => n + c.items.length, 0);
-    const aimagOpts = ([['Бүгд', 'All']] as [string, string][]).concat(AIMAGS).map((a) => {
-      const on = aimag === a[0];
-      return {
-        label: lang === 'en' ? a[1] : (a[0] === 'Бүгд' ? L.all : a[0]),
-        count: a[0] === 'Бүгд' ? totalPlaces : placeCountFor(a[0]),
-        countColor: on ? 'rgba(0,0,0,.65)' : 'var(--accent,#E8B84B)',
-        bg: on ? accent : 'rgba(255,255,255,.1)', color: on ? '#132a1f' : 'rgba(255,255,255,.92)',
-        border: on ? accent : 'rgba(255,255,255,.55)', pick: () => this.setState({ aimag: a[0], locOpen: false }),
-      };
-    });
 
     const favs = this.state.favs || {};
     // Favoriting requires being signed in — same OTP gate as rating (see
@@ -1274,8 +1267,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
       }),
       clearActive: () => this.setState({ active: -1 }),
       goHome: () => { navigate('/'); this.setState({ active: -1, locOpen: false }); },
-      locOpen, toggleLoc: () => this.setState({ locOpen: !locOpen }), closeLoc: () => this.setState({ locOpen: false }),
-      aimagLabel: aimagName(aimag, lang), aimagOpts,
+      locOpen, toggleLoc: () => this.setState({ locOpen: !locOpen }),
+      aimagLabel: aimagName(aimag, lang),
       aimagCount: aimag === 'Бүгд' ? totalPlaces : placeCountFor(aimag),
       resetAimag: () => this.setState({ aimag: 'Бүгд' }),
       setMn: () => this.setState({ lang: 'mn' }), setEn: () => this.setState({ lang: 'en' }),
@@ -1316,16 +1309,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
                           <span className="flex-1">{V.aimagLabel}</span>
                           <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
                         </button>
-                        {V.locOpen && (
-                          <div className="flex flex-wrap gap-1.5 px-0.5 py-2.5">
-                            {V.aimagOpts.map((a: any, i: number) => (
-                              <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-colors duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
-                                <span>{a.label}</span>
-                                <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </>
                     )}
                     {V.isMapsPage && (
@@ -1374,21 +1357,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
                     <span className="text-[10.5px] font-extrabold text-[var(--accent,#E8B84B)]">{V.aimagCount}</span>
                     <span className="text-[9px] opacity-60">▾</span>
                   </button>
-                  {V.locOpen && (
-                    <>
-                      <div onClick={V.closeLoc} className="fixed inset-0 z-40 cursor-default"></div>
-                      <div className="fixed top-[76px] left-1/2 z-[41] max-h-[70vh] w-[560px] -translate-x-1/2 overflow-auto rounded-[14px] border border-[rgba(255,255,255,.35)] bg-[rgba(255,255,255,.09)] p-4 pt-3.5 shadow-[0_24px_60px_rgba(0,0,0,.45),inset_0_1px_0_rgba(255,255,255,.25)] backdrop-blur-[22px] backdrop-saturate-[1.2]">
-                        <div className="flex flex-wrap gap-1.5">
-                          {V.aimagOpts.map((a: any, i: number) => (
-                            <button key={i} onClick={a.pick} className="flex cursor-pointer items-center gap-1.5 rounded-full font-[inherit] text-[11px] font-semibold transition-all duration-200 hover:border-[rgba(242,237,227,.6)]" style={{ border: `1px solid ${a.border}`, background: a.bg, color: a.color, padding: '5px 11px' }}>
-                              <span>{a.label}</span>
-                              <span style={{ fontSize: '9.5px', fontWeight: 800, color: a.countColor }}>{a.count}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
                 </div>
               )}
 
