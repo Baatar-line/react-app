@@ -49,6 +49,11 @@ export async function POST(request: Request) {
     if (!targetKey || typeof score !== 'number' || !Number.isInteger(score) || score < 1 || score > 5) {
       return NextResponse.json({ error: 'targetKey, score (1-5 бүхэл тоо) шаардлагатай' }, { status: 400 });
     }
+    // Events don't have a rating feature (see app/(bigbang)/event/[index]/page.tsx)
+    // — reject here too so it can't be posted by calling the API directly.
+    if (targetKey.startsWith('event:')) {
+      return NextResponse.json({ error: 'Эвентийг үнэлэх боломжгүй' }, { status: 400 });
+    }
     await prisma.rating.upsert({
       where: { userId_targetKey: { userId, targetKey } },
       update: { score },

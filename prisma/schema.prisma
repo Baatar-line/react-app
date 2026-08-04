@@ -270,6 +270,16 @@ model Event {
   lat       Float?
   lng       Float?
   featured  Boolean   @default(false)
+  // Contact info — required at submission time for *new* events (enforced
+  // in POST /events, not here — nullable at the db level since existing
+  // rows predate this and can't be backfilled) so admin/attendees have a
+  // real way to reach the host. Mirrors Place's phone/instagramUrl, minus
+  // facebook/email — an event host is reached via phone or Instagram, not
+  // necessarily the others.
+  instagram String?
+  phone     String?
+  // Optional second contact number — organizers often list a backup.
+  phone2      String?
   addedBy     Int
   addedByUser User    @relation("EventAddedBy", fields: [addedBy], references: [id])
   createdAt DateTime  @default(now())

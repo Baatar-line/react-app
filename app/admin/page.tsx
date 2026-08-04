@@ -326,6 +326,7 @@ export default function AdminPanel() {
       desc: row.meta || '',
       date: row.startDate ? new Date(row.startDate).toISOString().slice(0, 10) : '',
       time: row.startDate ? new Date(row.startDate).toISOString().slice(11, 16) : '',
+      phone: row.phone || '', phone2: row.phone2 || '', instagram: row.instagram || '',
     }),
   });
 

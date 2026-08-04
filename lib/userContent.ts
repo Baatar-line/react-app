@@ -98,6 +98,9 @@ export async function createEvent(token: string | undefined, data: CreateFormDat
     aimagId,
     lat: data.lat ?? undefined,
     lng: data.lng ?? undefined,
+    instagram: data.instagram || undefined,
+    phone: data.phone || undefined,
+    phone2: data.phone2 || undefined,
   }, token);
 }
 
@@ -168,6 +171,9 @@ export async function updateEvent(token: string | undefined, id: number, data: C
     aimagId,
     lat: data.lat ?? undefined,
     lng: data.lng ?? undefined,
+    instagram: data.instagram || undefined,
+    phone: data.phone || undefined,
+    phone2: data.phone2 !== undefined ? data.phone2 : undefined,
   }, token);
 }
 

@@ -54,6 +54,9 @@ export interface CreateFormData {
   sub?: string;
   access?: boolean;
   phone?: string;
+  // Second, optional contact number — event-only (see the "event" fields
+  // block below); places just have the one `phone`.
+  phone2?: string;
   instagram?: string;
   facebook?: string;
   contactEmail?: string;
@@ -103,6 +106,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const [desc, setDesc] = useState(initial?.desc || '');
   const [aimag, setAimag] = useState(initial?.aimag || 'Улаанбаатар');
   const [phone, setPhone] = useState(initial?.phone || '');
+  const [phone2, setPhone2] = useState(initial?.phone2 || '');
   const [instagram, setInstagram] = useState(initial?.instagram || '');
   const [facebook, setFacebook] = useState(initial?.facebook || '');
   const [contactEmail, setContactEmail] = useState(initial?.contactEmail || '');
@@ -311,6 +315,14 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const placeContactInvalid = placeContactMissing || placePhoneInvalid || placeEmailInvalid;
   const placeHoursMissing = kind === 'place' && (!openTime || !closeTime);
   const eventMissing = kind === 'event' && (!date || !time || !max.trim());
+  // Event contact info mirrors place's (see PHONE_RE above) minus
+  // facebook/email — attendees/admin reach the organizer by phone or
+  // Instagram. `phone2` is a genuinely optional second number, never
+  // required and never format-checked unless something's actually in it.
+  const eventContactMissing = kind === 'event' && (!phone.trim() || !instagram.trim());
+  const eventPhoneInvalid = kind === 'event' && !!phone.trim() && !PHONE_RE.test(phone.trim());
+  const eventPhone2Invalid = kind === 'event' && !!phone2.trim() && !PHONE_RE.test(phone2.trim());
+  const eventContactInvalid = eventContactMissing || eventPhoneInvalid || eventPhone2Invalid;
   const descMissing = !desc.trim();
   const imagesMissing = images.length < 1;
   const imagesMaxed = images.length >= MAX_IMAGES;
@@ -322,7 +334,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
     if (imagesMissing) { setErr(true); return; }
     if (kind === 'scenic' && !scenicType.trim()) { setErr(true); return; }
     if (kind === 'place' && (placeContactInvalid || placeHoursMissing)) { setErr(true); return; }
-    if (kind === 'event' && eventMissing) { setErr(true); return; }
+    if (kind === 'event' && (eventMissing || eventContactInvalid)) { setErr(true); return; }
     const data: CreateFormData = {
       kind, name: name.trim(), desc: desc.trim(), aimag, images, imageFiles, lat, lng,
       id: initial?.id,
@@ -336,6 +348,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
       data.icon = icon; data.scenicType = scenicType.trim();
     } else {
       data.date = date; data.time = time; data.max = max.trim();
+      data.phone = phone.trim(); data.phone2 = phone2.trim(); data.instagram = instagram.trim();
     }
     setSubmitting(true);
     try {
@@ -442,20 +455,46 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
           )}
 
           {kind === 'event' && (
-            <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
+            <>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Огноо <span className="text-[#f08a8a]">*</span></span>
+                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Цаг <span className="text-[#f08a8a]">*</span></span>
+                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Дээд тал (хүн) <span className="text-[#f08a8a]">*</span></span>
+                  <input value={max} onChange={(e) => setMax(e.target.value)} placeholder="20" inputMode="numeric" className={`${smallInputClass} ${smallInputFontClass}`} />
+                </label>
+              </div>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Утасны дугаар <span className="text-[#f08a8a]">*</span></span>
+                  <input
+                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    className={`${inputClass} ${inputFontClass}`}
+                    style={{ borderColor: err && eventPhoneInvalid ? '#f08a8a' : undefined }}
+                  />
+                  {err && eventPhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>2-р утасны дугаар <span className="text-[rgba(242,237,227,.4)] font-normal">(заавал биш)</span></span>
+                  <input
+                    value={phone2} onChange={(e) => setPhone2(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    className={`${inputClass} ${inputFontClass}`}
+                    style={{ borderColor: err && eventPhone2Invalid ? '#f08a8a' : undefined }}
+                  />
+                  {err && eventPhone2Invalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
+                </label>
+              </div>
               <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Огноо <span className="text-[#f08a8a]">*</span></span>
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
+                <span className={labelSpanClass}>Instagram <span className="text-[#f08a8a]">*</span></span>
+                <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="instagram.com/yourevent" className={`${inputClass} ${inputFontClass}`} />
               </label>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Цаг <span className="text-[#f08a8a]">*</span></span>
-                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Дээд тал (хүн) <span className="text-[#f08a8a]">*</span></span>
-                <input value={max} onChange={(e) => setMax(e.target.value)} placeholder="20" inputMode="numeric" className={`${smallInputClass} ${smallInputFontClass}`} />
-              </label>
-            </div>
+            </>
           )}
 
           <label className="flex flex-col gap-1.5">
@@ -578,6 +617,10 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                   ? 'Нээх, хаах цагаа сонгоно уу'
                   : kind === 'event' && eventMissing
                   ? 'Огноо, цаг, дээд тал хүний тоог бөглөнө үү'
+                  : kind === 'event' && (eventPhoneInvalid || eventPhone2Invalid)
+                  ? 'Дээрх утасны дугаарыг зөв бөглөнө үү'
+                  : kind === 'event' && eventContactMissing
+                  ? 'Утас, Instagram-аа бөглөнө үү'
                   : 'Талбаруудаа бүрэн бөглөнө үү'}
               </span>
             )}

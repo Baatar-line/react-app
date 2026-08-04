@@ -1,6 +1,7 @@
 // Real, backend-persisted 1-5 ratings — replaces the old ratingOf() name-hash
-// placeholder on the two pages that actually show a "rate this" widget
-// (PlaceDetail, EventDetail). See app/api/ratings/route.ts.
+// placeholder on the pages that actually show a "rate this" widget
+// (PlaceDetail, ScenicDetail — events don't have one, see
+// app/(bigbang)/event/[index]/page.tsx). See app/api/ratings/route.ts.
 import { apiGet, apiPost } from './api';
 
 export interface RatingSummary {
@@ -9,7 +10,7 @@ export interface RatingSummary {
   mine: number | null;
 }
 
-export function ratingTargetKey(kind: 'place' | 'scenic' | 'event', id: number): string {
+export function ratingTargetKey(kind: 'place' | 'scenic', id: number): string {
   return `${kind}:${id}`;
 }
 
