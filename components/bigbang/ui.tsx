@@ -1,7 +1,7 @@
 'use client';
 
 // Small runtime helpers used by the Big Bang port.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 // Pulls the `url("...")` portion out of a composed CSS background value
 // (e.g. 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.4)), url("https://...")')
@@ -40,9 +40,30 @@ export function BgMedia({
   const { url, scrim } = useMemo(() => parseBg(bg), [bg]);
   const vSrc = videoSrc || url;
   const [ready, setReady] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  // A page with a long grid of these (category pages, admin lists, the home
+  // hero's preview cards, ...) used to kick off every single photo/video
+  // fetch the instant it mounted, regardless of whether it was ever on
+  // screen — dozens of requests all competing for bandwidth at once, which
+  // is what made even the visible/above-the-fold images crawl. Only start
+  // loading once a card is actually near the viewport, same as a native
+  // `<img loading="lazy">` would stagger it.
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    if (inView) return;
+    const node = wrapRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') { setInView(true); return; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((en) => en.isIntersecting)) { setInView(true); io.disconnect(); }
+    }, { rootMargin: '600px 0px' });
+    io.observe(node);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (isVideo) { setReady(false); return; }
     if (!url) { setReady(true); return; }
+    if (!inView) return;
     setReady(false);
     let alive = true;
     const im = new Image();
@@ -50,27 +71,29 @@ export function BgMedia({
     im.onerror = () => { if (alive) setReady(true); };
     im.src = url;
     return () => { alive = false; };
-  }, [url, isVideo]);
+  }, [url, isVideo, inView]);
 
   return (
-    <div className={(POSITIONED.test(className) ? '' : 'relative ') + 'overflow-hidden ' + className} style={style}>
+    <div ref={wrapRef} className={(POSITIONED.test(className) ? '' : 'relative ') + 'overflow-hidden ' + className} style={style}>
       {!ready && <div className="absolute inset-0 bb-skeleton" />}
       {isVideo ? (
-        <>
-          <video
-            src={vSrc} autoPlay loop muted playsInline
-            onLoadedData={() => setReady(true)}
-            className={'absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ' + videoClassName}
-            style={{ opacity: ready ? 1 : 0 }}
-          />
-          {scrim && (
-            <div className="absolute inset-0 transition-opacity duration-300" style={{ background: scrim, opacity: ready ? 1 : 0 }} />
-          )}
-        </>
+        inView && (
+          <>
+            <video
+              src={vSrc} autoPlay loop muted playsInline
+              onLoadedData={() => setReady(true)}
+              className={'absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ' + videoClassName}
+              style={{ opacity: ready ? 1 : 0 }}
+            />
+            {scrim && (
+              <div className="absolute inset-0 transition-opacity duration-300" style={{ background: scrim, opacity: ready ? 1 : 0 }} />
+            )}
+          </>
+        )
       ) : (
         <div
           className={'absolute inset-0 transition-opacity duration-300 ' + imgClassName}
-          style={{ backgroundImage: bg, opacity: ready ? 1 : 0 }}
+          style={{ backgroundImage: ready ? bg : undefined, opacity: ready ? 1 : 0 }}
         />
       )}
       {children}
