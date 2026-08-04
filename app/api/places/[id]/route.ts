@@ -29,6 +29,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (images !== undefined && (!Array.isArray(images) || images.length < 1 || images.length > 4)) {
       return NextResponse.json({ error: 'Дор хаяж 1, хамгийн ихдээ 4 зураг оруулна уу' }, { status: 400 });
     }
+    // `images` always arrives as the row's full final photo set (kept +
+    // newly-uploaded, see uploadImages in lib/userContent.ts) — whatever was
+    // in the old set but isn't in this one was just replaced/removed, so
+    // clean those up on Cloudinary instead of leaving them orphaned there.
+    const previous = images !== undefined ? await prisma.place.findUnique({ where: { id: Number(id) }, select: { images: true } }) : null;
     const place = await prisma.place.update({
       where: { id: Number(id) },
       data: {
@@ -43,6 +48,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       },
       include: { category: true, aimag: true },
     });
+    if (previous) await destroyCloudinaryImages(previous.images.filter((url) => !images.includes(url)));
     return NextResponse.json(place);
   } catch (err) {
     return jsonError(err);
