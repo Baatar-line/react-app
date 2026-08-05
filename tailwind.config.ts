@@ -31,6 +31,10 @@ export default {
           from: { opacity: '0', transform: 'translateY(14px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
+        bbFadeDown: {
+          from: { opacity: '0', transform: 'translateY(-14px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
         bbFloat: {
           '0%,100%': { transform: 'translateY(0)' },
           '50%': { transform: 'translateY(-7px)' },
@@ -40,6 +44,7 @@ export default {
         bbDrift: 'bbDrift 18s ease-in-out infinite alternate',
         bbCardIn: 'bbCardIn .5s ease both',
         bbFadeUp: 'bbFadeUp .6s ease both',
+        bbFadeDown: 'bbFadeDown .6s ease both',
         bbFloat: 'bbFloat 5s ease-in-out infinite',
       },
     },

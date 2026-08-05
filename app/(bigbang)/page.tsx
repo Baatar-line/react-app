@@ -16,15 +16,31 @@ export default function Home() {
         bg={V.homeHeroBg} isVideo={V.homeBgIsVideo} videoSrc={V.homeBgRawUrl}
         className="absolute inset-0" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
       />
-      {/* Aimag hero — the picked aimag's photo/video crossfades in over the
-          Home hero above; while it's still loading, a skeleton shows through
-          the same fade instead of the flat black scrim (see aimagBgLoading). */}
+      {/* Aimag hero — every aimag keeps its own stable layer (never a shared
+          element whose background-image url gets swapped), and switching
+          straight from one aimag's photo to another's is a real two-photo
+          dissolve (both layers fade at once). aimagBgBackstop is a solid
+          (non-transitioning) copy of whichever aimag was showing right
+          before the dissolve started, painted just below the two dissolving
+          layers — without it, the moment in the middle where neither is
+          fully opaque would let the plain Home hero flash through instead
+          of the outgoing aimag's own photo. While the picked aimag's photo
+          hasn't loaded yet, a skeleton shows through instead of the flat
+          black scrim. */}
       {V.aimagBgLoading && <div className="absolute inset-0 bb-skeleton" />}
-      <BgMedia
-        bg={V.aimagBg} isVideo={V.aimagBgIsVideo} videoSrc={V.aimagBgRawUrl}
-        className="absolute inset-0 transition-opacity duration-[550ms] ease-in-out" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
-        style={{ opacity: V.aimagBgOpacity }}
-      />
+      {V.aimagBgBackstop && (
+        <BgMedia
+          bg={V.aimagBgBackstop.bg} isVideo={V.aimagBgBackstop.isVideo} videoSrc={V.aimagBgBackstop.rawUrl}
+          className="absolute inset-0" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
+        />
+      )}
+      {V.aimagBgLayers.map((layer: any) => (
+        <BgMedia
+          key={layer.key} bg={layer.bg} isVideo={layer.isVideo} videoSrc={layer.rawUrl}
+          className="absolute inset-0 transition-opacity duration-[550ms] ease-in-out" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
+          style={{ opacity: layer.opacity }}
+        />
+      ))}
       {/* Category hover/selection preview — always a still photo, even for a
           category with an uploaded background video (that only plays once
           you're inside the category's own page). */}
@@ -79,7 +95,7 @@ export default function Home() {
           "Бүгд" (aimag) button opens it — same V.locOpen toggle that already
           drives that button's chip-list dropdown. */}
       {V.isTablet && V.locOpen && (
-        <div className="relative z-10 mx-auto mt-1 w-full max-w-[480px] px-6 pb-8">
+        <div className="relative z-10 mx-auto mt-1 w-full max-w-[480px] px-6 pb-8 animate-bbFadeDown">
           <div className="mb-2 text-center text-[11px] text-[rgba(242,237,227,.5)]">{V.L.mapHint}</div>
           <div ref={V.pickerWrapRef} className="relative aspect-[4/3] w-full">
             {V.pickerSvg}
@@ -105,7 +121,7 @@ export default function Home() {
             <>
               {/* top/bottom shifted together (not just top) so nudging the
                   map down the page doesn't also squash the picker's height. */}
-              <div className="absolute left-[30%] right-[30px] top-[136px] bottom-[114px] z-[6]">
+              <div className="absolute left-[30%] right-[30px] top-[136px] bottom-[114px] z-[6] animate-bbFadeDown">
                 <div ref={V.pickerWrapRef} className="relative h-full">
                   {V.pickerSvg}
                   {V.heroVertLabel && V.heroVertPos && (
@@ -120,7 +136,7 @@ export default function Home() {
 
               {/* Sits in the otherwise-empty background above the map's
                   right edge — the spot the map itself doesn't reach. */}
-              <div className="absolute right-[80px] top-[110px] z-[7] max-w-[240px] text-right text-[12px] text-[rgba(242,237,227,.45)]">{V.L.mapHint}</div>
+              <div className="absolute right-[80px] top-[110px] z-[7] max-w-[240px] text-right text-[12px] text-[rgba(242,237,227,.45)] animate-bbFadeDown">{V.L.mapHint}</div>
             </>
           )}
 

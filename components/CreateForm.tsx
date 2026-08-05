@@ -130,6 +130,13 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const [lat, setLat] = useState<number | null>(initial?.lat ?? null);
   const [lng, setLng] = useState<number | null>(initial?.lng ?? null);
   const [err, setErr] = useState(false);
+  // Tracks whether the user has left each contact field at least once, so
+  // format errors (bad phone/email) show live on blur instead of only after
+  // a failed submit — typing garbage shouldn't require hitting "create"
+  // first to find out it's wrong.
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [phone2Touched, setPhone2Touched] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
   // Guards the create/save button against double-submits — a fast double
   // click before the (async, image-upload-bearing) onSubmit resolves used to
   // fire two separate creates, e.g. two identical scenic pins a couple
@@ -358,15 +365,13 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
     }
   };
 
-  const stop = (ev: React.MouseEvent) => ev.stopPropagation();
-
   const inputClass = `w-full font-[inherit] rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.04)] px-[13px] py-[11px] text-cream outline-none`;
   const smallInputClass = `w-full font-[inherit] rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.04)] px-2.5 py-[11px] text-cream outline-none`;
   const labelSpanClass = 'text-xs font-semibold text-[rgba(242,237,227,.7)]';
 
   return (
-    <div onClick={onClose} className="fixed inset-0 z-[60] box-border flex items-center justify-center bg-[rgba(6,8,12,.72)] backdrop-blur-[8px] [animation:bbFadeUp_.25s_ease_both]" style={{ padding: isMobile ? '14px' : '36px' }}>
-      <div onClick={stop} className="box-border w-[640px] max-w-full max-h-[90vh] overflow-auto rounded-2xl border border-[rgba(255,255,255,.14)] bg-[#171410] shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '26px 28px 28px' }}>
+    <div className="fixed inset-0 z-[60] box-border flex items-center justify-center bg-[rgba(6,8,12,.72)] backdrop-blur-[8px] [animation:bbFadeUp_.25s_ease_both]" style={{ padding: isMobile ? '14px' : '36px' }}>
+      <div className="box-border w-[640px] max-w-full max-h-[90vh] overflow-auto rounded-2xl border border-[rgba(255,255,255,.14)] bg-[#171410] shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '26px 28px 28px' }}>
         <div className="mb-5 flex items-center justify-between">
           <div className="text-lg font-extrabold tracking-[-0.02em] text-cream-2">{mode === 'edit' ? EDIT_TITLES[kind] : TITLES[kind]}</div>
           <button onClick={onClose} className="h-8 w-8 cursor-pointer rounded-full border border-[rgba(242,237,227,.2)] bg-transparent font-[inherit] text-lg leading-none text-[rgba(242,237,227,.75)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">×</button>
@@ -384,20 +389,20 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Утасны дугаар <span className="text-[#f08a8a]">*</span></span>
                   <input
-                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} onBlur={() => setPhoneTouched(true)} placeholder="99112233" inputMode="numeric" maxLength={8}
                     className={`${inputClass} ${inputFontClass}`}
-                    style={{ borderColor: err && placePhoneInvalid ? '#f08a8a' : undefined }}
+                    style={{ borderColor: (err || phoneTouched) && placePhoneInvalid ? '#f08a8a' : undefined }}
                   />
-                  {err && placePhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
+                  {(err || phoneTouched) && placePhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
                 </label>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Имэйл хаяг <span className="text-[#f08a8a]">*</span></span>
                   <input
-                    value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="tanii@email.mn" inputMode="email"
+                    value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} onBlur={() => setEmailTouched(true)} placeholder="tanii@email.mn" inputMode="email"
                     className={`${inputClass} ${inputFontClass}`}
-                    style={{ borderColor: err && placeEmailInvalid ? '#f08a8a' : undefined }}
+                    style={{ borderColor: (err || emailTouched) && placeEmailInvalid ? '#f08a8a' : undefined }}
                   />
-                  {err && placeEmailInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">Имэйл хаяг буруу байна — жишээ: tanii@email.mn</span>}
+                  {(err || emailTouched) && placeEmailInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">Имэйл хаяг буруу байна — жишээ: tanii@email.mn</span>}
                 </label>
               </div>
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
@@ -427,11 +432,11 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Нээх цаг <span className="text-[#f08a8a]">*</span></span>
-                  <input type="time" value={openTime} onChange={(e) => setOpenTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
+                  <input type="time" value={openTime} onChange={(e) => setOpenTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker?.()} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
                 </label>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Хаах цаг <span className="text-[#f08a8a]">*</span></span>
-                  <input type="time" value={closeTime} onChange={(e) => setCloseTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
+                  <input type="time" value={closeTime} onChange={(e) => setCloseTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker?.()} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
                 </label>
               </div>
             </>
@@ -459,11 +464,11 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Огноо <span className="text-[#f08a8a]">*</span></span>
-                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
+                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} onClick={(e) => e.currentTarget.showPicker?.()} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
                 </label>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Цаг <span className="text-[#f08a8a]">*</span></span>
-                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
+                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker?.()} className={`${smallInputClass} ${smallInputFontClass} [color-scheme:dark]`} />
                 </label>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Дээд тал (хүн) <span className="text-[#f08a8a]">*</span></span>
@@ -474,20 +479,20 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Утасны дугаар <span className="text-[#f08a8a]">*</span></span>
                   <input
-                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} onBlur={() => setPhoneTouched(true)} placeholder="99112233" inputMode="numeric" maxLength={8}
                     className={`${inputClass} ${inputFontClass}`}
-                    style={{ borderColor: err && eventPhoneInvalid ? '#f08a8a' : undefined }}
+                    style={{ borderColor: (err || phoneTouched) && eventPhoneInvalid ? '#f08a8a' : undefined }}
                   />
-                  {err && eventPhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
+                  {(err || phoneTouched) && eventPhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
                 </label>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>2-р утасны дугаар <span className="text-[rgba(242,237,227,.4)] font-normal">(заавал биш)</span></span>
                   <input
-                    value={phone2} onChange={(e) => setPhone2(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    value={phone2} onChange={(e) => setPhone2(e.target.value.replace(/\D/g, '').slice(0, 8))} onBlur={() => setPhone2Touched(true)} placeholder="99112233" inputMode="numeric" maxLength={8}
                     className={`${inputClass} ${inputFontClass}`}
-                    style={{ borderColor: err && eventPhone2Invalid ? '#f08a8a' : undefined }}
+                    style={{ borderColor: (err || phone2Touched) && eventPhone2Invalid ? '#f08a8a' : undefined }}
                   />
-                  {err && eventPhone2Invalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
+                  {(err || phone2Touched) && eventPhone2Invalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
                 </label>
               </div>
               <label className="flex flex-col gap-1.5">

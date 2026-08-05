@@ -83,7 +83,17 @@ export default class BigBangLayout extends React.Component<Props, any> {
   geo: any = null;
   _bgOk: any = {};
   _bgLd: any = {};
-  _lastAimagBg: any = null;
+  // Backstop for the aimag hero crossfade — see aimagBgLayers/aimagBgBackstop
+  // in render(). Switching straight from aimag A to aimag B fades A:1→0 and
+  // B:0→1 at the same time (a real two-photo dissolve, kept on purpose); at
+  // the transition's midpoint neither is fully opaque, so without anything
+  // else in between, the plain Home hero underneath both would bleed
+  // through for a frame. Remembering A here for the duration of B's fade-in
+  // lets render() paint a copy of A as a solid backstop layer under both,
+  // so what shows through mid-dissolve is A's own photo, not the Home hero.
+  _lastRenderedAimag: string = 'Бүгд';
+  _aimagBgFrozen: string | null = null;
+  _aimagBgFrozenTimer: ReturnType<typeof setTimeout> | null = null;
   // A place/scenic/event submission made while signed out — held here (not
   // React state, since it carries raw File objects from CreateForm) so it
   // can be replayed automatically once UserAuthForm produces a session.
@@ -154,6 +164,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   componentDidMount() {
     fetch('/assets/mn-aimags.json').then((r) => r.json()).then((g) => { this.geo = g; this.forceUpdate(); this.syncMainMap(); }).catch(() => {});
+    // Default aimag hero photos (AIMAG_BG) are a static import, not a fetch —
+    // start warming their cache immediately instead of waiting on
+    // fetchContentBgs' /aimags round-trip below, so a click right after
+    // page load isn't still stuck behind a cold backend. That later call
+    // re-runs this with any admin-set overrides once they're in.
+    this.prefetchAimagBgs({});
     this.fetchSettings();
     this.fetchContentBgs();
     this.fetchLiveContent();
@@ -232,6 +248,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     window.removeEventListener('focus', this.fetchLiveContent);
     if (this._mnVertResize) window.removeEventListener('resize', this._mnVertResize);
     if (this._vwResize) window.removeEventListener('resize', this._vwResize);
+    if (this._aimagBgFrozenTimer) clearTimeout(this._aimagBgFrozenTimer);
   }
 
   // Admin Panel can update these via the "Фон зураг" tab — if the backend isn't
@@ -273,6 +290,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       const aimagBgOverride: Record<string, string> = {};
       aimags.forEach((a) => { if (a.backgroundImage) aimagBgOverride[a.name] = a.backgroundImage; });
       this.setState({ catBgOverride, catVideoOverride, aimagBgOverride });
+      this.prefetchAimagBgs(aimagBgOverride);
       try {
         localStorage.setItem('bb_cat_bg', JSON.stringify(catBgOverride));
         localStorage.setItem('bb_cat_video_bg', JSON.stringify(catVideoOverride));
@@ -716,6 +734,17 @@ export default class BigBangLayout extends React.Component<Props, any> {
     return false;
   }
 
+  // Warms the browser's HTTP cache (via the same _bgOk/_bgLd bookkeeping
+  // bgReady above uses) for every aimag's hero photo shortly after mount, so
+  // by the time one actually gets selected on the map, aimagBgLayers below
+  // finds it already cached instead of triggering a fresh fetch.
+  prefetchAimagBgs = (overrides: Record<string, string>) => {
+    Object.keys(AIMAG_BG).forEach((name) => {
+      const imgId = overrides[name] || AIMAG_BG[name];
+      if (imgId) this.bgReady(imgId, 1800);
+    });
+  };
+
   // ── SVG builders (verbatim, React.createElement) ──
   buildPickerSvg(accent: string, lang: any, sel: any, hover: any, mini: any, bigText?: any) {
     const geo = this.geo;
@@ -1096,8 +1125,60 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const allC = window.GLOBE_COUNTRIES || [];
     const res = gq ? allC.filter((c) => c.name.toLowerCase().includes(gq)).slice(0, 6) : [];
     const gc = this.state.globeCountry;
-    const aimagImg = aimag !== 'Бүгд' ? (this.state.aimagBgOverride[aimag] || AIMAG_BG[aimag] || null) : null;
-    if (aimagImg && this.bgReady(aimagImg, 1800)) this._lastAimagBg = aimagImg;
+    // One persistent background layer per aimag, always mounted (mirrors
+    // bgLayers' per-category crossfade above) — a brand-new DOM element's
+    // very first style application never transitions, it just snaps, so a
+    // layer that only gets created at the moment it's selected can never
+    // actually fade in. Keeping all 22 mounted from the start means every
+    // opacity change is a change on an *existing* element, so the CSS
+    // transition always has two real states to animate between. `bg` itself
+    // only gets populated once that aimag's photo is confirmed loaded —
+    // until then it's an empty, contentless layer (BgMedia skips fetching
+    // entirely for an empty `bg`, see ui.tsx), so mounting all 22 doesn't
+    // trigger 22 eager photo fetches; the actual fetches are driven by
+    // bgReady() below (also warmed early by prefetchAimagBgs in
+    // componentDidMount/fetchContentBgs).
+    // Direct switch between two different (non-Бүгд) aimags — remember the
+    // one being left behind for the duration of the new one's fade-in
+    // (cleared after the transition's had time to finish). It's rendered as
+    // a separate, always-opaque backstop layer just below the two aimags
+    // that are actually dissolving into each other (see aimagBgBackstop),
+    // so mid-transition — when both are partway transparent — what shows
+    // through is the *old* aimag's own photo (already correct for a
+    // dissolve) instead of the plain Home hero underneath everything. A
+    // plain deselect back to Бүгд is left alone — fading out to reveal the
+    // Home hero is the intended reveal there, not a bug.
+    if (aimag !== this._lastRenderedAimag) {
+      const leaving = this._lastRenderedAimag;
+      this._lastRenderedAimag = aimag;
+      if (leaving !== 'Бүгд' && aimag !== 'Бүгд' && leaving !== aimag) {
+        this._aimagBgFrozen = leaving;
+        if (this._aimagBgFrozenTimer) clearTimeout(this._aimagBgFrozenTimer);
+        this._aimagBgFrozenTimer = setTimeout(() => { this._aimagBgFrozen = null; this.forceUpdate(); }, 600);
+      } else {
+        this._aimagBgFrozen = null;
+        if (this._aimagBgFrozenTimer) { clearTimeout(this._aimagBgFrozenTimer); this._aimagBgFrozenTimer = null; }
+      }
+    }
+    const aimagBgLayers = Object.keys(AIMAG_BG).map((name) => {
+      const imgId = this.state.aimagBgOverride[name] || AIMAG_BG[name];
+      const ready = this.bgReady(imgId, 1800);
+      return {
+        key: name,
+        bg: ready ? 'linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78)), url("' + imgUrl(imgId, 1800) + '")' : '',
+        isVideo: isVideoUrl(imgId), rawUrl: imgId,
+        opacity: aimag === name ? 1 : 0,
+      };
+    });
+    const frozenImgId = this._aimagBgFrozen ? (this.state.aimagBgOverride[this._aimagBgFrozen] || AIMAG_BG[this._aimagBgFrozen]) : null;
+    const aimagBgBackstop = frozenImgId ? {
+      bg: 'linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78)), url("' + imgUrl(frozenImgId, 1800) + '")',
+      isVideo: isVideoUrl(frozenImgId), rawUrl: frozenImgId,
+    } : null;
+    // The moment the picked aimag's photo hasn't loaded yet (its layer has
+    // no bg yet), this shows a skeleton instead of the Home hero just
+    // sitting there under a flat black scrim.
+    const aimagBgLoading = aimag !== 'Бүгд' && !aimagBgLayers.some((l) => l.key === aimag && l.bg);
 
     // "Миний нэмсэн..." on the Profile page — this session's own submissions.
     // Places come pre-filtered from the server (GET /places/mine, see
@@ -1195,12 +1276,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       pinNavColor: route === 'pin' ? accent : 'rgba(242,237,227,.75)',
       eventNavColor: route === 'event' ? accent : 'rgba(242,237,227,.75)',
       suggestNavColor: route === 'suggest' ? accent : 'rgba(242,237,227,.75)',
-      aimagBg: 'linear-gradient(rgba(0,0,0,.58), rgba(0,0,0,.78)), url("' + imgUrl(this._lastAimagBg || '1470071459604-3b5ec3a7fe05', 1800) + '")',
-      aimagBgIsVideo: isVideoUrl(this._lastAimagBg || ''), aimagBgRawUrl: this._lastAimagBg || '',
-      aimagBgOpacity: (aimagImg && this._lastAimagBg === aimagImg) ? 1 : 0,
-      // The moment an aimag's photo hasn't loaded yet, this shows a skeleton
-      // instead of the Home hero just sitting there under a flat black scrim.
-      aimagBgLoading: aimag !== 'Бүгд' && !(aimagImg && this._lastAimagBg === aimagImg),
+      aimagBgLayers, aimagBgBackstop, aimagBgLoading,
       pickerSvg: this.buildPickerSvg(accent, lang, aimag === 'Бүгд' ? null : aimag, this.state.heroHover, false, this.state.bigText),
       pickerWrapRef: this.handlePickerWrapRef,
       heroAimagLabel: aimag === 'Бүгд' ? '' : aimagName(aimag, lang),
