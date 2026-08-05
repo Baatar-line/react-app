@@ -16,7 +16,7 @@ const playfairDisplay = Playfair_Display({ subsets: ['latin'], weight: ['700'], 
 const rubikBubbles = Rubik_Bubbles({ subsets: ['latin'], weight: ['400'], variable: '--font-rubik-bubbles' });
 
 export const metadata: Metadata = {
-  title: 'Big Bang — Minii Bolzoo',
+  title: 'Atlas — Minii Bolzoo',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* ?v= on the two local ones: they're plain files under public/, so they
             get no build hash and a browser will happily keep running the copy it
             already has after they're edited. Bump the number when editing them. */}
-        <Script src="/assets/globe-engine.js?v=3" strategy="lazyOnload" />
+        <Script src="/assets/globe-engine.js?v=4" strategy="lazyOnload" />
         <Script src="/assets/travel-map.js?v=4" strategy="lazyOnload" />
         <AppShell>{children}</AppShell>
       </body>

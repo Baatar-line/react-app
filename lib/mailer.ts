@@ -27,11 +27,11 @@ export async function sendOtpEmail(to: string, code: string): Promise<void> {
   await getTransporter().sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
     to,
-    subject: `Big Bang нэвтрэх код: ${code}`,
+    subject: `Atlas нэвтрэх код: ${code}`,
     text: `Таны нэвтрэх код: ${code}\n\nЭнэ код 5 минутын дараа хүчингүй болно. Хэрэв та энэ хүсэлтийг илгээгээгүй бол энэ имэйлийг үл тоомсорлоорой.`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:28px 24px;background:#171410;border-radius:16px;color:#f2ede3">
-        <div style="font-size:14px;font-weight:800;letter-spacing:-0.02em;color:#E8B84B;margin-bottom:18px">big bang</div>
+        <div style="font-size:14px;font-weight:800;letter-spacing:-0.02em;color:#E8B84B;margin-bottom:18px">atlas</div>
         <p style="font-size:13px;color:rgba(242,237,227,.7);margin:0 0 16px">Таны нэвтрэх код:</p>
         <div style="font-size:34px;font-weight:800;letter-spacing:.14em;color:#f2ede3;margin-bottom:16px">${code}</div>
         <p style="font-size:12px;color:rgba(242,237,227,.5);margin:0">Энэ код 5 минутын дараа хүчингүй болно. Хэрэв та энэ хүсэлтийг илгээгээгүй бол энэ имэйлийг үл тоомсорлоорой.</p>

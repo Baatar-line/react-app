@@ -12,6 +12,10 @@
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
     "seed": "bun run prisma/seed.ts"
+    ,"sync:country-sites": "bun run prisma/sync-country-sites.ts",
+    "repair:country-sites": "bun run prisma/repair-country-sites.ts",
+    "repair:globe-quality": "bun run prisma/repair-globe-quality.ts",
+    "sync:country-coordinates": "bun run prisma/sync-country-site-coordinates.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

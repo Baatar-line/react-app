@@ -3,16 +3,16 @@
    Accent recolored from neon #b9ff3b to the app's green #8FD14F.
    Exposes window.GlobeEngine and window.GLOBE_COUNTRIES / window.resolveCountry. */
 (function () {
-  var ACCENT = "#8FD14F";
-  var ACCENT_RGB = "143,209,79";
-  var YELLOW = "#e2ee00";
-  var YELLOW_RGB = "226,238,0";
+  var ACCENT = "#E8B84B";
+  var ACCENT_RGB = "232,184,75";
+  var YELLOW = "#050505";
+  var YELLOW_RGB = "5,5,5";
 
   var HOME_VIEW = { latitude: 46.8, longitude: 103.8 }; // Mongolia
 
   var countries = [
     { id: "mn", name: "Mongolia", latitude: 46.8, longitude: 103.8, region: "Central Asia",
-      description: "Endless steppe, the Gobi Desert and a living nomadic culture — the heart of the Big Bang archive.",
+      description: "Endless steppe, the Gobi Desert and a living nomadic culture — the heart of the Atlas archive.",
       categories: ["nature", "culture", "history"], media: ["read", "listen"], pinColor: ACCENT },
     { id: "us", name: "United States of America", latitude: 39, longitude: -98, region: "North America",
       description: "A sprawling federation of stories — jazz archives, oral histories of migration, and civil-rights recordings held in city libraries.",
@@ -90,6 +90,9 @@
     this.hovName = null;
     this.filter = null;
     this.pins = [];
+    this.archiveSites = {};
+    this.archiveDots = [];
+    this.activeSite = null;
     this.flagImg = null;
     this.flagReady = false;
     this._cleanupPointer = function () {};
@@ -198,12 +201,12 @@
     var ctx = this.canvas.getContext("2d");
     var proj = d3.geoEquirectangular().scale(W / (2 * Math.PI)).translate([W / 2, H / 2]);
     var path = d3.geoPath(proj, ctx);
-    ctx.fillStyle = "#0e1c14";
+    ctx.fillStyle = "#030303";
     ctx.fillRect(0, 0, W, H);
     ctx.beginPath();
     path(d3.geoGraticule().step([15, 15])());
     ctx.lineWidth = 0.5;
-    ctx.strokeStyle = "rgba(242,237,227,.05)";
+    ctx.strokeStyle = "rgba(255,255,255,.045)";
     ctx.stroke();
     for (var i = 0; i < this.features.length; i++) {
       var f = this.features[i];
@@ -286,11 +289,11 @@
         ctx.fillRect(cx0 + u * 2.6, pilTop, u * 0.6, pilH);
         ctx.restore();
       } else {
-        ctx.fillStyle = isSel ? ACCENT : isHov ? "#4a6b56" : "#2c4534";
+        ctx.fillStyle = isSel ? ACCENT : isHov ? "#474747" : "#303030";
         ctx.fill();
       }
       ctx.lineWidth = isSel || isHov ? 1.0 : 0.7;
-      ctx.strokeStyle = isSel || isHov ? "rgba(242,237,227,.55)" : "rgba(242,237,227,.22)";
+      ctx.strokeStyle = isSel || isHov ? "rgba(8,8,8,.9)" : "rgba(8,8,8,.72)";
       ctx.stroke();
     }
     if (this.texture) this.texture.needsUpdate = true;
@@ -335,7 +338,7 @@
     this.refreshOutline();
 
     var atmMat = new THREE.ShaderMaterial({
-      uniforms: { c: { value: new THREE.Color(0.36, 0.62, 0.42) } },
+      uniforms: { c: { value: new THREE.Color(0.24, 0.24, 0.24) } },
       vertexShader: "varying vec3 vN; void main(){ vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}",
       fragmentShader: "varying vec3 vN; uniform vec3 c; void main(){ float i=pow(clamp(0.62 - dot(vN, vec3(0.0,0.0,1.0)),0.0,1.0),2.4); gl_FragColor=vec4(c, i*0.3);}",
       side: THREE.BackSide, transparent: true, depthWrite: false
@@ -352,29 +355,22 @@
     var seeded = function (seed) { var s = seed >>> 0 || 1; return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
     countries.forEach(function (c) {
       var h = 0; for (var i = 0; i < c.name.length; i++) h = (h * 31 + c.name.charCodeAt(i)) >>> 0;
-      var count = 4 + (h % 9);
+      var count = 6;
       c.count = count;
       var center = self.llToVec(c.latitude, c.longitude, 1.015);
 
       // count badge — shown by default (like the Maps page markers)
       var badge = document.createElement("div");
-      Object.assign(badge.style, { position: "absolute", transform: "translate(-50%,-50%)", pointerEvents: "auto", cursor: "pointer", willChange: "transform,opacity" });
+      // Country archive counts are intentionally hidden; visitors select the
+      // country shape itself and see its individual site pins after opening it.
+      Object.assign(badge.style, { position: "absolute", display: "none", transform: "translate(-50%,-50%)", pointerEvents: "none", cursor: "pointer", willChange: "transform,opacity" });
       badge.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;font:600 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#1a1a18;background:#fff;border:1px solid rgba(0,0,0,.08);box-shadow:0 1px 5px rgba(0,0,0,.16)">' + count + '</div>';
       badge.addEventListener("click", function (ev) { ev.stopPropagation(); self.selectByName(c.name); });
       badge.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
       self.pinLayer.appendChild(badge);
 
       // scattered archive pins — revealed only when this country is selected
-      var rnd = seeded(h);
       var dots = [];
-      for (var k = 0; k < count; k++) {
-        var dvec = self.llToVec(c.latitude + (rnd() * 2 - 1) * 5.5, c.longitude + (rnd() * 2 - 1) * 7, 1.016);
-        var dot = document.createElement("div");
-        Object.assign(dot.style, { position: "absolute", transform: "translate(-50%,-50%)", pointerEvents: "none", opacity: "0", willChange: "transform,opacity" });
-        dot.innerHTML = '<div style="position:relative;width:14px;height:14px"><span class="ring" style="position:absolute;left:50%;top:50%;width:14px;height:14px;transform:translate(-50%,-50%);border-radius:50%;border:1.5px solid rgba(' + YELLOW_RGB + ',.8)"></span><span style="position:absolute;left:50%;top:50%;width:7px;height:7px;transform:translate(-50%,-50%);border-radius:50%;background:' + YELLOW + ';box-shadow:0 0 9px 2px rgba(' + YELLOW_RGB + ',.9)"></span></div>';
-        self.pinLayer.appendChild(dot);
-        dots.push({ vec: dvec, el: dot, ring: dot.querySelector(".ring") });
-      }
       self.pins.push({ name: c.name, vec: center, badge: badge, dots: dots });
     });
 
@@ -507,7 +503,44 @@
     this._texDirty = true;
     this.flyTo(ll[0], ll[1]);
     this.lastInteract = performance.now() + 100000;
+    this.buildArchiveDots(name);
     if (this.cb.onSelect) this.cb.onSelect(name);
+  };
+
+  GlobeEngine.prototype.setArchiveSites = function (rows) {
+    var grouped = {};
+    (rows || []).forEach(function (s) { (grouped[s.country] || (grouped[s.country] = [])).push(s); });
+    this.archiveSites = grouped;
+    if (this.selName && this.pinLayer) this.buildArchiveDots(this.selName);
+  };
+
+  GlobeEngine.prototype.buildArchiveDots = function (name) {
+    this.archiveDots.forEach(function (d) { d.el.remove(); });
+    this.archiveDots = [];
+    this.activeSite = null;
+    if (!this.pinLayer) return;
+    var self = this;
+    var sites = (this.archiveSites[name] || []).filter(function (s) { return Number.isFinite(s.latitude) && Number.isFinite(s.longitude); }).sort(function (a, b) { return a.position - b.position; });
+    sites.forEach(function (site) {
+      var dot = document.createElement("button");
+      dot.type = "button";
+      dot.title = String(site.position).padStart(2, "0") + " · " + site.name;
+      Object.assign(dot.style, { position: "absolute", width: "28px", height: "28px", padding: "0", border: "0", background: "transparent", transform: "translate(-50%,-50%)", pointerEvents: "auto", cursor: "pointer", opacity: "0", willChange: "transform,opacity", zIndex: "5" });
+      dot.innerHTML = '<span class="ring" style="position:absolute;left:50%;top:50%;width:15px;height:15px;transform:translate(-50%,-50%);border-radius:50%;border:1.5px solid rgba(' + YELLOW_RGB + ',.8)"></span><span class="core" style="position:absolute;left:50%;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);border-radius:50%;background:' + YELLOW + ';box-shadow:0 0 10px 3px rgba(' + YELLOW_RGB + ',.9)"></span>';
+      dot.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+      dot.addEventListener("click", function (ev) { ev.stopPropagation(); self.setActiveSite(site.position); if (self.cb.onSiteSelect) self.cb.onSiteSelect(site.position); });
+      self.pinLayer.appendChild(dot);
+      self.archiveDots.push({ site: site, vec: self.llToVec(site.latitude, site.longitude, 1.018), el: dot, ring: dot.querySelector('.ring'), core: dot.querySelector('.core') });
+    });
+  };
+
+  GlobeEngine.prototype.setActiveSite = function (position) {
+    this.activeSite = position || null;
+    this.archiveDots.forEach(function (d) {
+      var on = d.site.position === position;
+      d.core.style.background = YELLOW;
+      d.core.style.boxShadow = on ? '0 0 0 4px rgba(5,5,5,.28),0 0 15px 5px rgba(5,5,5,.75)' : '0 0 8px 2px rgba(5,5,5,.55)';
+    });
   };
 
   GlobeEngine.prototype.clearSelection = function () {
@@ -517,6 +550,7 @@
     this._texDirty = true;
     this.targetZ = 3.2;
     this.lastInteract = performance.now();
+    this.buildArchiveDots(null);
     if (this.cb.onSelect) this.cb.onSelect(null);
   };
 
@@ -573,7 +607,7 @@
       p.badge.style.top = (-bproj.y * 0.5 + 0.5) * h + "px";
       var showBadge = bfront && !selected;
       p.badge.style.opacity = showBadge ? (dim ? "0.15" : "1") : "0";
-      p.badge.style.pointerEvents = showBadge ? "auto" : "none";
+      p.badge.style.pointerEvents = "none";
       // scattered archive pins (only for selected country)
       for (var k = 0; k < p.dots.length; k++) {
         var d = p.dots[k];
@@ -583,9 +617,26 @@
         d.el.style.left = (proj.x * 0.5 + 0.5) * w + "px";
         d.el.style.top = (-proj.y * 0.5 + 0.5) * h + "px";
         d.el.style.opacity = (selected && front && p.name !== "Mongolia") ? "0.95" : "0";
-        d.ring.style.transform = "translate(-50%,-50%) scale(" + (1 + t * 1.8) + ")";
-        d.ring.style.opacity = String((1 - t) * 0.6);
+        // Legacy/static country dots never pulse. Only the explicitly selected
+        // archive site below is allowed to animate.
+        d.ring.style.transform = "translate(-50%,-50%) scale(1)";
+        d.ring.style.opacity = "0.55";
       }
+    }
+    for (var a = 0; a < this.archiveDots.length; a++) {
+      var ad = this.archiveDots[a];
+      var awv = ad.vec.clone().applyQuaternion(q).applyQuaternion(tq);
+      var aproj = awv.clone().project(cam);
+      var afront = isFront(awv);
+      ad.el.style.left = (aproj.x * 0.5 + 0.5) * w + "px";
+      ad.el.style.top = (-aproj.y * 0.5 + 0.5) * h + "px";
+      ad.el.style.opacity = afront ? "0.98" : "0";
+      ad.el.style.pointerEvents = afront ? "auto" : "none";
+      var active = ad.site.position === this.activeSite;
+      ad.ring.style.transform = active
+        ? "translate(-50%,-50%) scale(" + (1 + t * 1.8) + ")"
+        : "translate(-50%,-50%) scale(1)";
+      ad.ring.style.opacity = active ? String((1 - t) * 0.65) : "0.55";
     }
   };
 

@@ -193,7 +193,7 @@ export default function Requirements() {
     <div className="min-h-screen bg-ink-2">
       <div className="mx-auto max-w-[1180px] px-10 pb-[90px] pt-14 text-cream">
         <div className="font-mono text-[11px] uppercase tracking-[.22em] text-cream/[.45]">
-          big bang · product spec
+          atlas · product spec
         </div>
         <h1 className="mb-[6px] mt-[10px] text-[34px] font-extrabold tracking-[-0.03em]">
           Шаардлага ба хэрэглэгчийн урсгал

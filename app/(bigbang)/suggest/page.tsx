@@ -111,7 +111,7 @@ export default function SuggestPage() {
               <div className="text-[clamp(24px,2.4vw,34px)] font-extrabold tracking-[-0.02em] text-cream-2 uppercase leading-[1.12]">{s.title}</div>
               <div className="flex flex-col gap-[7px]">
                 <div className="flex items-center gap-[9px] text-[13.5px] text-[rgba(242,237,227,.85)]"><span className="h-1 w-1 rounded-full bg-[var(--accent,#E8B84B)]"></span>{s.count}</div>
-                <div className="flex items-center gap-[9px] text-[13.5px] text-[rgba(242,237,227,.85)]"><span className="h-1 w-1 rounded-full bg-[var(--accent,#E8B84B)]"></span>big bang багийн сонголт</div>
+                <div className="flex items-center gap-[9px] text-[13.5px] text-[rgba(242,237,227,.85)]"><span className="h-1 w-1 rounded-full bg-[var(--accent,#E8B84B)]"></span>atlas багийн сонголт</div>
               </div>
             </div>
           </div>

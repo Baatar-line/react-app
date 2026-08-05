@@ -80,7 +80,10 @@ export async function apiPatch<T>(path: string, body: unknown, token?: string): 
 
 export async function apiPut<T>(path: string, body: unknown, token?: string): Promise<T> {
   const res = await authedFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, token);
-  if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`);
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => null);
+    throw new Error(errBody?.error || `PUT ${path} failed: ${res.status}`);
+  }
   return res.json();
 }
 

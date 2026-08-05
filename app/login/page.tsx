@@ -139,9 +139,9 @@ export default function Login() {
           {/* logo */}
           <div className="mb-[22px] flex items-center gap-[10px]">
             <div className="flex h-[30px] w-[30px] items-center justify-center rounded-[9px] bg-accent text-[14px] font-extrabold text-[#132a1f]">
-              b
+              a
             </div>
-            <span className="text-[15px] font-extrabold tracking-[-0.03em] text-cream">big bang</span>
+            <span className="text-[15px] font-extrabold tracking-[-0.03em] text-cream">atlas</span>
           </div>
 
           {/* ══ USER FLOW ══ */}

@@ -309,6 +309,27 @@ model SuggestCard {
   @@map("suggest_cards")
 }
 
+// The globe archive stores metadata and remote image URLs only. Images remain
+// on Wikimedia (or another source CDN), keeping the Neon database small.
+model CountrySite {
+  id        Int      @id @default(autoincrement())
+  country   String
+  countryId String
+  position  Int
+  name      String
+  kind      String
+  imageUrl  String
+  sourceUrl String?
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([countryId, position])
+  @@index([country])
+  @@map("country_sites")
+}
+
 // Admin panel's "Зар сурталчилгаа" tab — admin-only content, no public listing
 // endpoint; shown to visitors only via the first-visit AdModal popup (see
 // app/api/ads/active/route.ts), not embedded in any page's normal content.

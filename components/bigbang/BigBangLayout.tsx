@@ -14,11 +14,12 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Target, Users, Zap, Globe } from 'lucide-react';
 import CreateForm, { CreateFormData } from '../CreateForm';
 import UserAuthForm from '../UserAuthForm';
+import CompleteProfileForm, { type ProfileInfo } from '../CompleteProfileForm';
 import {
   ratingOf, STR, CATS, TEAM, SUGGESTS, TRAVEL_APPS, sitesFor, AIMAGS, AIMAG_MN_SCRIPT,
   GEO_MN, LABEL_OFF, AIMAG_BG,
   catBgOf, itemThumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, xyToLonLat, mapsUrlFor,
-  type Pin, type CatItem, type Cat,
+  type Pin, type CatItem, type Cat, type CountrySiteRow,
 } from './data';
 import { apiGet, apiGetAuthed } from '../../lib/api';
 import { getSession, saveSession, clearSession } from '../../lib/session';
@@ -120,13 +121,19 @@ export default class BigBangLayout extends React.Component<Props, any> {
     active: -1, aimag: 'Бүгд', lang: 'mn', locOpen: false,
     pin: -1, favs: {}, joined: {}, mapAimag: null, hoverAimag: null,
     spNeeds: false, bigText: false, globeCountry: null, globeHover: null, globeFilter: null,
-    globeQuery: '', globeReady: false,
+    globeQuery: '', globeReady: false, countrySites: [] as CountrySiteRow[], globeActiveSite: null as number | null,
     showScenicForm: false,
     showEventForm: false,
     showPlaceForm: false,
     // Prompted when a place/scenic pin/event is submitted without a session
     // — there's no "host" tier, any signed-in account can create all three.
     showUserAuthForm: false,
+    // Prompted (once signed in) when that session's own profile is still
+    // missing a name/phone/Instagram — see isProfileComplete/CompleteProfileForm.
+    showCompleteProfileForm: false,
+    // This session's own name/phoneNumber/socialMediaURL, fetched once signed
+    // in — see fetchMyProfile. null until fetched (or if never completed).
+    myProfile: null as ProfileInfo | null,
     // Real place/event/scenic-pin rows fetched from the backend (see
     // fetchLiveContent) — replaces the old static PINS/EVENTS/CATS[].items
     // mock arrays as the single source of truth for content everywhere below.
@@ -173,6 +180,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     this.fetchSettings();
     this.fetchContentBgs();
     this.fetchLiveContent();
+    this.fetchCountrySites();
     // Admin Panel runs in a separate tab, so a tab already sitting open on this page
     // would otherwise never see a background change until manually reloaded — refetch
     // whenever this tab regains focus so it picks up the latest saved image.
@@ -186,7 +194,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // lib/session.ts), not kept in this component's own state — this just
     // loads this session's own place submissions once, on mount.
     const session = getSession();
-    if (session) { this.fetchMyPlaces(session.token); this.fetchMyFavorites(session.token); }
+    if (session) { this.fetchMyPlaces(session.token); this.fetchMyFavorites(session.token); this.fetchMyProfile(session.token); }
     this._mnVertResize = () => { this.updateHeroVertPos(); };
     window.addEventListener('resize', this._mnVertResize);
     this._vwResize = () => { if (this.state.vw !== window.innerWidth) this.setState({ vw: window.innerWidth }); };
@@ -275,6 +283,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
       .catch(() => {});
   };
 
+  fetchCountrySites = () => {
+    apiGet<CountrySiteRow[]>('/country-sites?v=6')
+      .then((countrySites) => { this.setState({ countrySites }); if (this.globeEngine) this.globeEngine.setArchiveSites(countrySites); })
+      .catch(() => {});
+  };
+
   // Category/aimag background photos, same "Фон зураг" admin flow as fetchSettings.
   fetchContentBgs = () => {
     Promise.all([
@@ -321,6 +335,31 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Place is filtered server-side instead since only approved ones are public).
   fetchMyPlaces = (token: string) => {
     apiGetAuthed<any[]>('/places/mine', token).then((myPlaces) => this.setState({ myPlaces })).catch(() => {});
+  };
+
+  // This session's own name/phone/Instagram (see Profile model + User.phoneNumber),
+  // gating whether they can add a place/scenic pin/event at all — see
+  // isProfileComplete/onPlaceSubmit and CompleteProfileForm.tsx.
+  fetchMyProfile = (token: string) => {
+    return apiGetAuthed<any>('/auth/me', token).then((me) => {
+      const myProfile: ProfileInfo = { name: me.profile?.name || '', phoneNumber: me.phoneNumber || '', socialMediaURL: me.profile?.socialMediaURL || '' };
+      this.setState({ myProfile });
+      return myProfile;
+    }).catch(() => null);
+  };
+
+  isProfileComplete = (p: ProfileInfo | null = this.state.myProfile): boolean =>
+    !!(p && p.name.trim() && p.phoneNumber.trim() && p.socialMediaURL.trim());
+
+  // Shared by onPlaceSubmit/onScenicSubmit/onEventSubmit and the two replay
+  // paths (onUserAuthed, onProfileCompleted) that resume a submission queued
+  // in _pendingCreate once the sign-in/complete-profile gate clears.
+  submitPending = async (kind: 'place' | 'scenic' | 'event', data: CreateFormData, token: string) => {
+    if (kind === 'place') await createPlace(token, data);
+    else if (kind === 'scenic') await createScenicPin(token, data);
+    else await createEvent(token, data);
+    this.fetchLiveContent();
+    if (kind === 'place') this.fetchMyPlaces(token);
   };
 
   // This session's real, backend-persisted favorites (Favorite rows keyed by
@@ -475,9 +514,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
         if (this.state.mongoliaFlagOverride) eng.setMongoliaFlag(this.state.mongoliaFlagOverride);
       },
       onHover: (name: string) => { if (name !== this.state.globeHover) this.setState({ globeHover: name }); },
-      onSelect: (name: string) => this.setState({ globeCountry: name ? window.resolveCountry(name) : null }),
+      onSelect: (name: string) => this.setState({ globeCountry: name ? window.resolveCountry(name) : null, globeActiveSite: null }),
+      onSiteSelect: (position: number) => this.setState({ globeActiveSite: position }),
     });
     this.globeEngine = eng;
+    eng.setArchiveSites(this.state.countrySites || []);
     this._globeResize = () => eng.resize();
     window.addEventListener('resize', this._globeResize);
     eng.init().catch((err: any) => console.warn('globe init failed', err));
@@ -830,8 +871,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Navigates to a category grid or a place detail page — routes now carry the
   // slug/index in the URL itself (PlaceDetail rebuilds its data from CATS + the
   // index, so nothing needs to travel via setState anymore).
-  openCat = (slug: string) => {
-    this.props.navigate('/category/' + slug);
+  openCat = (slug: string, sub?: string) => {
+    this.props.navigate('/category/' + slug + (sub ? '?sub=' + encodeURIComponent(sub) : ''));
     this.setState({ locOpen: false });
     try { window.scrollTo(0, 0); } catch (err) { /* ignore */ }
   };
@@ -887,6 +928,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
         color: isA ? '#f6f1e7' : (active === -1 ? 'rgba(242,237,227,.72)' : 'rgba(242,237,227,.48)'),
         shift: isA ? 'translateX(12px)' : 'translateX(0)', barOpacity: isA ? 1 : 0,
         activate: () => this.setState({ active: i }), open: () => this.openCat(c.slug),
+        isActive: isA,
+        // Sub-categories flown out under the nav item on hover — clicking one
+        // jumps straight into the category page pre-filtered to that sub
+        // (CategoryPage reads `?sub=` on mount), instead of always landing on
+        // the unfiltered "Бүгд" view.
+        subs: c.subs.map((s) => ({ label: s, open: () => this.openCat(c.slug, s) })),
       };
     });
 
@@ -1004,17 +1051,18 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // what3words + satellite tiles included) — see CreateForm.tsx. No "host"
     // tier: any signed-in account can submit all three (a place just lands
     // `pending` until an admin approves it — see app/api/places/route.ts). A
-    // signed-out visitor is prompted with the lightweight OTP UserAuthForm,
-    // and the submission is replayed automatically once they're signed in.
+    // signed-out visitor is prompted with the lightweight OTP UserAuthForm;
+    // a signed-in one without a complete profile (name/phone/Instagram) is
+    // prompted with CompleteProfileForm instead. Either way the submission
+    // is replayed automatically once the gate clears.
     const openPlaceForm = () => this.setState({ showPlaceForm: true });
     const onPlaceSubmit = async (data: CreateFormData) => {
       const session = getSession();
       if (!session) { this._pendingCreate = { kind: 'place', data }; this.setState({ showPlaceForm: false, showUserAuthForm: true }); return; }
+      if (!this.isProfileComplete()) { this._pendingCreate = { kind: 'place', data }; this.setState({ showPlaceForm: false, showCompleteProfileForm: true }); return; }
       try {
-        await createPlace(session.token, data);
+        await this.submitPending('place', data, session.token);
         this.setState({ showPlaceForm: false });
-        this.fetchLiveContent();
-        this.fetchMyPlaces(session.token);
       } catch (err) {
         alert(err instanceof Error ? err.message : String(err));
       }
@@ -1023,10 +1071,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const onScenicSubmit = async (data: CreateFormData) => {
       const session = getSession();
       if (!session) { this._pendingCreate = { kind: 'scenic', data }; this.setState({ showScenicForm: false, showUserAuthForm: true }); return; }
+      if (!this.isProfileComplete()) { this._pendingCreate = { kind: 'scenic', data }; this.setState({ showScenicForm: false, showCompleteProfileForm: true }); return; }
       try {
-        await createScenicPin(session.token, data);
+        await this.submitPending('scenic', data, session.token);
         this.setState({ showScenicForm: false });
-        this.fetchLiveContent();
       } catch (err) {
         alert(err instanceof Error ? err.message : String(err));
       }
@@ -1035,33 +1083,49 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const onEventSubmit = async (data: CreateFormData) => {
       const session = getSession();
       if (!session) { this._pendingCreate = { kind: 'event', data }; this.setState({ showEventForm: false, showUserAuthForm: true }); return; }
+      if (!this.isProfileComplete()) { this._pendingCreate = { kind: 'event', data }; this.setState({ showEventForm: false, showCompleteProfileForm: true }); return; }
       try {
-        await createEvent(session.token, data);
+        await this.submitPending('event', data, session.token);
         this.setState({ showEventForm: false });
-        this.fetchLiveContent();
       } catch (err) {
         alert(err instanceof Error ? err.message : String(err));
       }
     };
     const closeUserAuthForm = () => { this._pendingCreate = null; this.setState({ showUserAuthForm: false }); };
-    // UserAuthForm already did the OTP verify — this just stores the
-    // resulting session and replays whatever place/scenic/event submission
-    // triggered the prompt in the first place, so the visitor doesn't have
-    // to refill the form.
+    // UserAuthForm already did the OTP verify — this saves the resulting
+    // session, then checks the (freshly-fetched, not possibly-stale state)
+    // profile before replaying whatever place/scenic/event submission
+    // triggered the prompt: a brand-new account has no profile yet, so this
+    // routes straight into CompleteProfileForm instead of skipping that gate.
     const onUserAuthed = async (token: string, user: any) => {
       saveSession(token, user);
       this.setState({ showUserAuthForm: false });
       this.fetchMyPlaces(token);
       this.fetchMyFavorites(token);
+      const profile = await this.fetchMyProfile(token);
+      const pending = this._pendingCreate;
+      if (!pending) return;
+      if (!this.isProfileComplete(profile)) { this.setState({ showCompleteProfileForm: true }); return; }
+      this._pendingCreate = null;
+      try {
+        await this.submitPending(pending.kind, pending.data, token);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+      }
+    };
+    const closeCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: false }); };
+    const openCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: true }); };
+    // CompleteProfileForm already saved the profile — replays whatever
+    // place/scenic/event submission triggered the prompt, same as
+    // onUserAuthed above (or just closes if opened manually from Profile).
+    const onProfileCompleted = async (profile: ProfileInfo) => {
+      this.setState({ showCompleteProfileForm: false, myProfile: profile });
+      const session = getSession();
       const pending = this._pendingCreate;
       this._pendingCreate = null;
-      if (!pending) return;
+      if (!pending || !session) return;
       try {
-        if (pending.kind === 'place') await createPlace(token, pending.data);
-        else if (pending.kind === 'scenic') await createScenicPin(token, pending.data);
-        else await createEvent(token, pending.data);
-        this.fetchLiveContent();
-        this.fetchMyPlaces(token);
+        await this.submitPending(pending.kind, pending.data, session.token);
       } catch (err) {
         alert(err instanceof Error ? err.message : String(err));
       }
@@ -1075,6 +1139,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const logout = () => {
       clearSession();
       this.setState({ myPlaces: [], favs: {} });
+      // Otherwise "Гарах" leaves you sitting on /profile, which — now
+      // logged out — has nothing of its own to show and falls back to a
+      // "please sign in" placeholder instead of just taking you somewhere
+      // useful.
+      navigate('/');
     };
     const evThumb = (img: any) => img ? 'url("' + img + '")' : 'linear-gradient(135deg, rgba(232, 184, 75,.25), rgba(120,200,170,.15))';
     const liveEvents: any[] = this.state.liveEvents || [];
@@ -1222,8 +1291,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
       globeResults: res.map((c) => ({ name: c.name, region: c.region, pick: () => { this.setState({ globeQuery: '' }); if (this.globeEngine) this.globeEngine.selectByName(c.name); } })),
       globeHasCard: !!gc, gcName: gc ? gc.name : '', gcRegion: gc ? gc.region : '', gcDesc: gc ? gc.description : '', gcCats: gc ? gc.categories : [],
       gcSitesLabel: lang === 'en' ? 'Most famous places' : 'Хамгийн алдартай газрууд',
-      gcSites: gc ? sitesFor(gc, lang) : [],
-      globeCloseCard: () => { this.setState({ globeCountry: null }); if (this.globeEngine) this.globeEngine.clearSelection(); },
+      gcNatureLabel: lang === 'en' ? 'Natural wonders' : 'Байгалийн үзэсгэлэн',
+      gcSites: gc ? sitesFor(gc, lang, this.state.countrySites) : [],
+      globeActiveSite: this.state.globeActiveSite,
+      globeSelectSite: (position: number) => { this.setState({ globeActiveSite: position }); if (this.globeEngine) this.globeEngine.setActiveSite(position); },
+      globeCloseCard: () => { this.setState({ globeCountry: null, globeActiveSite: null }); if (this.globeEngine) this.globeEngine.clearSelection(); },
       a11yClass: this.state.bigText ? 'bb-hc' : '',
       toggleSp: () => { const v = !this.state.spNeeds; try { localStorage.setItem('bb_sp', v ? '1' : '0'); } catch (err) { /* */ } this.setState({ spNeeds: v }); },
       toggleBig: () => { const v = !this.state.bigText; try { localStorage.setItem('bb_big', v ? '1' : '0'); } catch (err) { /* */ } this.setState({ bigText: v }); },
@@ -1241,6 +1313,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
       showPlaceForm: st.showPlaceForm, showScenicForm: st.showScenicForm, showEventForm: st.showEventForm,
       onPlaceSubmit, onScenicSubmit, onEventSubmit,
       showUserAuthForm: st.showUserAuthForm, closeUserAuthForm, onUserAuthed,
+      showCompleteProfileForm: st.showCompleteProfileForm, closeCompleteProfileForm, openCompleteProfileForm, onProfileCompleted,
+      myProfile: st.myProfile,
       // Lets a page-level "rate this" widget (PlaceDetail/EventDetail) prompt
       // sign-in on demand, same modal as place/scenic/event submission —
       // unlike those, there's no pending-action replay after login here, so
@@ -1256,7 +1330,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       abHeroIsVideo: isVideoUrl(this.state.aboutBgOverride || ''), abHeroRawUrl: this.state.aboutBgOverride || '',
       homeHeroBg: 'linear-gradient(rgba(0,0,0,.5), rgba(0,0,0,.72)), url(\'' + imgUrl(this.state.homeBgOverride || '1470071459604-3b5ec3a7fe05', 1800) + '\')',
       homeBgIsVideo: isVideoUrl(this.state.homeBgOverride || ''), homeBgRawUrl: this.state.homeBgOverride || '',
-      abHashtag: lang === 'en' ? 'BigBangDateSpace' : 'BigBangБолзоо',
+      abHashtag: lang === 'en' ? 'AtlasDateSpace' : 'AtlasБолзоо',
       // Traditional (vertical) Mongolian script accent for each header/desc —
       // an AI best-effort transliteration, not verified by a native reader.
       // The desc column is hard-capped (fixed width + height + overflow:hidden)
@@ -1370,7 +1444,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         >
           <div className="bb-logo-group relative flex flex-none items-center gap-[18px]">
             <button onClick={V.goHome} className="relative z-[2] flex cursor-pointer items-center border-0 bg-transparent p-0 font-inherit text-inherit">
-              <span className="font-display font-bold italic tracking-[-0.01em] text-cream" style={{ fontSize: V.isMobile ? 19 : 23 }}>Big Bang</span>
+              <span className="font-display font-bold italic tracking-[-0.01em] text-cream" style={{ fontSize: V.isMobile ? 19 : 23 }}>Atlas</span>
             </button>
           </div>
 
@@ -1472,6 +1546,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         {V.showScenicForm && <CreateForm kind="scenic" onClose={V.closeScenicForm} onSubmit={V.onScenicSubmit} />}
         {V.showEventForm && <CreateForm kind="event" onClose={V.closeEventForm} onSubmit={V.onEventSubmit} />}
         {V.showUserAuthForm && <UserAuthForm onClose={V.closeUserAuthForm} onAuthed={V.onUserAuthed} />}
+        {V.showCompleteProfileForm && <CompleteProfileForm initial={V.myProfile} token={V.mySessionToken} onClose={V.closeCompleteProfileForm} onSaved={V.onProfileCompleted} />}
       </div>
     );
   }

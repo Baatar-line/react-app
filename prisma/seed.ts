@@ -39,20 +39,14 @@ const AIMAGS: [string, string][] = [
 ];
 
 const CATEGORIES: { slug: string; name: string; nameEn: string; subs: string[] }[] = [
-  { slug: 'adrenalin', name: 'Адреналин & Спорт', nameEn: 'Adrenaline & Sports',
-    subs: ['Буудлага', 'Нум сум', 'Шүхрээр буух', 'Авиралт', 'Off-road', 'Цана / мотор', 'Паддл', 'Гольф симулятор', 'Мөсний гулгуур'] },
-  { slug: 'wellness', name: 'Амралт & Wellness', nameEn: 'Rest & Wellness',
-    subs: ['Спа / сауна', 'Йог / бясалгал', 'Массаж', 'Уламжлалт эмчилгээ', 'Орон зай түрээс', 'Муурны кафе'] },
-  { slug: 'ayalal', name: 'Аялал & Байгаль', nameEn: 'Travel & Nature',
-    subs: ['Морин аялал', 'Нохой чарга', 'Явган аялал', 'Glamping', 'Од ажиглах', 'Рашаан', 'Усан спорт', 'Завь'] },
-  { slug: 'hool', name: 'Хоол & Ундаа', nameEn: 'Food & Drinks',
-    subs: ['Speakeasy бар', 'Дээвэр лоунж', "Chef's table", 'Гэрийн зоог', 'Supper club', 'Дарс таних'] },
-  { slug: 'zugaa', name: 'Өрсөлдөөн & Хөгжилтэй', nameEn: 'Competition & Fun',
-    subs: ['Escape room', 'Board game кафе', 'VR arcade', 'Боулинг', 'Бильярд', 'Дартс бар', 'KTV', 'Шатрын кафе'] },
-  { slug: 'soyol', name: 'Соёл & Урлаг', nameEn: 'Culture & Arts',
-    subs: ['Андеграунд концерт', 'Амьд жаз', 'Open mic', 'Drive-in кино', 'Морин хуур / хөөмий', 'DJ үдэш', 'Зурагчийн студи', 'Галерей'] },
-  { slug: 'horizon', name: 'Горизон', nameEn: 'Horizon',
-    subs: ['Science cafe', 'Одон дурандах төв', 'Планетари', 'Шинжлэх ухааны лекц', 'Сансрын ажиглалт', 'Лаборатори тур'] },
+  { slug: 'food', name: 'Хоол', nameEn: 'Food',
+    subs: ['Ресторан', 'Кафе', 'Түргэн хоол', 'Дээд зэрэглэлийн ресторан', 'Бэйкери', 'Лоунж'] },
+  { slug: 'entertainment', name: 'Зугаа цэнгэл', nameEn: 'Entertainment',
+    subs: ['Кино театр', 'Амьд хөгжим', 'Студи'] },
+  { slug: 'relaxation', name: 'Амралт', nameEn: 'Relaxation',
+    subs: ['Массаж', 'Сауна', 'Гоо сайхан', 'Амралтын газар'] },
+  { slug: 'activities', name: 'Идэвхтэй амралт', nameEn: 'Activities',
+    subs: ['Явган аялал', 'Спорт', 'Кемп', 'Тоглоом', 'Адреналин'] },
 ];
 
 // Same starter content the frontend used to hardcode in bigbang/data.ts's

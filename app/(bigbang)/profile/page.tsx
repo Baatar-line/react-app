@@ -6,7 +6,7 @@
 // lands pending until an admin approves it — see BigBangLayout's onPlaceSubmit).
 import { useContext } from 'react';
 import Link from 'next/link';
-import { Accessibility, Heart, User } from 'lucide-react';
+import { Accessibility, Heart, Pencil, User } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
 import { BgMedia, Isometric3DIcon } from '@/components/bigbang/ui';
 
@@ -73,10 +73,25 @@ export default function ProfilePage() {
       className={`min-h-screen box-border max-w-[1080px] mx-auto ${V.isMobile ? 'pt-24 px-[18px] pb-10' : 'pt-[110px] px-12 pb-[60px]'}`}
     >
       <div className="flex items-center gap-5 pb-7 border-b border-[rgba(255,255,255,.1)]">
-        <div className="w-[78px] h-[78px] rounded-full bg-[linear-gradient(135deg,_var(--accent,#E8B84B),_#b8895a)] flex items-center justify-center text-[30px] font-extrabold text-[#132a1f] flex-none">Б</div>
+        <div className="w-[78px] h-[78px] rounded-full bg-[linear-gradient(135deg,_var(--accent,#E8B84B),_#b8895a)] flex items-center justify-center text-[30px] font-extrabold text-[#132a1f] flex-none">
+          {(V.myProfile?.name || 'Б').charAt(0).toUpperCase()}
+        </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[26px] font-extrabold tracking-[-0.02em] text-cream-2">{V.L.profileName}</div>
-          <div className="text-[13px] text-[rgba(242,237,227,.55)] mt-1">{V.L.profileMeta}</div>
+          <div className="flex items-center gap-2">
+            <div className="text-[26px] font-extrabold tracking-[-0.02em] text-cream-2 truncate">{V.myProfile?.name || V.L.profileName}</div>
+            <button
+              onClick={V.openCompleteProfileForm}
+              title="Хувийн мэдээлэл засах"
+              className="flex-none flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-[rgba(242,237,227,.25)] bg-transparent text-[rgba(242,237,227,.6)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"
+            >
+              <Pencil size={13} />
+            </button>
+          </div>
+          {V.myProfile?.name && V.myProfile?.phoneNumber && V.myProfile?.socialMediaURL ? (
+            <div className="text-[13px] text-[rgba(242,237,227,.55)] mt-1">{V.myProfile.phoneNumber} · {V.myProfile.socialMediaURL}</div>
+          ) : (
+            <div className="text-[13px] font-semibold text-[var(--accent,#E8B84B)] mt-1">Утас, Instagram-аа бүртгүүлнэ үү</div>
+          )}
         </div>
         {V.loggedIn && (
           <button

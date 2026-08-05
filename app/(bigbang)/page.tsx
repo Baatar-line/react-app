@@ -57,7 +57,7 @@ export default function Home() {
         onMouseLeave={V.clearActive}
         className={V.isTablet
           ? 'relative z-10 flex flex-col items-center gap-3 pt-24 px-5 pb-10 text-center'
-          : 'absolute left-12 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-[2px]'}
+          : 'absolute left-12 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-3'}
       >
         <div className="mb-3 font-mono text-[10.5px] uppercase tracking-[.2em] text-[rgba(242,237,227,.4)]">{V.L.catLabel}</div>
         {/* Mobile: a centered, wrapping horizontal row instead of the
@@ -65,24 +65,46 @@ export default function Home() {
             this wrapper doesn't add an extra flex item to the outer column. */}
         <div className={V.isTablet ? 'flex flex-wrap items-center justify-center gap-x-5 gap-y-2' : 'contents'}>
           {V.navCats.map((c: any, i: number) => (
-            <button
-              key={i}
-              onClick={c.open}
-              onMouseEnter={c.activate}
-              onFocus={c.activate}
-              className="flex cursor-pointer items-center gap-[14px] border-0 bg-transparent px-0 py-2 text-left transition-[transform_.4s_cubic-bezier(.22,.8,.3,1),_color_.3s_ease]"
-              style={{ color: c.color, transform: V.isTablet ? 'none' : c.shift }}
-            >
-              <span className="font-mono text-[10.5px] opacity-50">{c.num}</span>
-              <span className="text-[clamp(14px,1.1vw,18px)] font-bold leading-[1.3] tracking-[-0.01em]">{c.name}</span>
-              <span className="text-[11px] font-extrabold text-[var(--accent,#E8B84B)]">{c.count}</span>
-              {!V.isTablet && (
-                <span
-                  className="inline-block h-[2px] w-8 bg-[var(--accent,#E8B84B)] transition-opacity duration-[300ms] ease-in-out"
-                  style={{ opacity: c.barOpacity }}
-                ></span>
+            <React.Fragment key={i}>
+              <button
+                onClick={c.open}
+                onMouseEnter={c.activate}
+                onFocus={c.activate}
+                className="flex cursor-pointer items-center gap-[14px] border-0 bg-transparent px-0 py-2 text-left transition-[transform_.4s_cubic-bezier(.22,.8,.3,1),_color_.3s_ease]"
+                style={{ color: c.color, transform: V.isTablet ? 'none' : c.shift }}
+              >
+                <span className="font-mono text-[10.5px] opacity-50">{c.num}</span>
+                <span className="text-[clamp(14px,1.1vw,18px)] font-bold leading-[1.3] tracking-[-0.01em]">{c.name}</span>
+                <span className="text-[11px] font-extrabold text-[var(--accent,#E8B84B)]">{c.count}</span>
+                {!V.isTablet && (
+                  <span
+                    className="inline-block h-[2px] w-8 bg-[var(--accent,#E8B84B)] transition-opacity duration-[300ms] ease-in-out"
+                    style={{ opacity: c.barOpacity }}
+                  ></span>
+                )}
+              </button>
+              {/* Sub-category flyout — desktop-only hover affordance, same trigger
+                  as the background preview swap. Sits in normal document flow
+                  (pushes the categories below it down while open) rather than
+                  overlaying them, so a category with many subs never covers its
+                  neighbors. Each sub is its own bordered pill, not one shared
+                  bordered container, and they cascade in one after another via
+                  a staggered animation delay. */}
+              {!V.isTablet && c.isActive && c.subs.length > 0 && (
+                <div className="flex max-w-[calc(100vw-96px)] flex-row flex-nowrap items-center gap-[6px] overflow-x-auto">
+                  {c.subs.map((s: any, si: number) => (
+                    <button
+                      key={si}
+                      onClick={s.open}
+                      className="animate-bbFadeDown cursor-pointer whitespace-nowrap rounded-full border border-[rgba(255,255,255,.16)] bg-[#16130e] px-[15px] py-[7px] text-left text-[12px] font-semibold text-[rgba(242,237,227,.75)] shadow-[0_8px_20px_rgba(0,0,0,.35)] transition-colors duration-[200ms] hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"
+                      style={{ animationDelay: (si * 60) + 'ms' }}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
               )}
-            </button>
+            </React.Fragment>
           ))}
         </div>
       </div>

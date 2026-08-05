@@ -2,7 +2,7 @@
 
 // Big Bang — Category grid (/category/:slug).
 import React, { useContext } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Accessibility, Heart } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
 import { ratingOf, catBgOf, itemThumbOf, aimagName, isVideoUrl } from '@/components/bigbang/data';
@@ -12,9 +12,13 @@ export default function CategoryPage() {
   const V: any = useContext(BigBangContext);
   const router = useRouter();
   const { slug } = useParams<{ slug: string }>();
-  const [sub, setSub] = React.useState('Бүгд');
+  // Home's category-nav flyout can deep-link straight into a sub-category via
+  // ?sub=<name> — otherwise this always starts on the unfiltered "Бүгд" view.
+  const searchParams = useSearchParams();
+  const subParam = searchParams.get('sub');
+  const [sub, setSub] = React.useState(subParam || 'Бүгд');
 
-  React.useEffect(() => { setSub('Бүгд'); }, [slug]);
+  React.useEffect(() => { setSub(subParam || 'Бүгд'); }, [slug, subParam]);
 
   const cats: any[] = V.cats || [];
   const cat: any = cats.find((c: any) => c.slug === slug) || cats[0] || { slug: '', num: '', name: '', nameEn: '', desc: '', descEn: '', hero: '', pool: [], subs: [], items: [] };
@@ -121,7 +125,7 @@ export default function CategoryPage() {
         </div>
       )}
       <footer className="flex justify-between border-t border-[rgba(255,255,255,.07)] text-xs text-[rgba(242,237,227,.4)]" style={{ padding: V.isMobile ? '20px 20px' : '26px 48px' }}>
-        <span>© 2026 big bang</span>
+        <span>© 2026 atlas</span>
         <span>{L.tag}</span>
       </footer>
     </section>
