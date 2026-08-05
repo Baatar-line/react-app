@@ -14,11 +14,14 @@ export default function GlobePage() {
       className="relative h-screen overflow-hidden bg-[radial-gradient(120%_120%_at_50%_22%,_#16261c_0%,_#101d15_68%,_#0a1510_100%)]"
     >
       <div id="bb-globe-mount" ref={V.globeMountRef} className="absolute inset-0"></div>
-      <div className="absolute left-12 top-26 z-[6] pointer-events-none">
-        <div className="font-display italic text-[30px] leading-[1.05] text-cream-2">{V.globeTitle}</div>
-        <div className="mt-2 max-w-[250px] text-[12.5px] leading-[1.5] text-[rgba(242,237,227,.55)]">{V.globeHint}</div>
+      <div className="absolute left-12 top-[88px] z-[6]">
+        <button onClick={V.openPin} className="mb-3 inline-flex cursor-pointer items-center gap-2 border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold text-[rgba(242,237,227,.6)] transition-colors duration-[250ms] hover:text-[var(--accent,#E8B84B)]">{V.L.back}</button>
+        <div className="pointer-events-none">
+          <div className="font-display italic text-[30px] leading-[1.05] text-cream-2">{V.globeTitle}</div>
+          <div className="mt-2 max-w-[250px] text-[12.5px] leading-[1.5] text-[rgba(242,237,227,.55)]">{V.globeHint}</div>
+        </div>
       </div>
-      <div className="absolute right-12 top-26 z-[7] w-[280px]">
+      <div className="absolute right-12 top-[88px] z-[7] w-[280px]">
         <input
           value={V.globeQuery}
           onChange={V.globeOnQuery}
@@ -41,7 +44,7 @@ export default function GlobePage() {
         )}
       </div>
       {V.globeShowHover && (
-        <div className="absolute left-1/2 top-26 z-[6] -translate-x-1/2 pointer-events-none rounded-full border border-[rgba(255,255,255,.12)] bg-[#16130e] px-4 py-[7px] font-[ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] font-semibold text-cream shadow-[0_4px_14px_rgba(0,0,0,.35)]">{V.globeHover}</div>
+        <div className="absolute left-1/2 top-[88px] z-[6] -translate-x-1/2 pointer-events-none rounded-full border border-[rgba(255,255,255,.12)] bg-[#16130e] px-4 py-[7px] font-[ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] font-semibold text-cream shadow-[0_4px_14px_rgba(0,0,0,.35)]">{V.globeHover}</div>
       )}
       {V.globeHasCard && (
         <div className="absolute right-12 bottom-10 z-[8] flex w-[250px] flex-col gap-[10px]">

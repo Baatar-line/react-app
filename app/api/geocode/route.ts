@@ -28,8 +28,13 @@ export async function GET(request: Request) {
     const q = (searchParams.get('q') || '').trim();
     if (!q) throw new ApiError(400, 'Хайх утга оруулна уу');
 
+    // countrycodes=mn — this picker is only ever placing a pin inside
+    // Mongolia, but Nominatim's free-text search has no country bias by
+    // default, so a generic word (e.g. "талбай", just Mongolian for
+    // "square/area") could just as easily match an unrelated result
+    // anywhere else in the world with a similar name.
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=mn&q=${encodeURIComponent(q)}`,
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=mn&countrycodes=mn&q=${encodeURIComponent(q)}`,
       { headers: { 'User-Agent': 'BigBang-Mongolia-App/1.0 (contact: admin@bigbang.mn)' } },
     );
     if (!res.ok) throw new ApiError(res.status, 'Байршил хайхад алдаа гарлаа');

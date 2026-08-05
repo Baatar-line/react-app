@@ -14,7 +14,7 @@ export default function EventPage() {
       className={`box-border min-h-screen ${V.isMobile ? 'pt-24 px-[18px] pb-8' : 'pt-[110px] px-12 pb-10'}`}
     >
       {V.hasFeaturedEvent && (
-        <div className={`relative cursor-pointer overflow-hidden rounded-[18px] mb-[30px] ${V.isMobile ? 'h-[260px]' : 'h-[420px]'}`}>
+        <div onClick={V.openFeaturedEvent} className={`relative cursor-pointer overflow-hidden rounded-[18px] mb-[30px] ${V.isMobile ? 'h-[260px]' : 'h-[420px]'}`}>
           <BgMedia bg={V.fevBg} className="absolute inset-0" imgClassName="bg-cover bg-center" />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.2)_0%,_rgba(0,0,0,.85)_100%)]"></div>
           <span className="absolute left-[22px] top-[20px] rounded-full bg-[var(--accent,#E8B84B)] px-[14px] py-[6px] text-[11px] font-extrabold uppercase tracking-[.08em] text-[#132a1f]">{V.L.featured}</span>
@@ -29,7 +29,7 @@ export default function EventPage() {
         <div className="p-[22px] border border-dashed border-[rgba(242,237,227,.22)] rounded-[14px] text-[13px] text-[rgba(242,237,227,.45)]">{V.L.eventsEmpty}</div>
       )}
       <div className={`grid gap-[18px] ${V.isMobile ? 'grid-cols-1' : V.isTablet ? 'grid-cols-2' : 'grid-cols-4'}`}>
-        {V.events.map((ev: any, i: number) => (
+        {V.events.filter((ev: any) => ev.id !== V.fevId).map((ev: any, i: number) => (
           <div
             key={i}
             onClick={ev.onClick}

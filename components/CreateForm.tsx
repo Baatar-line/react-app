@@ -271,8 +271,9 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
       m.setView([47.918, 106.917], 6);
       // lyrs=y — Google's "hybrid" tiles (satellite photo + roads/place labels),
       // same look as the satellite mode toggle on maps.google.com. Was lyrs=m
-      // (flat roadmap).
-      window.L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 19 }).addTo(m);
+      // (flat roadmap). hl=mn pins the place-name labels to Mongolian —
+      // without it Google's tile server was picking Chinese for this area.
+      window.L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&hl=mn&x={x}&y={y}&z={z}', { subdomains: ['0', '1', '2', '3'], maxZoom: 19 }).addTo(m);
       m.on('click', (ev: any) => {
         setLat(ev.latlng.lat); setLng(ev.latlng.lng);
         placeMarker(ev.latlng.lat, ev.latlng.lng);
@@ -336,6 +337,13 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
 
   const submit = async () => {
     if (submitting) return;
+    // Cleared at the start of every attempt — otherwise, once any earlier
+    // attempt failed validation, this stays true forever: even after fixing
+    // the actual problem and passing every check below, the error banner
+    // below would keep showing (and since no specific condition matches
+    // anymore, it'd fall through to the misleading generic "fill in
+    // everything" message) despite the submit actually going through.
+    setErr(false);
     if (!name.trim()) { setErr(true); return; }
     if (descMissing) { setErr(true); return; }
     if (imagesMissing) { setErr(true); return; }
@@ -528,7 +536,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                 {placeQueryLoading ? '...' : 'Хайх'}
               </button>
               {placeResults.length > 0 && (
-                <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[510] max-h-[170px] overflow-auto rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[#1a1712] shadow-[0_12px_30px_rgba(0,0,0,.5)]">
+                <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[1100] max-h-[170px] overflow-auto rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[#1a1712] shadow-[0_12px_30px_rgba(0,0,0,.5)]">
                   {placeResults.map((r, i) => (
                     <button
                       key={i}

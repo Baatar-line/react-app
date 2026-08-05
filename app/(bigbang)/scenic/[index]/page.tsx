@@ -8,7 +8,7 @@ import { useContext, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Accessibility, Heart, MapPin, Star } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { aimagName, isAccessible, imgUrl } from '@/components/bigbang/data';
+import { aimagName, isAccessible, imgUrl, mapsUrlFor } from '@/components/bigbang/data';
 import { BgMedia } from '@/components/bigbang/ui';
 import { getRatingSummary, ratingTargetKey, submitRating, type RatingSummary } from '@/lib/ratings';
 
@@ -146,9 +146,7 @@ export default function ScenicDetail() {
             </span>
           </div>
           <div className="mt-[30px] flex flex-wrap gap-3">
-            {p.mapUrl && (
-              <a href={p.mapUrl} target="_blank" rel="noopener" className="inline-flex items-center gap-2 rounded-full border border-[rgba(66,133,244,.4)] bg-[rgba(66,133,244,.14)] py-3 px-[22px] text-[13px] font-bold text-[#8ab4f8] no-underline transition-all duration-[200ms] hover:bg-[rgba(66,133,244,.22)]"><MapPin size={14} />{L.openMaps}</a>
-            )}
+            <a href={mapsUrlFor(p)} target="_blank" rel="noopener" className="inline-flex items-center gap-2 rounded-full border border-[rgba(66,133,244,.4)] bg-[rgba(66,133,244,.14)] py-3 px-[22px] text-[13px] font-bold text-[#8ab4f8] no-underline transition-all duration-[200ms] hover:bg-[rgba(66,133,244,.22)]"><MapPin size={14} />{L.openMaps}</a>
             <button onClick={V.toggleFav(favKey)} className="inline-flex cursor-pointer items-center gap-2 rounded-full py-3 px-[22px] text-[13px] font-bold transition-all duration-[250ms]" style={{ border: `1px solid ${favOn ? accent : 'rgba(242,237,227,.28)'}`, background: favOn ? accent : 'transparent', color: favOn ? '#132a1f' : 'rgba(242,237,227,.8)' }}><Heart size={15} fill={favOn ? 'currentColor' : 'none'} /> {favOn ? L.savedLabel : L.save}</button>
           </div>
         </div>

@@ -113,13 +113,6 @@ export default function SuggestPage() {
                 <div className="flex items-center gap-[9px] text-[13.5px] text-[rgba(242,237,227,.85)]"><span className="h-1 w-1 rounded-full bg-[var(--accent,#E8B84B)]"></span>{s.count}</div>
                 <div className="flex items-center gap-[9px] text-[13.5px] text-[rgba(242,237,227,.85)]"><span className="h-1 w-1 rounded-full bg-[var(--accent,#E8B84B)]"></span>big bang багийн сонголт</div>
               </div>
-              <button
-                onClick={s.toggle}
-                className="mt-1 cursor-pointer self-start rounded-full px-[22px] py-[9px] font-[inherit] text-[12.5px] font-bold transition-all duration-[250ms]"
-                style={{ border: `1px solid ${s.saveBorder}`, background: s.saveBg, color: s.saveColor }}
-              >
-                {s.saveLabel}
-              </button>
             </div>
           </div>
         ))}

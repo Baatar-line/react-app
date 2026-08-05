@@ -118,7 +118,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   state: any = {
     active: -1, aimag: 'Бүгд', lang: 'mn', locOpen: false,
-    pin: -1, saved: {}, favs: {}, joined: {}, mapAimag: null, hoverAimag: null,
+    pin: -1, favs: {}, joined: {}, mapAimag: null, hoverAimag: null,
     spNeeds: false, bigText: false, globeCountry: null, globeHover: null, globeFilter: null,
     globeQuery: '', globeReady: false,
     showScenicForm: false,
@@ -553,7 +553,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         const id = mnOf(sh.name);
         const rings = this.polysOf(sh).map((ring) => ring.map(([x, y]) => xyToLonLat(x, y) as [number, number]));
         const layers = rings.map((ring) => window.L.polygon(ring, {
-          color: 'rgba(255,255,255,.55)', weight: 1.1, fillColor: 'rgba(255,255,255,0.02)', fillOpacity: 1,
+          color: 'rgba(255,255,255,.55)', weight: 2.2, fillColor: 'rgba(255,255,255,0.02)', fillOpacity: 1,
         })
           .on('mouseover', () => this.setState({ hoverAimag: id }))
           .on('mouseout', () => this.setState({ hoverAimag: null }))
@@ -617,7 +617,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       const selfOrHostSelected = isSel || (!!hostId && mapAimag === hostId);
       const hostHov = !isHov && !!hostId && hoverAimag === hostId;
       const fill = (!selfOrHostSelected && (isHov || hostHov)) ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,0.02)';
-      layers.forEach((ly: any) => ly.setStyle({ fillColor: fill, fillOpacity: 1, color: isSel ? accent : 'rgba(255,255,255,.55)', weight: isSel ? 2.4 : 1.1 }));
+      layers.forEach((ly: any) => ly.setStyle({ fillColor: fill, fillOpacity: 1, color: isSel ? accent : 'rgba(255,255,255,.55)', weight: isSel ? 4.8 : 2.2 }));
       const count = countByAimag[id] || 0;
       const showCount = count > 0 && !mapAimag;
       const visible = mapAimag ? isSel : true;
@@ -860,7 +860,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   };
 
   renderVals(): any {
-    const { active, aimag, lang, locOpen, pin, saved, mapAimag, vw } = this.state;
+    const { active, aimag, lang, locOpen, pin, mapAimag, vw } = this.state;
     const { pathname, navigate } = this.props;
     const route = routeFromPathname(pathname);
     const accent = this.props.accent ?? '#E8B84B';
@@ -971,11 +971,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const selP = pin >= 0 ? this.mapPins()[pin] : null;
     // Which detail page (if any) the sidebar's "Дэлгэрэнгүй" button should
     // open — depends on which of the 3 pin modes selP came from. Events:
-    // matched by id against the same featured-event-excluded list V.events
-    // itself is built from (duplicated here, not shared — that list isn't
-    // computed until later in this method), so the index lines up with what
-    // openEventDetail(i) expects; the featured event itself has no reachable
-    // index there, so its own pin just won't get a working button (rare).
+    // matched by id against the same list V.events itself is built from
+    // (duplicated here, not shared — that list isn't computed until later
+    // in this method), so the index lines up with what openEventDetail(i)
+    // expects, featured event included.
     let pinDetailOpen: (() => void) | undefined;
     if (selP) {
       const mode = this.state.pinMode || 'scenic';
@@ -986,9 +985,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         pinDetailOpen = () => this.openPlace({ slug: catForPin }, idxForPin);
       } else if (mode === 'events' && selP.id != null) {
         const liveEventsForPin: any[] = this.state.liveEvents || [];
-        const featuredForPin = liveEventsForPin.find((ev: any) => ev.featured) || liveEventsForPin[0] || null;
-        const gridEventsForPin = featuredForPin ? liveEventsForPin.filter((ev: any) => ev !== featuredForPin) : liveEventsForPin;
-        const evIdx = gridEventsForPin.findIndex((ev: any) => ev.id === selP.id);
+        const evIdx = liveEventsForPin.findIndex((ev: any) => ev.id === selP.id);
         if (evIdx >= 0) pinDetailOpen = () => this.openEventDetail(evIdx);
       }
     }
@@ -1083,11 +1080,14 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const liveEvents: any[] = this.state.liveEvents || [];
     const featuredEvent = liveEvents.find((ev) => ev.featured) || liveEvents[0] || null;
     const fe = featuredEvent
-      ? { name: featuredEvent.name, date: fmtEventDate(featuredEvent.startDate), meta: featuredEvent.meta || '', img: (featuredEvent.images && featuredEvent.images[0]) || '' }
-      : { name: '', date: '', meta: '', img: '' };
-    // The featured card already shows this event up top — drop it from the
-    // grid below so it doesn't render a second time as a small card.
-    const gridEvents = featuredEvent ? liveEvents.filter((ev) => ev !== featuredEvent) : liveEvents;
+      ? { id: featuredEvent.id, name: featuredEvent.name, date: fmtEventDate(featuredEvent.startDate), meta: featuredEvent.meta || '', img: (featuredEvent.images && featuredEvent.images[0]) || '' }
+      : { id: null, name: '', date: '', meta: '', img: '' };
+    // Kept unfiltered (used to drop the featured event here so it wouldn't
+    // render twice) — every event needs a real index into this array for
+    // openEventDetail(i) to find it, including the featured one itself, so
+    // the featured card can be clickable too. The event page hides the
+    // matching small card from its own grid instead (see fevId below).
+    const gridEvents = liveEvents;
 
     // idx captured before the sort/slice (same trick topPlaces already used
     // below) — the top-3-by-rating list's own position isn't the item's real
@@ -1098,16 +1098,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
     cats.forEach((c) => c.items.forEach((it, i) => flatPlaces.push({ it, cat: c, idx: i })));
     const topPlaces = flatPlaces.map((o) => ({ ...o, rating: ratingOf(o.it.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
       .map((o) => ({ name: o.it.name, sub: o.it.sub, rating: o.rating, kind: L.favPlaces, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.it.img || '', 500) + '")', onClick: () => this.openPlace(o.cat, o.idx) }));
-    // Sourced from gridEvents (not liveEvents) so a captured idx lines up
-    // exactly with V.events' own indices, which openEventDetail(i) expects —
-    // gridEvents already drops the featured event, same as V.events does.
+    // Sourced from gridEvents so a captured idx lines up exactly with
+    // V.events' own indices, which openEventDetail(i) expects.
     const topEvents = gridEvents.map((ev: any, idx: number) => ({ ev, idx, rating: ratingOf(ev.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
       .map((o) => ({ name: o.ev.name, sub: o.ev.tag || L.eTagFallback, rating: o.rating, kind: L.eventTitle, thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl((o.ev.images && o.ev.images[0]) || '', 500) + '")', onClick: () => this.openEventDetail(o.idx) }));
     const topItems2: any[] = [];
     for (let i = 0; i < 3; i++) { topItems2.push(topScenic[i], topPlaces[i], topEvents[i]); }
 
     const suggests = SUGGESTS.map((s, i) => {
-      const on = !!saved[i]; const leftText = i % 2 === 0;
+      const leftText = i % 2 === 0;
       const suggestOverride = this.state.suggestBgOverride[s.slug];
       return {
         ...s, textLeft: leftText ? '0' : 'auto', textRight: leftText ? 'auto' : '0',
@@ -1115,8 +1114,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
         cover: 'linear-gradient(rgba(0,0,0,.12), rgba(0,0,0,.25)), url("' + imgUrl(suggestOverride || s.img, 1600) + '")',
         coverIsVideo: isVideoUrl(suggestOverride || ''), coverRawUrl: suggestOverride || '',
         open: () => navigate('/suggest/' + s.slug),
-        toggle: (ev: any) => { ev.stopPropagation(); this.setState((stt: any) => ({ saved: { ...stt.saved, [i]: !stt.saved[i] } })); },
-        saveLabel: on ? L.savedLabel : L.save, saveBg: on ? accent : 'transparent', saveColor: on ? '#132a1f' : 'rgba(242,237,227,.8)', saveBorder: on ? accent : 'rgba(242,237,227,.28)',
       };
     });
 
@@ -1302,6 +1299,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
       hasFeaturedEvent: !!featuredEvent,
       fevBg: 'linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.4)), url("' + imgUrl(fe.img, 1600) + '")',
       fevDate: fe.date, fevName: fe.name, fevMeta: fe.meta,
+      // Lets the featured card's own click open its detail page, and the
+      // grid below (built from V.events, which now includes every event —
+      // see gridEvents above) skip re-rendering it as a small card too.
+      fevId: fe.id,
+      openFeaturedEvent: featuredEvent ? () => this.openEventDetail(liveEvents.indexOf(featuredEvent)) : undefined,
       openEventDetail: this.openEventDetail,
       events: gridEvents.map((ev: any) => {
         const { day, mon } = eventDayMon(ev.startDate);
@@ -1309,6 +1311,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
           id: ev.id, day, mon, name: ev.name, meta: ev.meta || '', tag: ev.tag || L.eTagFallback,
           aimag: ev.aimag ? ev.aimag.name : undefined,
           images: ev.images || [],
+          lat: ev.lat ?? undefined, lng: ev.lng ?? undefined,
           thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + imgUrl((ev.images && ev.images[0]) || '', 800) + '")',
         };
       }).map((ev: any, i: number) => {
