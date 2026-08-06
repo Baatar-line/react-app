@@ -141,7 +141,7 @@ export default function Login() {
             <div className="flex h-[30px] w-[30px] items-center justify-center rounded-[9px] bg-accent text-[14px] font-extrabold text-[#132a1f]">
               a
             </div>
-            <span className="text-[15px] font-extrabold tracking-[-0.03em] text-cream">atlas</span>
+            <span className="text-[15px] tracking-[-0.03em] text-cream [font-family:'Marcellus_SC',serif]">atlas</span>
           </div>
 
           {/* ══ USER FLOW ══ */}
@@ -250,12 +250,11 @@ export default function Login() {
                 ✓
               </div>
               <h1 className="m-0 text-[22px] font-extrabold text-cream-2">Амжилттай нэвтэрлээ</h1>
-              <p className="mb-[18px] mt-2 text-[13px] text-cream/60">Big bang-д тавтай морил!</p>
               <Link
                 href="/"
-                className="inline-block rounded-xl border-none bg-accent px-7 py-[11px] text-[14px] font-extrabold !text-[#132a1f]"
+                className="mt-5 inline-block rounded-xl border-none bg-accent px-7 py-[11px] text-[14px] font-extrabold !text-[#132a1f]"
               >
-                Big bang руу орох →
+                <span className="font-brand">Atlas</span> руу орох →
               </Link>
             </div>
           )}

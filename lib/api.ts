@@ -4,6 +4,17 @@
 // idea as any other session token, just bootstrapped instead of typed in.
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '/api';
 
+// Carries the HTTP status alongside the server's error message so a caller
+// can tell "your session is invalid, sign in again" (401) apart from an
+// ordinary validation failure — see apiPut's use in CompleteProfileForm.
+export class ApiClientError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 const TOKEN_KEY = 'bb_admin_token';
 const ADMIN_EMAIL = 'admin@bigbang.mn';
 const ADMIN_PASSWORD = 'bigbang-admin-dev';
@@ -67,7 +78,7 @@ export async function apiPost<T>(path: string, body: unknown, token?: string): P
   const res = await authedFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, token);
   if (!res.ok) {
     const errBody = await res.json().catch(() => null);
-    throw new Error(errBody?.error || `POST ${path} failed: ${res.status}`);
+    throw new ApiClientError(res.status, errBody?.error || `POST ${path} failed: ${res.status}`);
   }
   return res.json();
 }
@@ -82,7 +93,7 @@ export async function apiPut<T>(path: string, body: unknown, token?: string): Pr
   const res = await authedFetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, token);
   if (!res.ok) {
     const errBody = await res.json().catch(() => null);
-    throw new Error(errBody?.error || `PUT ${path} failed: ${res.status}`);
+    throw new ApiClientError(res.status, errBody?.error || `PUT ${path} failed: ${res.status}`);
   }
   return res.json();
 }

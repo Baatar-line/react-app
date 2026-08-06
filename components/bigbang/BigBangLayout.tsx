@@ -1115,23 +1115,25 @@ export default class BigBangLayout extends React.Component<Props, any> {
     });
 
     const favPlaces: any[] = [];
-    cats.forEach((c) => c.items.forEach((it) => {
+    cats.forEach((c) => c.items.forEach((it, i) => {
       const key = 'p:' + c.slug + ':' + it.name;
       if (!favs[key]) return;
       favPlaces.push({
         name: it.name, sub: it.sub, rating: ratingOf(it.name), accShow: it.access ? 'flex' : 'none',
         thumb: itemThumbOf(it.img).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
         displayMeta: it.meta + ' · ' + aimagName(it.aimag || 'Улаанбаатар', lang), toggleFav: toggleFav(key), ...heartOf(true),
+        onClick: () => this.openPlace(c, i),
       });
     }));
     favPlaces.sort((a, b) => +b.rating - +a.rating);
     const favScenic = this.allPins()
-      .map((p) => ({ p, key: 's:' + p.name })).filter((o) => favs[o.key])
+      .map((p, i) => ({ p, i, key: 's:' + p.name })).filter((o) => favs[o.key])
       .map((o) => ({
         name: o.p.name, sub: o.p.type, rating: ratingOf(o.p.name),
         accShow: (o.p.access || isAccessible(o.p.name)) ? 'flex' : 'none',
         thumb: 'linear-gradient(rgba(0,0,0,.05), rgba(0,0,0,.15)), url("' + imgUrl(o.p.img, 640) + '")',
         displayMeta: aimagName(o.p.aimag, lang), toggleFav: toggleFav(o.key), ...heartOf(true),
+        onClick: () => this.openScenicDetail(o.i),
       })).sort((a, b) => +b.rating - +a.rating);
     const favCount = Object.values(favs).filter(Boolean).length;
 
@@ -1226,6 +1228,17 @@ export default class BigBangLayout extends React.Component<Props, any> {
     };
     const closeCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: false }); };
     const openCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: true }); };
+    // CompleteProfileForm's save hit a 401 because the account behind this
+    // session no longer exists (a long-lived token outliving a removed
+    // account) — the stale session can't be salvaged, so clear it and
+    // re-prompt sign-in instead of leaving the user stuck on a save that
+    // will never succeed. Whatever place/scenic/event submission was
+    // pending gets dropped too, same as a fresh signed-out visitor.
+    const onProfileFormSessionExpired = () => {
+      clearSession();
+      this._pendingCreate = null;
+      this.setState({ showCompleteProfileForm: false, showUserAuthForm: true, myPlaces: [], myProfile: null });
+    };
     // CompleteProfileForm already saved the profile — continues into
     // ConfirmSubmitOtp for whatever place/scenic/event submission triggered
     // the prompt, same as onUserAuthed above (or just closes if opened
@@ -1464,7 +1477,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       showPlaceForm: st.showPlaceForm, showScenicForm: st.showScenicForm, showEventForm: st.showEventForm,
       onPlaceSubmit, onScenicSubmit, onEventSubmit,
       showUserAuthForm: st.showUserAuthForm, closeUserAuthForm, onUserAuthed,
-      showCompleteProfileForm: st.showCompleteProfileForm, closeCompleteProfileForm, openCompleteProfileForm, onProfileCompleted,
+      showCompleteProfileForm: st.showCompleteProfileForm, closeCompleteProfileForm, openCompleteProfileForm, onProfileCompleted, onProfileFormSessionExpired,
       showConfirmOtp: st.showConfirmOtp, closeConfirmOtp, onConfirmOtpVerified,
       myProfile: st.myProfile,
       // Lets a page-level "rate this" widget (PlaceDetail/EventDetail) prompt
@@ -1605,7 +1618,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         >
           <div className="bb-logo-group relative flex flex-none items-center gap-[18px]">
             <button onClick={V.goHome} className="relative z-[2] flex cursor-pointer items-center border-0 bg-transparent p-0 font-inherit text-inherit">
-              <span className="font-display font-bold italic tracking-[-0.01em] text-cream" style={{ fontSize: V.isMobile ? 19 : 23 }}>Atlas</span>
+              <span className="tracking-[-0.01em] text-cream [font-family:'Marcellus_SC',serif]" style={{ fontSize: V.isMobile ? 19 : 23 }}>Atlas</span>
             </button>
           </div>
 
@@ -1707,7 +1720,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         {V.showScenicForm && <CreateForm kind="scenic" onClose={V.closeScenicForm} onSubmit={V.onScenicSubmit} />}
         {V.showEventForm && <CreateForm kind="event" onClose={V.closeEventForm} onSubmit={V.onEventSubmit} />}
         {V.showUserAuthForm && <UserAuthForm onClose={V.closeUserAuthForm} onAuthed={V.onUserAuthed} />}
-        {V.showCompleteProfileForm && <CompleteProfileForm initial={V.myProfile} token={V.mySessionToken} onClose={V.closeCompleteProfileForm} onSaved={V.onProfileCompleted} />}
+        {V.showCompleteProfileForm && <CompleteProfileForm initial={V.myProfile} token={V.mySessionToken} onClose={V.closeCompleteProfileForm} onSaved={V.onProfileCompleted} onSessionExpired={V.onProfileFormSessionExpired} />}
         {V.showConfirmOtp && <ConfirmSubmitOtp phone={V.myProfile?.phoneNumber || ''} email={V.myProfile?.email || ''} token={V.mySessionToken} onClose={V.closeConfirmOtp} onVerified={V.onConfirmOtpVerified} />}
       </div>
     );

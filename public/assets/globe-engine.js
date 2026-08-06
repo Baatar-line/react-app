@@ -79,7 +79,10 @@
     this.isMobile = window.innerWidth < 820;
     this.raycaster = new THREE.Raycaster();
     this.features = [];
-    this.targetZ = 3.2;
+    // Ultra-wide desktop displays have much more canvas around the archive
+    // panels. Pull the camera back there so the globe keeps the same visual
+    // proportion it has on a notebook instead of swallowing the side cards.
+    this.targetZ = window.innerWidth >= 1500 ? 4.1 : 3.2;
     this.lastInteract = 0;
     this.lastHoverT = 0;
     this.raf = 0;
@@ -305,7 +308,7 @@
     var w = el.clientWidth, h = el.clientHeight;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(38, w / h, 0.1, 100);
-    this.camera.position.set(0, 0, 3.2);
+    this.camera.position.set(0, 0, this.targetZ);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
     this.renderer.setSize(w, h);
@@ -377,7 +380,7 @@
     var home = this.quatFor(HOME_VIEW.latitude, HOME_VIEW.longitude);
     this.group.quaternion.copy(home);
     this.targetQ = home.clone();
-    this.targetZ = 3.2;
+    this.targetZ = window.innerWidth >= 1500 ? 4.1 : 3.2;
     this.lastInteract = performance.now() + 2500;
 
     this.bindPointer();
@@ -484,7 +487,9 @@
 
   GlobeEngine.prototype.flyTo = function (lat, lng) {
     this.targetQ = this.quatFor(lat, lng);
-    this.targetZ = this.isMobile ? 2.7 : 2.5;
+    // Keep the selected country readable without letting the globe cover the
+    // larger archive cards on ultra-wide desktop screens.
+    this.targetZ = this.isMobile ? 2.7 : (window.innerWidth >= 1500 ? 3.35 : 2.5);
   };
 
   GlobeEngine.prototype.selectByName = function (name) {
@@ -526,7 +531,7 @@
       dot.type = "button";
       dot.title = String(site.position).padStart(2, "0") + " · " + site.name;
       Object.assign(dot.style, { position: "absolute", width: "28px", height: "28px", padding: "0", border: "0", background: "transparent", transform: "translate(-50%,-50%)", pointerEvents: "auto", cursor: "pointer", opacity: "0", willChange: "transform,opacity", zIndex: "5" });
-      dot.innerHTML = '<span class="ring" style="position:absolute;left:50%;top:50%;width:15px;height:15px;transform:translate(-50%,-50%);border-radius:50%;border:1.5px solid rgba(' + YELLOW_RGB + ',.8)"></span><span class="core" style="position:absolute;left:50%;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);border-radius:50%;background:' + YELLOW + ';box-shadow:0 0 10px 3px rgba(' + YELLOW_RGB + ',.9)"></span>';
+      dot.innerHTML = '<span class="ring" style="position:absolute;left:50%;top:50%;width:11px;height:11px;transform:translate(-50%,-50%);border-radius:50%;border:1.25px solid rgba(' + YELLOW_RGB + ',.8)"></span><span class="core" style="position:absolute;left:50%;top:50%;width:6px;height:6px;transform:translate(-50%,-50%);border-radius:50%;background:' + YELLOW + ';box-shadow:0 0 7px 2px rgba(' + YELLOW_RGB + ',.9)"></span>';
       dot.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
       dot.addEventListener("click", function (ev) { ev.stopPropagation(); self.setActiveSite(site.position); if (self.cb.onSiteSelect) self.cb.onSiteSelect(site.position); });
       self.pinLayer.appendChild(dot);
@@ -548,7 +553,7 @@
     this.selLL = null;
     this.targetTilt = this.tiltQuat.clone();      // restore 23.5° tilt
     this._texDirty = true;
-    this.targetZ = 3.2;
+    this.targetZ = window.innerWidth >= 1500 ? 4.1 : 3.2;
     this.lastInteract = performance.now();
     this.buildArchiveDots(null);
     if (this.cb.onSelect) this.cb.onSelect(null);
@@ -664,6 +669,12 @@
   GlobeEngine.prototype.resize = function () {
     if (!this.renderer) return;
     this.isMobile = window.innerWidth < 820;
+    var responsiveZ = window.innerWidth >= 1500 ? 4.1 : 3.2;
+    // Preserve a user's manual zoom, but update the default camera distance
+    // when crossing between notebook and ultra-wide desktop layouts.
+    if (Math.abs(this.targetZ - 3.2) < 0.02 || Math.abs(this.targetZ - 3.65) < 0.02 || Math.abs(this.targetZ - 4.1) < 0.02) {
+      this.targetZ = responsiveZ;
+    }
     var w = this.mount.clientWidth, h = this.mount.clientHeight;
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;

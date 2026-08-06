@@ -35,7 +35,6 @@ export default function AboutPage() {
 
         <div style={css('position:relative;z-index:2;text-align:center;padding:104px 20px 0')}>
           <h1 style={css("margin:0;font-family:'Playfair Display',serif;font-weight:800;font-size:clamp(30px,4.4vw,54px);line-height:1.14;color:#f6f1e7;text-shadow:0 4px 30px rgba(0,0,0,.45)")}>{V.L.abBig}<br />{V.L.abBang}</h1>
-          <div style={css('margin-top:12px;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:rgba(242,237,227,.65)')}>#{V.abHashtag}</div>
         </div>
 
         <div style={css('position:relative;z-index:2;max-width:640px;margin:0 auto;padding:56px 28px 64px')}>
@@ -67,7 +66,7 @@ export default function AboutPage() {
                       Needs real horizontal room next to the 380px-wide paragraph,
                       so it's dropped on mobile. */}
                   {!V.isMobile && (row.vert || row.descVert) && (
-                    <div style={{ writingMode: 'vertical-lr', whiteSpace: 'pre', fontFamily: "'Mongolian Baiti','Menksoft Tigst',sans-serif", fontSize: 22, lineHeight: 1.25, flex: 'none', maxWidth: 300 } as any} title="Уламжлалт бичиг — AI орчуулга, шалгагдаагvй">
+                    <div style={{ writingMode: 'vertical-lr', whiteSpace: 'pre', fontFamily: "'Mongolian Baiti','Menksoft Tigst',sans-serif", fontSize: 16, lineHeight: 1.25, flex: 'none', maxWidth: 300 } as any} title="Уламжлалт бичиг — AI орчуулга, шалгагдаагvй">
                       {row.vert && <span style={{ color: 'var(--accent,#E8B84B)', fontWeight: 700 }}>{row.vert}</span>}
                       {row.descVert && <span style={{ color: 'rgba(242,237,227,.5)' }}>{row.vert ? '\n' : ''}{mnVertLines(row.descVert)}</span>}
                     </div>
@@ -97,11 +96,6 @@ export default function AboutPage() {
               <LanyardBadge key={i} large letter={tm.initial} name={tm.name} role={tm.role} color={tm.avatarBg} />
             ))}
           </div>
-        </div>
-
-        <div style={css('position:relative;z-index:2;display:flex;align-items:center;justify-content:center;gap:10px;padding:0 28px 34px')}>
-          <span style={css('width:24px;height:24px;border-radius:7px;background:var(--accent,#E8B84B);display:flex;align-items:center;justify-content:center;font-weight:800;color:#132a1f;font-size:11px')}>b</span>
-          <span style={css('font-size:11px;letter-spacing:.04em;color:rgba(242,237,227,.6)')}>big bang · {V.L.abContact}</span>
         </div>
 
       <div style={{ ...css('position:relative;z-index:2;max-width:1200px;margin:0 auto'), padding: V.isMobile ? '20px 18px 60px' : '20px 48px 96px' }}>

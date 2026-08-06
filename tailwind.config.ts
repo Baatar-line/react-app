@@ -17,6 +17,8 @@ export default {
         sans: ['Manrope', 'system-ui', 'sans-serif'],
         display: ['"Playfair Display"', 'serif'],
         mono: ['ui-monospace', 'Menlo', 'monospace'],
+        // The "Atlas" wordmark — nav bar logo, Admin Panel sidebar, login screen.
+        brand: ['"Uncial Antiqua"', 'cursive'],
       },
       keyframes: {
         bbDrift: {

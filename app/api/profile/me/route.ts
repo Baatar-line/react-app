@@ -31,6 +31,11 @@ export async function PUT(request: Request) {
     // favor of whatever's already on the account instead of erroring (the
     // real (disabled) form never sends a different value in the first place).
     const existing = await prisma.user.findUnique({ where: { id: user.userId }, select: { phoneNumber: true, email: true } });
+    // The JWT's signature can still verify fine after the row it points at
+    // is gone (a long-lived token from before an account got removed) — that
+    // used to reach prisma.user.update() below and surface as a raw
+    // "P2025 ... no record found" crash instead of a normal "sign in again".
+    if (!existing) throw new ApiError(401, 'Таны нэвтрэлт хүчингүй болсон байна — дахин нэвтэрнэ үү');
     const finalPhone = existing?.phoneNumber || phoneNumber;
     const finalEmail = existing?.email || String(email).trim();
     // phoneNumber/email live on User, not Profile — updated separately since

@@ -7,7 +7,7 @@
 // Reuses the same static data as BigBang (bigbang/data.ts). No "host" tier —
 // place submissions from any signed-in account land pending admin approval.
 import React, { useCallback, useRef, useState } from 'react';
-import { Accessibility } from 'lucide-react';
+import { Accessibility, MapPin } from 'lucide-react';
 import { useIsMobile } from './bigbang/ui';
 import { AIMAGS, CATS, FCRIT } from './bigbang/data';
 
@@ -142,12 +142,17 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   // fire two separate creates, e.g. two identical scenic pins a couple
   // seconds apart, each with its own freshly-uploaded Cloudinary image.
   const [submitting, setSubmitting] = useState(false);
+  // Purely derived/display now — never typed into directly. Filled in via
+  // reverseW3w whenever a pin lands anywhere (map click, search result,
+  // pasted URL/w3w address) and shown as a small label over the map, so the
+  // convenience code is still visible without needing its own input+button.
   const [w3w, setW3w] = useState('');
-  const [w3wLoading, setW3wLoading] = useState(false);
-  const [w3wErr, setW3wErr] = useState('');
-  const [placeQuery, setPlaceQuery] = useState('');
-  const [placeQueryLoading, setPlaceQueryLoading] = useState(false);
-  const [placeQueryErr, setPlaceQueryErr] = useState('');
+  // Single search box below replaces what used to be two stacked ones (a
+  // place-name search and a separate what3words/Google-Maps-URL box) — one
+  // input, one button, auto-detects which of the three it got.
+  const [locQuery, setLocQuery] = useState('');
+  const [locLoading, setLocLoading] = useState(false);
+  const [locErr, setLocErr] = useState('');
   const [placeResults, setPlaceResults] = useState<{ name: string; lat: number; lng: number }[]>([]);
 
   const mapRef = useRef<any>(null);
@@ -165,56 +170,10 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
     }).addTo(mapRef.current);
   }, []);
 
-  // Same box handles three kinds of pasted input, tried in this order:
-  // 1. A full Google Maps URL with coordinates already in it — parsed
-  //    entirely client-side (see extractGoogleMapsCoords).
-  // 2. A shortened Google Maps link (maps.app.goo.gl/goo.gl) — resolved via
-  //    the backend proxy since only the redirect target carries coordinates.
-  // 3. A what3words address (or what3words.com URL) — the original behavior,
-  //    resolved via the backend proxy (keeps the API key server-side).
-  const lookupW3w = useCallback(async () => {
-    const val = w3w.trim();
-    if (!val) return;
-    setW3wLoading(true);
-    setW3wErr('');
-    try {
-      const direct = extractGoogleMapsCoords(val);
-      if (direct) {
-        setLat(direct.lat); setLng(direct.lng);
-        placeMarker(direct.lat, direct.lng);
-        if (mapRef.current) mapRef.current.setView([direct.lat, direct.lng], 17);
-        return;
-      }
-      if (GMAPS_SHORT_RE.test(val)) {
-        const res = await fetch(`/api/resolve-maps-url?url=${encodeURIComponent(val)}`);
-        const body = await res.json();
-        if (!res.ok) throw new Error(body?.error || 'Холбоос уншихад алдаа гарлаа');
-        setLat(body.lat); setLng(body.lng);
-        placeMarker(body.lat, body.lng);
-        if (mapRef.current) mapRef.current.setView([body.lat, body.lng], 17);
-        return;
-      }
-      // Plain fetch (not apiGet) so a non-2xx response's { error: "..." } body
-      // — e.g. the "add W3W_API_KEY to .env.local" message — reaches the user
-      // instead of collapsing into a generic "failed: 500".
-      const res = await fetch(`/api/what3words?words=${encodeURIComponent(val)}`);
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error || 'Хайлт амжилтгүй боллоо');
-      setLat(body.lat); setLng(body.lng);
-      placeMarker(body.lat, body.lng);
-      if (mapRef.current) mapRef.current.setView([body.lat, body.lng], 17);
-    } catch (e) {
-      setW3wErr(e instanceof Error ? e.message : 'Хайлт амжилтгүй боллоо');
-    } finally {
-      setW3wLoading(false);
-    }
-  }, [w3w, placeMarker]);
-
   // The other direction: clicking the map (like on Google Maps) also fills in
-  // the what3words address for that exact spot, so the two stay in sync
-  // whichever way a location gets picked.
+  // the what3words address for that exact spot, so the display label under
+  // the map (see the JSX below) stays in sync however a pin lands.
   const reverseW3w = useCallback(async (lt: number, lg: number) => {
-    setW3wErr('');
     try {
       const res = await fetch(`/api/what3words?lat=${lt}&lng=${lg}`);
       const body = await res.json();
@@ -226,37 +185,80 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
     }
   }, []);
 
-  // Free-text address/place search (Google-Maps-search-box style) — separate
-  // from what3words above, which only resolves exact 3-word addresses, not
-  // a place name. Proxied through /api/geocode (Nominatim) so no API key is
-  // needed. Shows up to 5 matches to pick from instead of jumping straight
-  // to the first one, since a place name alone is often ambiguous.
-  const searchPlace = useCallback(async () => {
-    if (!placeQuery.trim()) return;
-    setPlaceQueryLoading(true);
-    setPlaceQueryErr('');
+  const applyLocation = useCallback((lt: number, lg: number, zoom = 16) => {
+    setLat(lt); setLng(lg);
+    placeMarker(lt, lg);
+    if (mapRef.current) mapRef.current.setView([lt, lg], zoom);
+    reverseW3w(lt, lg);
+  }, [placeMarker, reverseW3w]);
+
+  // Matches a bare what3words address ("hydration.pounces.loose", optionally
+  // "///"-prefixed) or a what3words.com URL — anything else pasted/typed
+  // falls through to the free-text place search below.
+  const W3W_DETECT_RE = /^\/{0,3}[a-z]+\.[a-z]+\.[a-z]+$/i;
+  const W3W_URL_RE = /what3words\.com/i;
+
+  // One box now handles everything that used to be two separate search rows
+  // (a place-name search and a what3words/Google-Maps-URL box), tried in
+  // this order:
+  // 1. A full Google Maps URL with coordinates already in it — parsed
+  //    entirely client-side (see extractGoogleMapsCoords).
+  // 2. A shortened Google Maps link (maps.app.goo.gl/goo.gl) — resolved via
+  //    the backend proxy since only the redirect target carries coordinates.
+  // 3. A what3words address or what3words.com URL — resolved via the
+  //    backend proxy (keeps the API key server-side).
+  // 4. Anything else — a free-text place/address search (Nominatim, via
+  //    /api/geocode). Always shown as a pickable list (even a single match)
+  //    instead of dropping the pin straight away — Mongolia's OSM/Nominatim
+  //    coverage is thin enough that a plausible-looking single result can
+  //    still be the wrong place entirely, so the name is worth a glance
+  //    before committing to it.
+  const searchLocation = useCallback(async () => {
+    const val = locQuery.trim();
+    if (!val) return;
+    setLocLoading(true);
+    setLocErr('');
     setPlaceResults([]);
     try {
-      const res = await fetch(`/api/geocode?q=${encodeURIComponent(placeQuery.trim())}`);
+      const direct = extractGoogleMapsCoords(val);
+      if (direct) { applyLocation(direct.lat, direct.lng, 17); return; }
+
+      if (GMAPS_SHORT_RE.test(val)) {
+        const res = await fetch(`/api/resolve-maps-url?url=${encodeURIComponent(val)}`);
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error || 'Холбоос уншихад алдаа гарлаа');
+        applyLocation(body.lat, body.lng, 17);
+        return;
+      }
+
+      if (W3W_DETECT_RE.test(val) || W3W_URL_RE.test(val)) {
+        // Plain fetch (not apiGet) so a non-2xx response's { error: "..." }
+        // body — e.g. the "add W3W_API_KEY to .env.local" message — reaches
+        // the user instead of collapsing into a generic "failed: 500".
+        const res = await fetch(`/api/what3words?words=${encodeURIComponent(val)}`);
+        const body = await res.json();
+        if (!res.ok) throw new Error(body?.error || 'Хайлт амжилтгүй боллоо');
+        applyLocation(body.lat, body.lng, 17);
+        return;
+      }
+
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(val)}`);
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || 'Хайлт амжилтгүй боллоо');
-      if (!body.length) { setPlaceQueryErr('Илэрц олдсонгүй'); return; }
+      if (!body.length) { setLocErr('Илэрц олдсонгүй — өөр нэрээр эсвэл газрын зураг дээр шууд дарж оролдоно уу'); return; }
       setPlaceResults(body);
     } catch (e) {
-      setPlaceQueryErr(e instanceof Error ? e.message : 'Хайлт амжилтгүй боллоо');
+      setLocErr(e instanceof Error ? e.message : 'Хайлт амжилтгүй боллоо');
     } finally {
-      setPlaceQueryLoading(false);
+      setLocLoading(false);
     }
-  }, [placeQuery]);
+  }, [locQuery, applyLocation]);
 
   const pickPlaceResult = useCallback((r: { name: string; lat: number; lng: number }) => {
-    setLat(r.lat); setLng(r.lng);
-    placeMarker(r.lat, r.lng);
-    if (mapRef.current) mapRef.current.setView([r.lat, r.lng], 15);
-    reverseW3w(r.lat, r.lng);
+    applyLocation(r.lat, r.lng, 15);
     setPlaceResults([]);
-    setPlaceQuery(r.name);
-  }, [placeMarker, reverseW3w]);
+    setLocQuery(r.name);
+  }, [applyLocation]);
 
   const attachMap = useCallback((node: HTMLDivElement | null) => {
     if (!node) {
@@ -334,15 +336,13 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const descMissing = !desc.trim();
   const imagesMissing = images.length < 1;
   const imagesMaxed = images.length >= MAX_IMAGES;
-  // Scenic spots and events are both fundamentally about a specific point on
-  // the map (that's the entire point of a "scenic spot", and attendees need
-  // to know where to actually show up) — unlike a place, where the address
-  // fields + contact info already carry that, so the pin stays optional
-  // there. Create-only: an older scenic/event row edited through Admin
-  // before this requirement existed may still have no pin, and blocking an
-  // unrelated edit to that row until someone back-fills a location it never
-  // needed before would be a regression, not the ask here.
-  const pinMissing = mode === 'create' && (kind === 'scenic' || kind === 'event') && (lat == null || lng == null);
+  // A real map pin is required for every kind — visitors need to know where
+  // to actually show up, and "somewhere in this aimag" isn't good enough.
+  // Create-only: an older row edited through Admin before this requirement
+  // existed may still have no pin, and blocking an unrelated edit to that
+  // row until someone back-fills a location it never needed before would be
+  // a regression, not the ask here.
+  const pinMissing = mode === 'create' && (lat == null || lng == null);
   const nameMissing = !name.trim();
   const scenicTypeMissing = kind === 'scenic' && !scenicType.trim();
   // Single source of truth for whether "Үүсгэх" should even be clickable —
@@ -543,49 +543,38 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
           </label>
 
           <div className="flex flex-col gap-1.5">
-            <span className={labelSpanClass}>
-              Байршил {kind === 'place' ? <span className="text-[rgba(242,237,227,.4)] font-normal">(заавал биш)</span> : <span className="text-[#f08a8a]">*</span>}
-            </span>
+            <span className={labelSpanClass}>Байршил <span className="text-[#f08a8a]">*</span></span>
             <div className="relative flex gap-2">
               <input
-                value={placeQuery}
-                onChange={(e) => { setPlaceQuery(e.target.value); setPlaceQueryErr(''); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchPlace(); } }}
-                placeholder="Байршил хайх... (жишээ: Сүхбаатарын талбай)"
+                value={locQuery}
+                onChange={(e) => { setLocQuery(e.target.value); setLocErr(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchLocation(); } }}
+                placeholder="Хаяг, газрын нэр, Google Maps холбоос эсвэл what3words хайх..."
                 className={`min-w-0 flex-1 font-[inherit] rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.04)] px-[13px] py-[11px] text-cream outline-none ${inputFontClass}`}
               />
-              <button onClick={searchPlace} className={`flex-shrink-0 cursor-pointer rounded-[10px] border border-[rgba(242,237,227,.22)] bg-[rgba(255,255,255,.04)] px-[18px] font-[inherit] font-bold text-[rgba(242,237,227,.9)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)] ${inputFontClass}`}>
-                {placeQueryLoading ? '...' : 'Хайх'}
+              <button onClick={searchLocation} disabled={locLoading} className={`flex-shrink-0 cursor-pointer rounded-[10px] border border-[rgba(242,237,227,.22)] bg-[rgba(255,255,255,.04)] px-[18px] font-[inherit] font-bold text-[rgba(242,237,227,.9)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)] disabled:cursor-not-allowed disabled:opacity-60 ${inputFontClass}`}>
+                {locLoading ? '...' : 'Хайх'}
               </button>
               {placeResults.length > 0 && (
-                <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[1100] max-h-[170px] overflow-auto rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[#1a1712] shadow-[0_12px_30px_rgba(0,0,0,.5)]">
+                <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[1100] max-h-[220px] overflow-auto rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[#1a1712] shadow-[0_12px_30px_rgba(0,0,0,.5)]">
+                  <div className="sticky top-0 bg-[#1a1712] px-3 pt-2.5 pb-1.5 text-[10.5px] font-bold uppercase tracking-[.04em] text-[rgba(242,237,227,.45)]">Тохирох илэрцээ сонгоно уу</div>
                   {placeResults.map((r, i) => (
                     <button
                       key={i}
                       onClick={() => pickPlaceResult(r)}
-                      className="block w-full cursor-pointer border-0 border-b border-[rgba(255,255,255,.06)] bg-transparent px-3 py-2.5 text-left font-[inherit] text-[12.5px] leading-[1.4] text-[rgba(242,237,227,.85)] last:border-b-0 hover:bg-[rgba(255,255,255,.06)]"
-                    >{r.name}</button>
+                      className="flex w-full cursor-pointer items-start gap-2 border-0 border-t border-[rgba(255,255,255,.06)] bg-transparent px-3 py-2.5 text-left font-[inherit] text-[12.5px] leading-[1.4] text-[rgba(242,237,227,.85)] hover:bg-[rgba(255,255,255,.06)]"
+                    >
+                      <MapPin size={13} className="mt-0.5 flex-shrink-0 text-[var(--accent,#E8B84B)]" />
+                      <span>{r.name}</span>
+                    </button>
                   ))}
                 </div>
               )}
             </div>
-            {placeQueryErr && <div className="text-[11.5px] text-[#f08a8a]">{placeQueryErr}</div>}
-            <div className="flex gap-2">
-              <input
-                value={w3w}
-                onChange={(e) => { setW3w(e.target.value); setW3wErr(''); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupW3w(); } }}
-                placeholder="Google Maps холбоос эсвэл what3words: ///hydration.pounces.loose"
-                className={`min-w-0 flex-1 font-[inherit] rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[rgba(255,255,255,.04)] px-[13px] py-[11px] text-cream outline-none ${inputFontClass}`}
-              />
-              <button onClick={lookupW3w} className={`flex-shrink-0 cursor-pointer rounded-[10px] border border-[rgba(242,237,227,.22)] bg-[rgba(255,255,255,.04)] px-[18px] font-[inherit] font-bold text-[rgba(242,237,227,.9)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)] ${inputFontClass}`}>
-                {w3wLoading ? '...' : 'Олох'}
-              </button>
-            </div>
-            {w3wErr && <div className="text-[11.5px] text-[#f08a8a]">{w3wErr}</div>}
+            {locErr && <div className="text-[11.5px] text-[#f08a8a]">{locErr}</div>}
             <div className="relative h-[320px] overflow-hidden rounded-xl border border-[rgba(242,237,227,.14)] bg-[#1a2534]">
               <div ref={attachMap} className="absolute inset-0 cursor-crosshair"></div>
-              <div className="pointer-events-none absolute bottom-2 left-2.5 z-[500] rounded-full bg-[rgba(10,12,16,.72)] px-2.5 py-1 text-[10.5px] font-bold text-white">{lat != null ? `Байршил тэмдэглэгдлээ ✓${w3w ? ' · ///' + w3w : ''}` : 'Газрын зураг дээр дарж, эсвэл what3words хаягаар байршил тэмдэглэнэ үү'}</div>
+              <div className="pointer-events-none absolute bottom-2 left-2.5 z-[500] rounded-full bg-[rgba(10,12,16,.72)] px-2.5 py-1 text-[10.5px] font-bold text-white">{lat != null ? `Байршил тэмдэглэгдлээ ✓${w3w ? ' · ///' + w3w : ''}` : 'Дээрээс хайх, эсвэл газрын зураг дээр шууд дарж байршил тэмдэглэнэ үү'}</div>
             </div>
           </div>
 

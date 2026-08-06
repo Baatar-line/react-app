@@ -10,7 +10,7 @@ import { BgMedia } from '@/components/bigbang/ui';
 // culture/history) panels so the two six-card halves can't visually drift apart.
 function SiteCard({ s, active, onSelect }: { s: any; active: boolean; onSelect: () => void }) {
   return (
-    <button type="button" onClick={onSelect} className={`relative block h-[clamp(88px,9vw,130px)] w-full cursor-pointer overflow-hidden rounded-2xl border bg-transparent p-0 text-left shadow-[0_16px_40px_rgba(0,0,0,.28)] transition-[border-color,box-shadow,transform] duration-200 ${active ? 'border-[var(--accent,#E8B84B)] shadow-[0_0_0_2px_rgba(232,184,75,.24),0_16px_40px_rgba(0,0,0,.28)]' : 'border-[rgba(255,255,255,.1)] hover:border-[rgba(232,184,75,.55)]'}`}>
+    <button type="button" onClick={onSelect} className={`relative block h-[clamp(88px,9vw,130px)] min-[1500px]:h-[205px] w-full cursor-pointer overflow-hidden rounded-2xl border bg-transparent p-0 text-left shadow-[0_16px_40px_rgba(0,0,0,.28)] transition-[border-color,box-shadow,transform] duration-200 ${active ? 'border-[var(--accent,#E8B84B)] shadow-[0_0_0_2px_rgba(232,184,75,.24),0_16px_40px_rgba(0,0,0,.28)]' : 'border-[rgba(255,255,255,.1)] hover:border-[rgba(232,184,75,.55)]'}`}>
       <BgMedia bg={s.cover} className="absolute inset-0" imgClassName="bg-cover bg-center" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.12)_0%,_rgba(0,0,0,0)_34%,_rgba(0,0,0,.5)_72%,_rgba(0,0,0,.85)_100%)]"></div>
       <div className="absolute left-[11px] top-[11px] flex min-w-[30px] h-[30px] items-center justify-center rounded-[9px] border border-[rgba(255,255,255,.16)] bg-[rgba(0,0,0,.5)] px-[7px] font-[ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] font-bold text-cream-2 backdrop-blur-[8px]">{s.n}</div>
@@ -39,7 +39,7 @@ export default function GlobePage() {
       className="relative h-screen overflow-hidden bg-[radial-gradient(120%_110%_at_50%_20%,_#111111_0%,_#060606_60%,_#000000_100%)]"
     >
       <div id="bb-globe-mount" ref={V.globeMountRef} className="absolute inset-0"></div>
-      <div className="absolute left-12 top-[88px] z-[6] flex flex-col gap-8">
+      <div className="absolute left-12 min-[1500px]:left-14 top-[88px] z-[6] flex flex-col gap-8">
         <div>
           <button onClick={V.openPin} className="mb-3 inline-flex cursor-pointer items-center gap-2 border-0 bg-transparent p-0 font-[inherit] text-[13px] font-semibold text-[#858585] transition-colors duration-[250ms] hover:text-[#E8B84B]">{V.L.back}</button>
           <div className="pointer-events-none">
@@ -48,13 +48,13 @@ export default function GlobePage() {
           </div>
         </div>
         {V.globeHasCard && leftSites.length > 0 && (
-          <div className="z-[8] flex w-[clamp(180px,15vw,250px)] flex-col gap-[10px]">
-            <div className="mb-[2px] text-[10.5px] font-bold uppercase tracking-[.08em] text-[var(--accent,#E8B84B)]">{V.gcNatureLabel}</div>
+          <div className="relative z-[8] flex w-[clamp(180px,15vw,250px)] min-[1500px]:fixed min-[1500px]:bottom-10 min-[1500px]:left-14 min-[1500px]:w-[410px] flex-col gap-[10px]">
+            <div className="mb-[2px] min-[1500px]:h-[47px] text-[10.5px] font-bold uppercase tracking-[.08em] text-[var(--accent,#E8B84B)]">{V.gcNatureLabel}</div>
             {leftSites.map((s: any, i: number) => <SiteCard key={i} s={s} active={V.globeActiveSite === i + 4} onSelect={() => V.globeSelectSite(i + 4)} />)}
           </div>
         )}
       </div>
-      <div className="absolute right-12 top-[88px] z-[30] w-[280px]">
+      <div className="absolute right-12 min-[1500px]:right-14 top-[88px] z-[30] w-[280px] min-[1500px]:w-[350px]">
         <input
           value={V.globeQuery}
           onChange={V.globeOnQuery}
@@ -80,8 +80,8 @@ export default function GlobePage() {
         <div className="absolute left-1/2 top-[88px] z-[6] -translate-x-1/2 pointer-events-none rounded-full border border-[#343434] bg-[rgba(25,25,25,.96)] px-4 py-[7px] font-[ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] font-semibold text-[#eeeeee] shadow-[0_8px_20px_rgba(0,0,0,.45)]">{V.globeHover}</div>
       )}
       {V.globeHasCard && (
-        <div className="absolute right-12 bottom-10 z-[8] flex w-[clamp(180px,15vw,250px)] flex-col gap-[10px]">
-          <div className="mb-[2px] flex items-start justify-between gap-3">
+        <div className="absolute right-12 min-[1500px]:right-14 bottom-10 z-[8] flex w-[clamp(180px,15vw,250px)] min-[1500px]:w-[410px] flex-col gap-[10px]">
+          <div className="mb-[2px] flex min-[1500px]:h-[47px] items-start justify-between gap-3">
             <div>
               <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-[var(--accent,#E8B84B)]">{V.gcSitesLabel}</div>
               <div className="font-display mt-[2px] text-[22px] leading-[1.1] text-[#f2f2f2]">{V.gcName}</div>

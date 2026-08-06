@@ -11,7 +11,7 @@
 import React, { useRef, useState } from 'react';
 import { Camera } from 'lucide-react';
 import { useIsMobile } from './bigbang/ui';
-import { apiPut, uploadImage } from '../lib/api';
+import { apiPut, uploadImage, ApiClientError } from '../lib/api';
 import { imgUrl } from './bigbang/data';
 
 export interface ProfileInfo {
@@ -27,12 +27,18 @@ interface Props {
   token?: string;
   onClose: () => void;
   onSaved: (profile: ProfileInfo) => void;
+  // Called instead of just showing an error when the save fails because the
+  // signed-in session no longer refers to a real account (e.g. a long-lived
+  // token from before the account was removed) — the parent clears the
+  // stale session and re-prompts sign-in rather than this form retrying a
+  // save that can never succeed.
+  onSessionExpired?: () => void;
 }
 
 const PHONE_RE = /^\d{8}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export default function CompleteProfileForm({ initial, token, onClose, onSaved }: Props) {
+export default function CompleteProfileForm({ initial, token, onClose, onSaved, onSessionExpired }: Props) {
   const isMobile = useIsMobile();
   const inputFontClass = isMobile ? 'text-base' : 'text-[13.5px]';
   const [name, setName] = useState(initial?.name || '');
@@ -79,6 +85,7 @@ export default function CompleteProfileForm({ initial, token, onClose, onSaved }
       await apiPut('/profile/me', payload, token);
       onSaved(payload);
     } catch (e) {
+      if (e instanceof ApiClientError && e.status === 401 && onSessionExpired) { onSessionExpired(); return; }
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);

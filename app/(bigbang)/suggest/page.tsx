@@ -20,8 +20,8 @@ const TRAVEL_SPANS = [
   { gridColumn: '4 / 5', gridRow: '2 / 3' },
   // Avis Mongolia / Drive Mongolia — only they sit in this grid row, so their
   // own min-height drives the row height.
-  { gridColumn: '1 / 3', gridRow: '3 / 4', minHeight: 250 },
-  { gridColumn: '3 / 5', gridRow: '3 / 4', minHeight: 250 },
+  { gridColumn: '1 / 3', gridRow: '3 / 4', minHeight: 280 },
+  { gridColumn: '3 / 5', gridRow: '3 / 4', minHeight: 280 },
 ];
 
 export default function SuggestPage() {
@@ -134,7 +134,7 @@ export default function SuggestPage() {
               </div>
             </div>
           </div>
-          <div className={V.isTablet ? 'flex flex-col gap-4' : 'grid grid-cols-4 auto-rows-[minmax(118px,auto)] gap-4'}>
+          <div className={V.isTablet ? 'flex flex-col gap-4' : 'grid grid-cols-4 auto-rows-[minmax(140px,auto)] gap-4'}>
             {V.travelApps.map((a: any, i: number) => (
               <a
                 key={i}

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Manrope, Playfair_Display, Rubik_Bubbles } from 'next/font/google';
+import { Manrope, Marcellus_SC, Playfair_Display, Rubik_Bubbles, Uncial_Antiqua } from 'next/font/google';
 import Script from 'next/script';
 import 'leaflet/dist/leaflet.css';
 import './globals.css';
@@ -14,6 +14,12 @@ const manrope = Manrope({ subsets: ['latin'], weight: ['400', '500', '600', '700
 const playfairDisplay = Playfair_Display({ subsets: ['latin'], weight: ['700'], style: ['italic', 'normal'], variable: '--font-playfair' });
 // Bubbly display face for MarauderLoader's 0-100% counter (see components/MarauderLoader.tsx).
 const rubikBubbles = Rubik_Bubbles({ subsets: ['latin'], weight: ['400'], variable: '--font-rubik-bubbles' });
+// Brand wordmark face — every standalone "Atlas" logo/heading (nav bar,
+// Admin Panel sidebar, login screen) uses this via Tailwind's `font-brand`
+// (see tailwind.config.ts); only weight 400/normal exists for this font.
+const uncialAntiqua = Uncial_Antiqua({ subsets: ['latin'], weight: ['400'], variable: '--font-uncial' });
+// Login screen's "atlas" logo wordmark only.
+const marcellusSC = Marcellus_SC({ subsets: ['latin'], weight: ['400'], variable: '--font-marcellus-sc' });
 
 export const metadata: Metadata = {
   title: 'Atlas — Minii Bolzoo',
@@ -21,7 +27,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="mn" className={`${manrope.variable} ${playfairDisplay.variable} ${rubikBubbles.variable}`}>
+    <html lang="mn" className={`${manrope.variable} ${playfairDisplay.variable} ${rubikBubbles.variable} ${uncialAntiqua.variable} ${marcellusSC.variable}`}>
       <body>
         {/* Map / globe / travel engines — vanilla global scripts (see
             components/bigbang/BigBangLayout.tsx, GlobePage, AboutPage). Every
@@ -34,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* ?v= on the two local ones: they're plain files under public/, so they
             get no build hash and a browser will happily keep running the copy it
             already has after they're edited. Bump the number when editing them. */}
-        <Script src="/assets/globe-engine.js?v=4" strategy="lazyOnload" />
+        <Script src="/assets/globe-engine.js?v=13" strategy="lazyOnload" />
         <Script src="/assets/travel-map.js?v=4" strategy="lazyOnload" />
         <AppShell>{children}</AppShell>
       </body>

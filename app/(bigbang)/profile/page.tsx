@@ -14,7 +14,9 @@ import { BgMedia, Isometric3DIcon } from '@/components/bigbang/ui';
 // Reusable favorite / place card (Profile page places + scenic).
 function FavCard({ d }: { d: any }) {
   return (
-    <div className="relative aspect-[4/5] rounded-[18px] overflow-hidden border border-[rgba(255,255,255,.1)] animate-[bbFadeUp_.5s_cubic-bezier(.22,.8,.3,1)_both] [transition:transform_.35s_cubic-bezier(.22,.8,.3,1),_box-shadow_.35s_ease] hover:translate-y-[-5px] hover:shadow-[0_22px_48px_rgba(0,0,0,.5)]">
+    <div
+      onClick={d.onClick}
+      className="relative aspect-[4/5] cursor-pointer rounded-[18px] overflow-hidden border border-[rgba(255,255,255,.1)] animate-[bbFadeUp_.5s_cubic-bezier(.22,.8,.3,1)_both] [transition:transform_.35s_cubic-bezier(.22,.8,.3,1),_box-shadow_.35s_ease] hover:translate-y-[-5px] hover:shadow-[0_22px_48px_rgba(0,0,0,.5)]">
       <BgMedia bg={d.thumb} className="absolute inset-0" imgClassName="bg-cover bg-center" />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.18)_0%,_rgba(0,0,0,0)_35%,_rgba(0,0,0,.32)_62%,_rgba(0,0,0,.92)_100%)] pointer-events-none"></div>
       <div className="absolute left-3 top-3 flex gap-1.5 pointer-events-none">

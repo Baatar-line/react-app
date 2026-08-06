@@ -39,8 +39,7 @@ export default function AboutPage() {
         <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(0,0,0,.55)_0%,_rgba(0,0,0,.08)_14%,_rgba(0,0,0,.08)_44%,_rgba(0,0,0,.42)_60%,_rgba(0,0,0,.85)_100%)]"></div>
 
         <div className="relative z-[2] pt-[104px] px-5 pb-0 text-center">
-          <h1 className="m-0 font-display text-[clamp(30px,4.4vw,54px)] font-extrabold leading-[1.14] text-cream-2 [text-shadow:0_4px_30px_rgba(0,0,0,.45)]">{V.L.abBig}</h1>
-          <div className="mt-3 font-mono text-[11px] uppercase tracking-[.16em] text-[rgba(242,237,227,.65)]">#{V.abHashtag}</div>
+          <h1 className="m-0 text-[clamp(30px,4.4vw,54px)] font-extrabold leading-[1.14] text-cream-2 [text-shadow:0_4px_30px_rgba(0,0,0,.45)] [font-family:'Marcellus_SC',serif]">{V.L.abBig}</h1>
         </div>
 
         <div className="relative z-[2] mx-auto max-w-[640px] pt-14 px-7 pb-16">
@@ -73,7 +72,7 @@ export default function AboutPage() {
                       so it's dropped on mobile. */}
                   {!V.isMobile && (row.vert || row.descVert) && (
                     <div
-                      className="max-w-[300px] flex-none whitespace-pre text-[22px] leading-tight [writing-mode:vertical-lr] [font-family:'Mongolian_Baiti','Menksoft_Tigst',sans-serif]"
+                      className="max-w-[300px] flex-none whitespace-pre text-[16px] leading-tight [writing-mode:vertical-lr] [font-family:'Mongolian_Baiti','Menksoft_Tigst',sans-serif]"
                       title="Уламжлалт бичиг — AI орчуулга, шалгагдаагvй"
                     >
                       {row.vert && <span className="font-bold text-[var(--accent,#E8B84B)]">{row.vert}</span>}
@@ -105,11 +104,6 @@ export default function AboutPage() {
               <LanyardBadge key={i} large letter={tm.initial} name={tm.name} role={tm.role} color={tm.avatarBg} />
             ))}
           </div>
-        </div>
-
-        <div className="relative z-[2] flex items-center justify-center gap-2.5 px-7 pb-[34px]">
-          <span className="flex h-6 w-6 items-center justify-center rounded-[7px] bg-[var(--accent,#E8B84B)] text-[11px] font-extrabold text-[#132a1f]">a</span>
-          <span className="text-[11px] tracking-[.04em] text-[rgba(242,237,227,.6)]">atlas · {V.L.abContact}</span>
         </div>
 
       {/* Same column width as the sections above — the map SVG is width:100%
