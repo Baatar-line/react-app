@@ -130,6 +130,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   _fullBounds: any = null;
   _wasZoomed = false;
   _lastFlownAimag: any = null;
+  _lastFlownNearKey: any = null;
   _enclaveHost: any = {};
   _pickerWrapEl: any = null;
   _mnVertResize: any = null;
@@ -165,6 +166,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // signed in — see fetchMyPlaces. Shown on the Profile page.
     myPlaces: [],
     pinMode: 'scenic', heroHover: null,
+    // "Ойрхон газар олох" — browser geolocation + radius filter on the Maps
+    // page. `nearMeActive` is a separate mode from the usual aimag-click
+    // pin view (see syncMainMap) rather than a filter layered on top of it,
+    // since it needs to show pins across every aimag at once instead of one
+    // aimag's worth.
+    myLocation: null as { lat: number; lng: number } | null,
+    locating: false, locationError: '', nearRadiusKm: 5, nearMeActive: false,
     // Seeded from the last successful /settings fetch (see fetchSettings below) so a
     // refresh shows the real saved photo immediately instead of flashing the built-in
     // placeholder while the network round-trip to fetch it is still in flight.
@@ -236,7 +244,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
         prevState.pinMode !== this.state.pinMode || prevState.mapAimag !== this.state.mapAimag ||
         prevState.pin !== this.state.pin || prevState.lang !== this.state.lang ||
         prevState.bigText !== this.state.bigText || prevState.livePlaces !== this.state.livePlaces ||
-        prevState.liveEvents !== this.state.liveEvents || prevState.liveScenicPins !== this.state.liveScenicPins;
+        prevState.liveEvents !== this.state.liveEvents || prevState.liveScenicPins !== this.state.liveScenicPins ||
+        prevState.nearMeActive !== this.state.nearMeActive || prevState.myLocation !== this.state.myLocation ||
+        prevState.nearRadiusKm !== this.state.nearRadiusKm;
       const hoverChanged = prevState.hoverAimag !== this.state.hoverAimag;
       if (pinsChanged) this.syncMainMap();
       else if (hoverChanged) this.syncMainMap(false);
@@ -596,7 +606,29 @@ export default class BigBangLayout extends React.Component<Props, any> {
     if (this._mainMap) { try { this._mainMap.remove(); } catch (err) { /* ignore */ } }
     this._mainMap = null; this._aimagPolyLayer = null; this._aimagLabelLayer = null; this._pinLayer = null;
     this._aimagLayers = {}; this._aimagBuilt = false; this._fullBounds = null; this._wasZoomed = false; this._lastFlownAimag = null; this._enclaveHost = {};
+    this._lastFlownNearKey = null;
   }
+
+  // "Ойрхон газар олох" — asks the browser for the visitor's own position,
+  // then switches the map into near-me mode (see syncMainMap's nearMeActive
+  // branch), clearing any aimag selection since that mode shows pins across
+  // every aimag at once rather than one aimag's worth.
+  requestMyLocation = () => {
+    if (!navigator.geolocation) { this.setState({ locationError: 'Энэ төхөөрөмж/хөтөч байршил тодорхойлохыг дэмжихгүй байна' }); return; }
+    this.setState({ locating: true, locationError: '' });
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        this.setState({
+          myLocation: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+          locating: false, nearMeActive: true, mapAimag: null, pin: -1, hoverAimag: null,
+        });
+      },
+      () => this.setState({ locating: false, locationError: 'Байршил тодорхойлж чадсангүй — байршил хуваалцах зөвшөөрлөө шалгана уу' }),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+    );
+  };
+  setNearRadius = (km: number) => this.setState({ nearRadiusKm: km });
+  clearNearMe = () => this.setState({ nearMeActive: false, pin: -1 });
 
   // (Re)builds the aimag border layer once geo is available, then restyles
   // it + the pin markers to match current state. Called after mount, after
@@ -606,7 +638,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const m = this._mainMap;
     const geo = this.geo;
     if (!m || !geo || !window.L) return;
-    const { lang, mapAimag, hoverAimag, pin, bigText } = this.state;
+    const { lang, mapAimag, hoverAimag, pin, bigText, nearMeActive, myLocation } = this.state;
     const accent = this.props.accent ?? '#E8B84B';
     const mnOf = (n: string) => GEO_MN[n] || n;
     const pins = this.mapPins();
@@ -624,7 +656,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         })
           .on('mouseover', () => this.setState({ hoverAimag: id }))
           .on('mouseout', () => this.setState({ hoverAimag: null }))
-          .on('click', () => this.setState((s: any) => ({ mapAimag: s.mapAimag === id ? null : id, pin: -1 })))
+          .on('click', () => this.setState((s: any) => ({ mapAimag: s.mapAimag === id ? null : id, pin: -1, nearMeActive: false })))
           .addTo(this._aimagPolyLayer));
         const [clat, clng] = xyToLonLat(sh.lx ?? sh.cx, sh.ly ?? sh.cy);
         const label = window.L.marker([clat, clng], { icon: window.L.divIcon({ className: '', html: '', iconSize: [1, 1] }), interactive: false, opacity: 1 }).addTo(this._aimagLabelLayer);
@@ -699,7 +731,44 @@ export default class BigBangLayout extends React.Component<Props, any> {
     if (!rebuildPins) return;
 
     this._pinLayer.clearLayers();
-    if (mapAimag) {
+    if (nearMeActive && myLocation) {
+      // My own position — a plain blue dot (the usual "you are here"
+      // convention), not clickable, not part of the pin index space below.
+      const meHtml = '<div style="width:16px;height:16px;border-radius:50%;background:#4285F4;border:3px solid #fff;box-shadow:0 0 0 6px rgba(66,133,244,.35)"></div>';
+      window.L.marker([myLocation.lat, myLocation.lng], {
+        icon: window.L.divIcon({ className: '', html: meHtml, iconSize: [16, 16], iconAnchor: [8, 8] }),
+        interactive: false, zIndexOffset: 1000,
+      }).addTo(this._pinLayer);
+
+      const near = this.nearMePins();
+      near.forEach((o) => {
+        const on = pin === o.i;
+        const dot = on ? 15 : 11;
+        const distLabel = o.distKm < 1 ? Math.round(o.distKm * 1000) + ' м' : o.distKm.toFixed(1) + ' км';
+        const html = '<div style="transform:translate(-50%,-100%);text-align:center;cursor:pointer;font-family:Manrope,sans-serif">' +
+          '<div style="width:' + dot + 'px;height:' + dot + 'px;margin:0 auto;border-radius:50%;background:' + (on ? accent : '#f0ebe1') + ';border:1.4px solid rgba(8,10,14,.85);box-shadow:0 0 0 6px rgba(232,184,75,' + (on ? '.3' : '.16') + ')"></div>' +
+          '<div style="margin-top:4px;font-size:' + (bigText ? 13 : 10.5) + 'px;font-weight:700;color:' + (on ? accent : '#fff') + ';text-shadow:0 1px 4px rgba(0,0,0,.9),0 0 3px rgba(0,0,0,.9);white-space:nowrap">' + o.p.name + ' · ' + distLabel + '</div></div>';
+        window.L.marker([o.p.lat, o.p.lng], { icon: window.L.divIcon({ className: '', html, iconSize: [1, 1] }) })
+          .on('click', () => this.setState({ pin: on ? -1 : o.i }))
+          .addTo(this._pinLayer);
+      });
+
+      // Re-fit only when the location/radius actually changed — this also
+      // re-runs on every pin click (same reason as the aimag branch below),
+      // and re-flying then would fight the user's own pan/zoom.
+      const nearKey = this.state.nearRadiusKm + ':' + myLocation.lat.toFixed(4) + ':' + myLocation.lng.toFixed(4);
+      if (this._lastFlownNearKey !== nearKey) {
+        const withCoords = near.filter((o) => o.p.lat != null);
+        if (withCoords.length > 0) {
+          const bounds = [[myLocation.lat, myLocation.lng], ...withCoords.map((o) => [o.p.lat, o.p.lng])] as [number, number][];
+          m.flyToBounds(bounds, { paddingTopLeft: [50, 145], paddingBottomRight: [385, 80], maxZoom: 13, duration: 0.9 });
+        } else {
+          m.flyTo([myLocation.lat, myLocation.lng], 12, { duration: 0.9 });
+        }
+        this._lastFlownNearKey = nearKey;
+      }
+      this._wasZoomed = true;
+    } else if (mapAimag) {
       const entry = this._aimagLayers[mapAimag];
       const sh = entry && entry.sh;
       const aimagPins = pins.map((p, i) => ({ p, i })).filter((o) => o.p.aimag === mapAimag);
@@ -749,6 +818,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       if (this._fullBounds) m.flyToBounds(this._fullBounds, { padding: [40, 40], duration: 0.9 });
       this._wasZoomed = false;
       this._lastFlownAimag = null;
+      this._lastFlownNearKey = null;
     }
   }
 
@@ -785,6 +855,32 @@ export default class BigBangLayout extends React.Component<Props, any> {
       }));
     }
     return this.allPins();
+  }
+
+  // Great-circle distance in km — used only for the "ойрхон газар олох"
+  // radius filter below, where a flat-earth approximation would drift too
+  // much over Mongolia's east-west span.
+  haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371;
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // Pins (in the current pinMode) within nearRadiusKm of myLocation, nearest
+  // first. Only pins with a real lat/lng can be placed at all — synthetic
+  // sunflower-scattered positions (see syncMainMap) aren't real coordinates,
+  // so a pin without one can never match a real-world radius and is left out
+  // rather than given a made-up distance.
+  nearMePins(): { p: any; i: number; distKm: number }[] {
+    const { myLocation, nearRadiusKm } = this.state;
+    if (!myLocation) return [];
+    return this.mapPins()
+      .map((p, i) => ({ p, i, distKm: p.lat != null && p.lng != null ? this.haversineKm(myLocation.lat, myLocation.lng, p.lat, p.lng) : Infinity }))
+      .filter((o) => o.distKm <= nearRadiusKm)
+      .sort((a, b) => a.distKm - b.distKm);
   }
 
   bgReady(imgId: string, size: number) {
@@ -1422,10 +1518,19 @@ export default class BigBangLayout extends React.Component<Props, any> {
       closeMobileMenu: () => this.setState({ mobileMenuOpen: false }),
       heroVertLabel: aimag !== 'Бүгд' && lang === 'mn' ? AIMAG_MN_SCRIPT[aimag] || '' : '',
       heroVertPos: this.state.heroVertPos,
-      mapZoomed: !!mapAimag, resetMap: () => this.setState({ mapAimag: null, pin: -1, hoverAimag: null }),
-      aimagPanelShow: !!(mapAimag && !selP),
+      mapZoomed: !!mapAimag, resetMap: () => this.setState({ mapAimag: null, pin: -1, hoverAimag: null, nearMeActive: false }),
+      aimagPanelShow: !!(mapAimag && !selP) && !this.state.nearMeActive,
       panelName: mapAimag ? aimagName(mapAimag, lang) : '',
       panelCount: mapAimag ? this.mapPins().filter((p) => p.aimag === mapAimag).length : 0,
+      // "Ойрхон газар олох" — see requestMyLocation/syncMainMap.
+      nearMeActive: this.state.nearMeActive, myLocation: this.state.myLocation,
+      locating: this.state.locating, locationError: this.state.locationError,
+      requestMyLocation: this.requestMyLocation, clearNearMe: this.clearNearMe,
+      nearRadiusOpts: [1, 5, 15, 50, 100].map((km) => ({
+        km, label: km < 1 ? km * 1000 + ' м' : km + ' км',
+        active: this.state.nearRadiusKm === km, pick: () => this.setNearRadius(km),
+      })),
+      nearCount: this.state.nearMeActive ? this.nearMePins().length : 0,
       hasFeaturedEvent: !!featuredEvent,
       fevBg: 'linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.4)), url("' + imgUrl(fe.img, 1600) + '")',
       fevDate: fe.date, fevName: fe.name, fevMeta: fe.meta,
