@@ -54,7 +54,7 @@ export default function GlobePage() {
           </div>
         )}
       </div>
-      <div className="absolute right-12 top-[88px] z-[7] w-[280px]">
+      <div className="absolute right-12 top-[88px] z-[30] w-[280px]">
         <input
           value={V.globeQuery}
           onChange={V.globeOnQuery}
@@ -62,7 +62,7 @@ export default function GlobePage() {
           className="w-full box-border rounded-full border border-[#343434] bg-[rgba(28,28,28,.92)] px-[18px] py-[11px] font-[ui-monospace,SFMono-Regular,Menlo,monospace] text-[13px] text-[#ededed] outline-none shadow-[0_10px_30px_rgba(0,0,0,.4)] placeholder:text-[#777] focus:border-[#E8B84B]"
         />
         {V.globeHasResults && (
-          <div className="mt-2 overflow-hidden rounded-[14px] border border-[#343434] bg-[rgba(25,25,25,.98)] shadow-[0_14px_32px_rgba(0,0,0,.5)]">
+          <div className="relative z-[31] mt-2 overflow-hidden rounded-[14px] border border-[#343434] bg-[#191919] shadow-[0_18px_44px_rgba(0,0,0,.72)]">
             {V.globeResults.map((r: any, i: number) => (
               <button
                 key={i}

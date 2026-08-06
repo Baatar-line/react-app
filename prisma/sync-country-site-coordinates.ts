@@ -36,6 +36,17 @@ const MANUAL_COORDS: Record<string, Coord> = {
   'Papaseʻea': { lat: -13.875, lng: -171.799 }, 'Drakensberg Mountains': { lat: -29.3, lng: 29.2 },
 };
 
+// Authoritative Mongolia archive pins. Search results can otherwise resolve
+// broad names such as "Gobi Desert" to Ulaanbaatar and leave stacked pins.
+const MONGOLIA_COORDS: Record<string, Coord> = {
+  'Улаанбаатар': { lat: 47.9185, lng: 106.9177 },
+  'Чингис хаан хөшөө цогцолбор': { lat: 47.8079, lng: 107.5369 },
+  'Эрдэнэ Зуу хийд': { lat: 47.2019, lng: 102.8431 },
+  'Говь цөл': { lat: 43.0, lng: 105.0 },
+  'Хөвсгөл нуур': { lat: 51.10, lng: 100.50 },
+  'Алтайн нуруу': { lat: 49.15, lng: 87.82 },
+};
+
 async function retryJson(url: string, attempts = 1): Promise<any> {
   for (let i = 0; i < attempts; i++) {
     const r = await fetch(url, { headers: { 'User-Agent': 'AtlasTravelArchive/1.0', Accept: 'application/json' } });
@@ -46,6 +57,9 @@ async function retryJson(url: string, attempts = 1): Promise<any> {
 }
 
 async function main() {
+  for (const [name, c] of Object.entries(MONGOLIA_COORDS)) {
+    await prisma.countrySite.updateMany({ where: { country: 'Mongolia', name }, data: { latitude: c.lat, longitude: c.lng } });
+  }
   const rows = await prisma.countrySite.findMany({ where: { OR: [{ latitude: null }, { longitude: null }] }, orderBy: [{ countryId: 'asc' }, { position: 'asc' }] });
   const found = new Map<number, Coord>();
   rows.forEach((r) => { if (MANUAL_COORDS[r.name]) found.set(r.id, MANUAL_COORDS[r.name]); });

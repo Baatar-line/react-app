@@ -8,6 +8,7 @@ import { useContext } from 'react';
 import Link from 'next/link';
 import { Accessibility, Heart, Pencil, User } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
+import { imgUrl } from '@/components/bigbang/data';
 import { BgMedia, Isometric3DIcon } from '@/components/bigbang/ui';
 
 // Reusable favorite / place card (Profile page places + scenic).
@@ -73,8 +74,12 @@ export default function ProfilePage() {
       className={`min-h-screen box-border max-w-[1080px] mx-auto ${V.isMobile ? 'pt-24 px-[18px] pb-10' : 'pt-[110px] px-12 pb-[60px]'}`}
     >
       <div className="flex items-center gap-5 pb-7 border-b border-[rgba(255,255,255,.1)]">
-        <div className="w-[78px] h-[78px] rounded-full bg-[linear-gradient(135deg,_var(--accent,#E8B84B),_#b8895a)] flex items-center justify-center text-[30px] font-extrabold text-[#132a1f] flex-none">
-          {(V.myProfile?.name || 'Б').charAt(0).toUpperCase()}
+        <div className="w-[78px] h-[78px] rounded-full overflow-hidden bg-[linear-gradient(135deg,_var(--accent,#E8B84B),_#b8895a)] flex items-center justify-center text-[30px] font-extrabold text-[#132a1f] flex-none">
+          {V.myProfile?.avatarImage ? (
+            <img src={imgUrl(V.myProfile.avatarImage, 200)} alt="" className="h-full w-full object-cover" />
+          ) : (
+            (V.myProfile?.name || 'Б').charAt(0).toUpperCase()
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -87,10 +92,10 @@ export default function ProfilePage() {
               <Pencil size={13} />
             </button>
           </div>
-          {V.myProfile?.name && V.myProfile?.phoneNumber && V.myProfile?.socialMediaURL ? (
-            <div className="text-[13px] text-[rgba(242,237,227,.55)] mt-1">{V.myProfile.phoneNumber} · {V.myProfile.socialMediaURL}</div>
+          {V.myProfile?.name && V.myProfile?.phoneNumber && V.myProfile?.socialMediaURL && V.myProfile?.email ? (
+            <div className="text-[13px] text-[rgba(242,237,227,.55)] mt-1">{V.myProfile.phoneNumber} · {V.myProfile.socialMediaURL} · {V.myProfile.email}</div>
           ) : (
-            <div className="text-[13px] font-semibold text-[var(--accent,#E8B84B)] mt-1">Утас, Instagram-аа бүртгүүлнэ үү</div>
+            <div className="text-[13px] font-semibold text-[var(--accent,#E8B84B)] mt-1">Утас, Instagram, и-мэйлээ бүртгүүлнэ үү</div>
           )}
         </div>
         {V.loggedIn && (
@@ -166,7 +171,12 @@ export default function ProfilePage() {
           <div className="text-xs font-extrabold tracking-[.08em] uppercase text-[rgba(242,237,227,.5)] mb-[14px]">{V.L.myPlacesTitle}</div>
           <div className="grid grid-cols-3 gap-[14px]">
             {V.myPlaceItems.map((p: any, i: number) => (
-              <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-[14px] overflow-hidden bg-[rgba(255,255,255,.03)]">
+              <div
+                key={i}
+                onClick={p.open}
+                title={p.open ? undefined : 'Админ баталгаажуулсны дараа дэлгэрэнгүй хуудас идэвхжинэ'}
+                className={`border border-[rgba(255,255,255,.1)] rounded-[14px] overflow-hidden bg-[rgba(255,255,255,.03)] ${p.open ? 'cursor-pointer transition-transform duration-200 hover:-translate-y-1' : ''}`}
+              >
                 <BgMedia bg={p.thumb} className="relative aspect-[16/10]" imgClassName="bg-cover bg-center" />
                 <div className="pt-3 px-[14px] pb-[14px]">
                   <div className="flex items-center justify-between gap-2">
@@ -194,7 +204,7 @@ export default function ProfilePage() {
           <div className="text-xs font-extrabold tracking-[.08em] uppercase text-[rgba(242,237,227,.5)] mb-[14px]">{V.L.myScenicTitle}</div>
           <div className="grid grid-cols-3 gap-[14px]">
             {V.myScenicItems.map((s: any, i: number) => (
-              <div key={i} className="border border-[rgba(255,255,255,.1)] rounded-[14px] overflow-hidden bg-[rgba(255,255,255,.03)]">
+              <div key={i} onClick={s.open} className="cursor-pointer border border-[rgba(255,255,255,.1)] rounded-[14px] overflow-hidden bg-[rgba(255,255,255,.03)] transition-transform duration-200 hover:-translate-y-1">
                 <BgMedia bg={s.thumb} className="relative aspect-[16/10]" imgClassName="bg-cover bg-center" />
                 <div className="pt-3 px-[14px] pb-[14px]">
                   <div className="text-sm font-extrabold text-cream-2">{s.name}</div>
@@ -211,7 +221,7 @@ export default function ProfilePage() {
           <div className="text-xs font-extrabold tracking-[.08em] uppercase text-[rgba(242,237,227,.5)] mb-[14px]">{V.L.myEventsTitle}</div>
           <div className="flex flex-col gap-3 max-w-[640px]">
             {V.myEventItems.map((ev: any, i: number) => (
-              <div key={i} className="flex items-center gap-4 p-[14px] border border-[rgba(255,255,255,.1)] rounded-[14px] bg-[rgba(255,255,255,.03)]">
+              <div key={i} onClick={ev.open} className="cursor-pointer flex items-center gap-4 p-[14px] border border-[rgba(255,255,255,.1)] rounded-[14px] bg-[rgba(255,255,255,.03)] transition-transform duration-200 hover:-translate-y-1">
                 <div className="flex flex-col items-center justify-center min-w-[54px] h-[54px] rounded-[11px] border border-[rgba(232,184,75,.4)] bg-[rgba(232,184,75,.08)]">
                   <span className="text-[17px] font-extrabold text-[var(--accent,#E8B84B)] leading-none">{ev.day}</span>
                   <span className="text-[9px] font-semibold text-[rgba(242,237,227,.55)] mt-0.5">{ev.mon}</span>

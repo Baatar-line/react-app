@@ -15,6 +15,7 @@ import { Target, Users, Zap, Globe } from 'lucide-react';
 import CreateForm, { CreateFormData } from '../CreateForm';
 import UserAuthForm from '../UserAuthForm';
 import CompleteProfileForm, { type ProfileInfo } from '../CompleteProfileForm';
+import ConfirmSubmitOtp from '../ConfirmSubmitOtp';
 import {
   ratingOf, STR, CATS, TEAM, SUGGESTS, TRAVEL_APPS, sitesFor, AIMAGS, AIMAG_MN_SCRIPT,
   GEO_MN, LABEL_OFF, AIMAG_BG,
@@ -53,6 +54,23 @@ function eventDayMon(iso: string): { day: string; mon: string } {
 function fmtEventDate(iso: string): string {
   const { day, mon } = eventDayMon(iso);
   return day + ', ' + mon;
+}
+
+// Small typo-tolerant country search (e.g. "russa" → "Russia"). Capped
+// queries are tiny, so the straightforward dynamic-programming version keeps
+// this dependency-free and predictable.
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const above = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return prev[b.length];
 }
 
 // Last background settings fetched from the backend, read synchronously so the very
@@ -131,6 +149,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // Prompted (once signed in) when that session's own profile is still
     // missing a name/phone/Instagram — see isProfileComplete/CompleteProfileForm.
     showCompleteProfileForm: false,
+    // Final gate, every single submission (not just once) — an OTP re-verify
+    // right before a place/scenic/event actually gets created, once session +
+    // profile-complete both already passed. See ConfirmSubmitOtp /
+    // onConfirmOtpVerified.
+    showConfirmOtp: false,
     // This session's own name/phoneNumber/socialMediaURL, fetched once signed
     // in — see fetchMyProfile. null until fetched (or if never completed).
     myProfile: null as ProfileInfo | null,
@@ -342,14 +365,17 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // isProfileComplete/onPlaceSubmit and CompleteProfileForm.tsx.
   fetchMyProfile = (token: string) => {
     return apiGetAuthed<any>('/auth/me', token).then((me) => {
-      const myProfile: ProfileInfo = { name: me.profile?.name || '', phoneNumber: me.phoneNumber || '', socialMediaURL: me.profile?.socialMediaURL || '' };
+      const myProfile: ProfileInfo = {
+        name: me.profile?.name || '', phoneNumber: me.phoneNumber || '', socialMediaURL: me.profile?.socialMediaURL || '',
+        email: me.email || '', avatarImage: me.profile?.avatarImage || '',
+      };
       this.setState({ myProfile });
       return myProfile;
     }).catch(() => null);
   };
 
   isProfileComplete = (p: ProfileInfo | null = this.state.myProfile): boolean =>
-    !!(p && p.name.trim() && p.phoneNumber.trim() && p.socialMediaURL.trim());
+    !!(p && p.name.trim() && p.phoneNumber.trim() && p.socialMediaURL.trim() && p.email.trim());
 
   // Shared by onPlaceSubmit/onScenicSubmit/onEventSubmit and the two replay
   // paths (onUserAuthed, onProfileCompleted) that resume a submission queued
@@ -1052,51 +1078,45 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // tier: any signed-in account can submit all three (a place just lands
     // `pending` until an admin approves it — see app/api/places/route.ts). A
     // signed-out visitor is prompted with the lightweight OTP UserAuthForm;
-    // a signed-in one without a complete profile (name/phone/Instagram) is
-    // prompted with CompleteProfileForm instead. Either way the submission
-    // is replayed automatically once the gate clears.
+    // a signed-in one without a complete profile (name/phone/Instagram/email)
+    // is prompted with CompleteProfileForm instead; either way, once both of
+    // those clear, ConfirmSubmitOtp gates the actual create — an OTP
+    // re-verify required on every single submission, not just once (see
+    // onConfirmOtpVerified). The submission itself is replayed automatically
+    // once every gate clears.
     const openPlaceForm = () => this.setState({ showPlaceForm: true });
     const onPlaceSubmit = async (data: CreateFormData) => {
       const session = getSession();
       if (!session) { this._pendingCreate = { kind: 'place', data }; this.setState({ showPlaceForm: false, showUserAuthForm: true }); return; }
       if (!this.isProfileComplete()) { this._pendingCreate = { kind: 'place', data }; this.setState({ showPlaceForm: false, showCompleteProfileForm: true }); return; }
-      try {
-        await this.submitPending('place', data, session.token);
-        this.setState({ showPlaceForm: false });
-      } catch (err) {
-        alert(err instanceof Error ? err.message : String(err));
-      }
+      this._pendingCreate = { kind: 'place', data };
+      this.setState({ showPlaceForm: false, showConfirmOtp: true });
     };
     const openScenicForm = () => this.setState({ showScenicForm: true });
     const onScenicSubmit = async (data: CreateFormData) => {
       const session = getSession();
       if (!session) { this._pendingCreate = { kind: 'scenic', data }; this.setState({ showScenicForm: false, showUserAuthForm: true }); return; }
       if (!this.isProfileComplete()) { this._pendingCreate = { kind: 'scenic', data }; this.setState({ showScenicForm: false, showCompleteProfileForm: true }); return; }
-      try {
-        await this.submitPending('scenic', data, session.token);
-        this.setState({ showScenicForm: false });
-      } catch (err) {
-        alert(err instanceof Error ? err.message : String(err));
-      }
+      this._pendingCreate = { kind: 'scenic', data };
+      this.setState({ showScenicForm: false, showConfirmOtp: true });
     };
     const openEventForm = () => this.setState({ showEventForm: true });
     const onEventSubmit = async (data: CreateFormData) => {
       const session = getSession();
       if (!session) { this._pendingCreate = { kind: 'event', data }; this.setState({ showEventForm: false, showUserAuthForm: true }); return; }
       if (!this.isProfileComplete()) { this._pendingCreate = { kind: 'event', data }; this.setState({ showEventForm: false, showCompleteProfileForm: true }); return; }
-      try {
-        await this.submitPending('event', data, session.token);
-        this.setState({ showEventForm: false });
-      } catch (err) {
-        alert(err instanceof Error ? err.message : String(err));
-      }
+      this._pendingCreate = { kind: 'event', data };
+      this.setState({ showEventForm: false, showConfirmOtp: true });
     };
     const closeUserAuthForm = () => { this._pendingCreate = null; this.setState({ showUserAuthForm: false }); };
-    // UserAuthForm already did the OTP verify — this saves the resulting
-    // session, then checks the (freshly-fetched, not possibly-stale state)
-    // profile before replaying whatever place/scenic/event submission
-    // triggered the prompt: a brand-new account has no profile yet, so this
-    // routes straight into CompleteProfileForm instead of skipping that gate.
+    // UserAuthForm already did the OTP verify (that's the sign-in check) —
+    // this saves the resulting session, then checks the (freshly-fetched, not
+    // possibly-stale state) profile before continuing whatever place/scenic/
+    // event submission triggered the prompt: a brand-new account has no
+    // profile yet, so this routes straight into CompleteProfileForm instead
+    // of skipping that gate. Either way it still ends at ConfirmSubmitOtp,
+    // same as the direct-submit path above — signing in a moment ago doesn't
+    // skip the per-submission re-verify.
     const onUserAuthed = async (token: string, user: any) => {
       saveSession(token, user);
       this.setState({ showUserAuthForm: false });
@@ -1106,20 +1126,26 @@ export default class BigBangLayout extends React.Component<Props, any> {
       const pending = this._pendingCreate;
       if (!pending) return;
       if (!this.isProfileComplete(profile)) { this.setState({ showCompleteProfileForm: true }); return; }
-      this._pendingCreate = null;
-      try {
-        await this.submitPending(pending.kind, pending.data, token);
-      } catch (err) {
-        alert(err instanceof Error ? err.message : String(err));
-      }
+      this.setState({ showConfirmOtp: true });
     };
     const closeCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: false }); };
     const openCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: true }); };
-    // CompleteProfileForm already saved the profile — replays whatever
-    // place/scenic/event submission triggered the prompt, same as
-    // onUserAuthed above (or just closes if opened manually from Profile).
+    // CompleteProfileForm already saved the profile — continues into
+    // ConfirmSubmitOtp for whatever place/scenic/event submission triggered
+    // the prompt, same as onUserAuthed above (or just closes if opened
+    // manually from Profile, since _pendingCreate is null then).
     const onProfileCompleted = async (profile: ProfileInfo) => {
       this.setState({ showCompleteProfileForm: false, myProfile: profile });
+      const pending = this._pendingCreate;
+      if (!pending) return;
+      this.setState({ showConfirmOtp: true });
+    };
+    const closeConfirmOtp = () => { this._pendingCreate = null; this.setState({ showConfirmOtp: false }); };
+    // Final step — ConfirmSubmitOtp already checked the code against this
+    // account's own phone/email (see /api/auth/confirm-otp), so this just
+    // replays whichever place/scenic/event submission got it here.
+    const onConfirmOtpVerified = async () => {
+      this.setState({ showConfirmOtp: false });
       const session = getSession();
       const pending = this._pendingCreate;
       this._pendingCreate = null;
@@ -1188,8 +1214,21 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
     // globe / country card / results
     const gq = (this.state.globeQuery || '').trim().toLowerCase();
-    const allC = window.GLOBE_COUNTRIES || [];
-    const res = gq ? allC.filter((c) => c.name.toLowerCase().includes(gq)).slice(0, 6) : [];
+    const curatedCountries = window.GLOBE_COUNTRIES || [];
+    const globeNames: string[] = this.globeEngine?.countryNames || [];
+    const countryByName = new Map<string, any>();
+    curatedCountries.forEach((c) => countryByName.set(c.name, c));
+    globeNames.forEach((name) => {
+      if (!countryByName.has(name)) countryByName.set(name, window.resolveCountry(name));
+    });
+    const allC = Array.from(countryByName.values());
+    const res = gq ? allC.map((c) => {
+      const name = String(c.name).toLowerCase();
+      const words = name.split(/\s+/);
+      const distance = Math.min(editDistance(gq, name), ...words.map((word) => editDistance(gq, word)));
+      const score = name === gq ? 0 : name.startsWith(gq) ? 1 : name.includes(gq) ? 2 : distance <= (gq.length >= 7 ? 2 : 1) ? 3 + distance : 99;
+      return { c, score, distance };
+    }).filter((x) => x.score < 99).sort((a, b) => a.score - b.score || a.distance - b.distance || a.c.name.localeCompare(b.c.name)).slice(0, 6).map((x) => x.c) : [];
     const gc = this.state.globeCountry;
     // One persistent background layer per aimag, always mounted (mirrors
     // bgLayers' per-category crossfade above) — a brand-new DOM element's
@@ -1252,18 +1291,34 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // scenic pins/events are filtered out of the same live-fetched lists
     // everyone else sees, since those have no separate "mine" endpoint.
     const mySession = getSession();
-    const myPlaceItems = (st.myPlaces || []).map((p: any) => ({
-      name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.images && p.images[0]),
-      pending: p.status === 'pending', rejected: p.status === 'rejected',
-      statusLabel: p.status === 'approved' ? 'Батлагдсан ✓' : p.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
-    }));
+    // `open` navigates to the same detail page every other card of that type
+    // uses — only possible once a place clears moderation (pending/rejected
+    // places aren't in `cats` at all, since that's built from the public
+    // live-fetched list, so they stay non-clickable rather than link to
+    // nothing/the wrong item).
+    const myPlaceItems = (st.myPlaces || []).map((p: any) => {
+      const cat = p.status === 'approved' ? cats.find((c) => c.slug === (p.category && p.category.slug)) : null;
+      const idx = cat ? cat.items.findIndex((it) => it.id === p.id) : -1;
+      return {
+        name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.images && p.images[0]),
+        pending: p.status === 'pending', rejected: p.status === 'rejected',
+        statusLabel: p.status === 'approved' ? 'Батлагдсан ✓' : p.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
+        open: cat && idx >= 0 ? () => this.openPlace(cat, idx) : undefined,
+      };
+    });
     const myScenicItems = mySession
-      ? (this.state.liveScenicPins || []).filter((p: any) => p.addedBy === mySession.user.id)
-        .map((p: any) => ({ name: p.name, aimag: p.aimag ? p.aimag.name : '', desc: p.description || '—', thumb: evThumb(p.images && p.images[0]) }))
+      ? (this.state.liveScenicPins || []).map((p: any, idx: number) => ({ p, idx })).filter((o: any) => o.p.addedBy === mySession.user.id)
+        .map((o: any) => ({
+          name: o.p.name, aimag: o.p.aimag ? o.p.aimag.name : '', desc: o.p.description || '—', thumb: evThumb(o.p.images && o.p.images[0]),
+          open: () => this.openScenicDetail(o.idx),
+        }))
       : [];
     const myEventItems = mySession
-      ? liveEvents.filter((ev: any) => ev.addedBy === mySession.user.id)
-        .map((ev: any) => { const { day, mon } = eventDayMon(ev.startDate); return { day, mon, name: ev.name, meta: ev.meta || '', tag: ev.tag || L.eTagFallback }; })
+      ? liveEvents.map((ev: any, idx: number) => ({ ev, idx })).filter((o) => o.ev.addedBy === mySession.user.id)
+        .map((o) => {
+          const { day, mon } = eventDayMon(o.ev.startDate);
+          return { day, mon, name: o.ev.name, meta: o.ev.meta || '', tag: o.ev.tag || L.eTagFallback, open: () => this.openEventDetail(o.idx) };
+        })
       : [];
 
     return {
@@ -1314,6 +1369,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       onPlaceSubmit, onScenicSubmit, onEventSubmit,
       showUserAuthForm: st.showUserAuthForm, closeUserAuthForm, onUserAuthed,
       showCompleteProfileForm: st.showCompleteProfileForm, closeCompleteProfileForm, openCompleteProfileForm, onProfileCompleted,
+      showConfirmOtp: st.showConfirmOtp, closeConfirmOtp, onConfirmOtpVerified,
       myProfile: st.myProfile,
       // Lets a page-level "rate this" widget (PlaceDetail/EventDetail) prompt
       // sign-in on demand, same modal as place/scenic/event submission —
@@ -1547,6 +1603,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         {V.showEventForm && <CreateForm kind="event" onClose={V.closeEventForm} onSubmit={V.onEventSubmit} />}
         {V.showUserAuthForm && <UserAuthForm onClose={V.closeUserAuthForm} onAuthed={V.onUserAuthed} />}
         {V.showCompleteProfileForm && <CompleteProfileForm initial={V.myProfile} token={V.mySessionToken} onClose={V.closeCompleteProfileForm} onSaved={V.onProfileCompleted} />}
+        {V.showConfirmOtp && <ConfirmSubmitOtp phone={V.myProfile?.phoneNumber || ''} email={V.myProfile?.email || ''} token={V.mySessionToken} onClose={V.closeConfirmOtp} onVerified={V.onConfirmOtpVerified} />}
       </div>
     );
   }
