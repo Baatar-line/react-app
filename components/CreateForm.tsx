@@ -7,7 +7,7 @@
 // Reuses the same static data as BigBang (bigbang/data.ts). No "host" tier —
 // place submissions from any signed-in account land pending admin approval.
 import React, { useCallback, useRef, useState } from 'react';
-import { Accessibility } from 'lucide-react';
+import { Accessibility, MapPin } from 'lucide-react';
 import { useIsMobile } from './bigbang/ui';
 import { AIMAGS, CATS, FCRIT } from './bigbang/data';
 
@@ -208,9 +208,11 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   // 3. A what3words address or what3words.com URL — resolved via the
   //    backend proxy (keeps the API key server-side).
   // 4. Anything else — a free-text place/address search (Nominatim, via
-  //    /api/geocode). Jumps straight to the pin if there's exactly one
-  //    match; otherwise shows up to 5 to pick from, since a bare place name
-  //    is often ambiguous.
+  //    /api/geocode). Always shown as a pickable list (even a single match)
+  //    instead of dropping the pin straight away — Mongolia's OSM/Nominatim
+  //    coverage is thin enough that a plausible-looking single result can
+  //    still be the wrong place entirely, so the name is worth a glance
+  //    before committing to it.
   const searchLocation = useCallback(async () => {
     const val = locQuery.trim();
     if (!val) return;
@@ -243,8 +245,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
       const res = await fetch(`/api/geocode?q=${encodeURIComponent(val)}`);
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error || 'Хайлт амжилтгүй боллоо');
-      if (!body.length) { setLocErr('Илэрц олдсонгүй'); return; }
-      if (body.length === 1) { applyLocation(body[0].lat, body[0].lng, 15); return; }
+      if (!body.length) { setLocErr('Илэрц олдсонгүй — өөр нэрээр эсвэл газрын зураг дээр шууд дарж оролдоно уу'); return; }
       setPlaceResults(body);
     } catch (e) {
       setLocErr(e instanceof Error ? e.message : 'Хайлт амжилтгүй боллоо');
@@ -555,13 +556,17 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                 {locLoading ? '...' : 'Хайх'}
               </button>
               {placeResults.length > 0 && (
-                <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[1100] max-h-[170px] overflow-auto rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[#1a1712] shadow-[0_12px_30px_rgba(0,0,0,.5)]">
+                <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[1100] max-h-[220px] overflow-auto rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[#1a1712] shadow-[0_12px_30px_rgba(0,0,0,.5)]">
+                  <div className="sticky top-0 bg-[#1a1712] px-3 pt-2.5 pb-1.5 text-[10.5px] font-bold uppercase tracking-[.04em] text-[rgba(242,237,227,.45)]">Тохирох илэрцээ сонгоно уу</div>
                   {placeResults.map((r, i) => (
                     <button
                       key={i}
                       onClick={() => pickPlaceResult(r)}
-                      className="block w-full cursor-pointer border-0 border-b border-[rgba(255,255,255,.06)] bg-transparent px-3 py-2.5 text-left font-[inherit] text-[12.5px] leading-[1.4] text-[rgba(242,237,227,.85)] last:border-b-0 hover:bg-[rgba(255,255,255,.06)]"
-                    >{r.name}</button>
+                      className="flex w-full cursor-pointer items-start gap-2 border-0 border-t border-[rgba(255,255,255,.06)] bg-transparent px-3 py-2.5 text-left font-[inherit] text-[12.5px] leading-[1.4] text-[rgba(242,237,227,.85)] hover:bg-[rgba(255,255,255,.06)]"
+                    >
+                      <MapPin size={13} className="mt-0.5 flex-shrink-0 text-[var(--accent,#E8B84B)]" />
+                      <span>{r.name}</span>
+                    </button>
                   ))}
                 </div>
               )}

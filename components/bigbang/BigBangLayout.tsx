@@ -1019,23 +1019,25 @@ export default class BigBangLayout extends React.Component<Props, any> {
     });
 
     const favPlaces: any[] = [];
-    cats.forEach((c) => c.items.forEach((it) => {
+    cats.forEach((c) => c.items.forEach((it, i) => {
       const key = 'p:' + c.slug + ':' + it.name;
       if (!favs[key]) return;
       favPlaces.push({
         name: it.name, sub: it.sub, rating: ratingOf(it.name), accShow: it.access ? 'flex' : 'none',
         thumb: itemThumbOf(it.img).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'),
         displayMeta: it.meta + ' · ' + aimagName(it.aimag || 'Улаанбаатар', lang), toggleFav: toggleFav(key), ...heartOf(true),
+        onClick: () => this.openPlace(c, i),
       });
     }));
     favPlaces.sort((a, b) => +b.rating - +a.rating);
     const favScenic = this.allPins()
-      .map((p) => ({ p, key: 's:' + p.name })).filter((o) => favs[o.key])
+      .map((p, i) => ({ p, i, key: 's:' + p.name })).filter((o) => favs[o.key])
       .map((o) => ({
         name: o.p.name, sub: o.p.type, rating: ratingOf(o.p.name),
         accShow: (o.p.access || isAccessible(o.p.name)) ? 'flex' : 'none',
         thumb: 'linear-gradient(rgba(0,0,0,.05), rgba(0,0,0,.15)), url("' + imgUrl(o.p.img, 640) + '")',
         displayMeta: aimagName(o.p.aimag, lang), toggleFav: toggleFav(o.key), ...heartOf(true),
+        onClick: () => this.openScenicDetail(o.i),
       })).sort((a, b) => +b.rating - +a.rating);
     const favCount = Object.values(favs).filter(Boolean).length;
 
