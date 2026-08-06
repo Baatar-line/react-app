@@ -1132,6 +1132,17 @@ export default class BigBangLayout extends React.Component<Props, any> {
     };
     const closeCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: false }); };
     const openCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: true }); };
+    // CompleteProfileForm's save hit a 401 because the account behind this
+    // session no longer exists (a long-lived token outliving a removed
+    // account) — the stale session can't be salvaged, so clear it and
+    // re-prompt sign-in instead of leaving the user stuck on a save that
+    // will never succeed. Whatever place/scenic/event submission was
+    // pending gets dropped too, same as a fresh signed-out visitor.
+    const onProfileFormSessionExpired = () => {
+      clearSession();
+      this._pendingCreate = null;
+      this.setState({ showCompleteProfileForm: false, showUserAuthForm: true, myPlaces: [], myProfile: null });
+    };
     // CompleteProfileForm already saved the profile — continues into
     // ConfirmSubmitOtp for whatever place/scenic/event submission triggered
     // the prompt, same as onUserAuthed above (or just closes if opened
@@ -1370,7 +1381,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       showPlaceForm: st.showPlaceForm, showScenicForm: st.showScenicForm, showEventForm: st.showEventForm,
       onPlaceSubmit, onScenicSubmit, onEventSubmit,
       showUserAuthForm: st.showUserAuthForm, closeUserAuthForm, onUserAuthed,
-      showCompleteProfileForm: st.showCompleteProfileForm, closeCompleteProfileForm, openCompleteProfileForm, onProfileCompleted,
+      showCompleteProfileForm: st.showCompleteProfileForm, closeCompleteProfileForm, openCompleteProfileForm, onProfileCompleted, onProfileFormSessionExpired,
       showConfirmOtp: st.showConfirmOtp, closeConfirmOtp, onConfirmOtpVerified,
       myProfile: st.myProfile,
       // Lets a page-level "rate this" widget (PlaceDetail/EventDetail) prompt
@@ -1604,7 +1615,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         {V.showScenicForm && <CreateForm kind="scenic" onClose={V.closeScenicForm} onSubmit={V.onScenicSubmit} />}
         {V.showEventForm && <CreateForm kind="event" onClose={V.closeEventForm} onSubmit={V.onEventSubmit} />}
         {V.showUserAuthForm && <UserAuthForm onClose={V.closeUserAuthForm} onAuthed={V.onUserAuthed} />}
-        {V.showCompleteProfileForm && <CompleteProfileForm initial={V.myProfile} token={V.mySessionToken} onClose={V.closeCompleteProfileForm} onSaved={V.onProfileCompleted} />}
+        {V.showCompleteProfileForm && <CompleteProfileForm initial={V.myProfile} token={V.mySessionToken} onClose={V.closeCompleteProfileForm} onSaved={V.onProfileCompleted} onSessionExpired={V.onProfileFormSessionExpired} />}
         {V.showConfirmOtp && <ConfirmSubmitOtp phone={V.myProfile?.phoneNumber || ''} email={V.myProfile?.email || ''} token={V.mySessionToken} onClose={V.closeConfirmOtp} onVerified={V.onConfirmOtpVerified} />}
       </div>
     );

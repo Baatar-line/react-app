@@ -250,10 +250,9 @@ export default function Login() {
                 ✓
               </div>
               <h1 className="m-0 text-[22px] font-extrabold text-cream-2">Амжилттай нэвтэрлээ</h1>
-              <p className="mb-[18px] mt-2 text-[13px] text-cream/60"><span className="font-brand">Atlas</span>-д тавтай морил!</p>
               <Link
                 href="/"
-                className="inline-block rounded-xl border-none bg-accent px-7 py-[11px] text-[14px] font-extrabold !text-[#132a1f]"
+                className="mt-5 inline-block rounded-xl border-none bg-accent px-7 py-[11px] text-[14px] font-extrabold !text-[#132a1f]"
               >
                 <span className="font-brand">Atlas</span> руу орох →
               </Link>
