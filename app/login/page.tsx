@@ -141,7 +141,7 @@ export default function Login() {
             <div className="flex h-[30px] w-[30px] items-center justify-center rounded-[9px] bg-accent text-[14px] font-extrabold text-[#132a1f]">
               a
             </div>
-            <span className="text-[15px] font-extrabold tracking-[-0.03em] text-cream">atlas</span>
+            <span className="text-[15px] tracking-[-0.03em] text-cream [font-family:'Marcellus_SC',serif]">atlas</span>
           </div>
 
           {/* ══ USER FLOW ══ */}

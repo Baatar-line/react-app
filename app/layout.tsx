@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Manrope, Playfair_Display, Rubik_Bubbles, Uncial_Antiqua } from 'next/font/google';
+import { Manrope, Marcellus_SC, Playfair_Display, Rubik_Bubbles, Uncial_Antiqua } from 'next/font/google';
 import Script from 'next/script';
 import 'leaflet/dist/leaflet.css';
 import './globals.css';
@@ -18,6 +18,8 @@ const rubikBubbles = Rubik_Bubbles({ subsets: ['latin'], weight: ['400'], variab
 // Admin Panel sidebar, login screen) uses this via Tailwind's `font-brand`
 // (see tailwind.config.ts); only weight 400/normal exists for this font.
 const uncialAntiqua = Uncial_Antiqua({ subsets: ['latin'], weight: ['400'], variable: '--font-uncial' });
+// Login screen's "atlas" logo wordmark only.
+const marcellusSC = Marcellus_SC({ subsets: ['latin'], weight: ['400'], variable: '--font-marcellus-sc' });
 
 export const metadata: Metadata = {
   title: 'Atlas — Minii Bolzoo',
@@ -25,7 +27,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="mn" className={`${manrope.variable} ${playfairDisplay.variable} ${rubikBubbles.variable} ${uncialAntiqua.variable}`}>
+    <html lang="mn" className={`${manrope.variable} ${playfairDisplay.variable} ${rubikBubbles.variable} ${uncialAntiqua.variable} ${marcellusSC.variable}`}>
       <body>
         {/* Map / globe / travel engines — vanilla global scripts (see
             components/bigbang/BigBangLayout.tsx, GlobePage, AboutPage). Every
