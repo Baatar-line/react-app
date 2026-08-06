@@ -582,10 +582,10 @@ export default function AdminPanel() {
           className="flex items-center gap-2 flex-shrink-0"
           style={{ padding: isMobile ? '0 10px 0 0' : sbCollapsed ? '0 0 22px' : '0 4px 22px', justifyContent: !isMobile && sbCollapsed ? 'center' : 'flex-start' }}
         >
-          <div className="w-8 h-8 rounded-[9px] bg-[var(--accent,#E8B84B)] flex items-center justify-center font-extrabold text-[15px] text-[#132a1f] flex-shrink-0">a</div>
+          <div className="w-8 h-8 rounded-[9px] bg-[var(--accent,#E8B84B)] flex items-center justify-center font-extrabold text-[15px] text-[#132a1f] flex-shrink-0">A</div>
           {!isMobile && !sbCollapsed && (
             <div className="flex-1 min-w-0">
-              <div className="text-[14.5px] font-extrabold tracking-[-0.02em]">atlas</div>
+              <div className="font-brand text-[15.5px] tracking-[-0.02em]">Atlas</div>
               <div className="font-[ui-monospace,Menlo,monospace] text-[9.5px] tracking-[.18em] uppercase text-[rgba(242,237,227,.45)]">admin panel</div>
             </div>
           )}

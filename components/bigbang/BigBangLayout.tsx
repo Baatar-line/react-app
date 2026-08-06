@@ -1500,7 +1500,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         >
           <div className="bb-logo-group relative flex flex-none items-center gap-[18px]">
             <button onClick={V.goHome} className="relative z-[2] flex cursor-pointer items-center border-0 bg-transparent p-0 font-inherit text-inherit">
-              <span className="font-display font-bold italic tracking-[-0.01em] text-cream" style={{ fontSize: V.isMobile ? 19 : 23 }}>Atlas</span>
+              <span className="font-brand tracking-[-0.01em] text-cream" style={{ fontSize: V.isMobile ? 19 : 23 }}>Atlas</span>
             </button>
           </div>
 
