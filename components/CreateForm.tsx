@@ -334,6 +334,25 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const descMissing = !desc.trim();
   const imagesMissing = images.length < 1;
   const imagesMaxed = images.length >= MAX_IMAGES;
+  // Scenic spots and events are both fundamentally about a specific point on
+  // the map (that's the entire point of a "scenic spot", and attendees need
+  // to know where to actually show up) — unlike a place, where the address
+  // fields + contact info already carry that, so the pin stays optional
+  // there. Create-only: an older scenic/event row edited through Admin
+  // before this requirement existed may still have no pin, and blocking an
+  // unrelated edit to that row until someone back-fills a location it never
+  // needed before would be a regression, not the ask here.
+  const pinMissing = mode === 'create' && (kind === 'scenic' || kind === 'event') && (lat == null || lng == null);
+  const nameMissing = !name.trim();
+  const scenicTypeMissing = kind === 'scenic' && !scenicType.trim();
+  // Single source of truth for whether "Үүсгэх" should even be clickable —
+  // same conditions submit() checks below, so the button disables itself
+  // instead of only surfacing the problem after a click.
+  const formValid = !(
+    nameMissing || descMissing || imagesMissing || pinMissing || scenicTypeMissing ||
+    (kind === 'place' && (placeContactInvalid || placeHoursMissing)) ||
+    (kind === 'event' && (eventMissing || eventContactInvalid))
+  );
 
   const submit = async () => {
     if (submitting) return;
@@ -344,10 +363,11 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
     // anymore, it'd fall through to the misleading generic "fill in
     // everything" message) despite the submit actually going through.
     setErr(false);
-    if (!name.trim()) { setErr(true); return; }
+    if (nameMissing) { setErr(true); return; }
     if (descMissing) { setErr(true); return; }
     if (imagesMissing) { setErr(true); return; }
-    if (kind === 'scenic' && !scenicType.trim()) { setErr(true); return; }
+    if (pinMissing) { setErr(true); return; }
+    if (scenicTypeMissing) { setErr(true); return; }
     if (kind === 'place' && (placeContactInvalid || placeHoursMissing)) { setErr(true); return; }
     if (kind === 'event' && (eventMissing || eventContactInvalid)) { setErr(true); return; }
     const data: CreateFormData = {
@@ -523,7 +543,9 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
           </label>
 
           <div className="flex flex-col gap-1.5">
-            <span className={labelSpanClass}>Байршил (заавал биш)</span>
+            <span className={labelSpanClass}>
+              Байршил {kind === 'place' ? <span className="text-[rgba(242,237,227,.4)] font-normal">(заавал биш)</span> : <span className="text-[#f08a8a]">*</span>}
+            </span>
             <div className="relative flex gap-2">
               <input
                 value={placeQuery}
@@ -610,17 +632,19 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
           )}
 
           <div className="mt-1 flex items-center gap-3">
-            <button onClick={submit} disabled={submitting} className="cursor-pointer rounded-full border-none bg-[var(--accent,#E8B84B)] px-7 py-[11px] font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:translate-y-0">{submitting ? 'Хадгалж байна…' : mode === 'edit' ? 'Хадгалах' : 'Үүсгэх →'}</button>
+            <button onClick={submit} disabled={submitting || !formValid} title={!submitting && !formValid ? 'Бүх заавал талбарыг бөглөнө үү' : undefined} className="cursor-pointer rounded-full border-none bg-[var(--accent,#E8B84B)] px-7 py-[11px] font-[inherit] text-[13px] font-extrabold text-[#132a1f] transition-transform duration-200 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:translate-y-0">{submitting ? 'Хадгалж байна…' : mode === 'edit' ? 'Хадгалах' : 'Үүсгэх →'}</button>
             <button onClick={onClose} disabled={submitting} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.25)] bg-transparent px-5 py-2.5 font-[inherit] text-xs font-bold text-[rgba(242,237,227,.7)] disabled:cursor-not-allowed disabled:opacity-60">Болих</button>
             {err && (
               <span className="text-[11.5px] font-bold text-[#f08a8a]">
-                {!name.trim()
+                {nameMissing
                   ? 'Нэр оруулна уу'
                   : descMissing
                   ? 'Тайлбар оруулна уу'
                   : imagesMissing
                   ? 'Дор хаяж 1 зураг оруулна уу'
-                  : kind === 'scenic' && !scenicType.trim()
+                  : pinMissing
+                  ? 'Газрын зураг дээр байршлаа заавал тэмдэглэнэ үү'
+                  : scenicTypeMissing
                   ? 'Төрлөө оруулна уу'
                   : kind === 'place' && (placePhoneInvalid || placeEmailInvalid)
                   ? 'Дээрх талбаруудыг зөв бөглөнө үү'
