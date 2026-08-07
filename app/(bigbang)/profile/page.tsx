@@ -4,12 +4,58 @@
 // cards, and the user's own submitted places / scenic spots / events. No
 // "host" tier — any signed-in account can submit all three (a place just
 // lands pending until an admin approves it — see BigBangLayout's onPlaceSubmit).
-import { useContext } from 'react';
+import { useContext, useState } from 'react';
 import Link from 'next/link';
-import { Accessibility, Heart, Pencil, User } from 'lucide-react';
+import { Accessibility, Heart, Pencil, User, Users } from 'lucide-react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
 import { imgUrl } from '@/components/bigbang/data';
 import { BgMedia, Isometric3DIcon } from '@/components/bigbang/ui';
+
+// FAQ accordion — one open at a time (index, not a per-row boolean), so
+// answers never stack up and push the section into a wall of text. Content
+// and its translations live in FAQ in data.ts.
+function FaqSection({ V }: { V: any }) {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <div className="mt-[46px] border-t border-[rgba(255,255,255,.08)] pt-[30px]">
+      <div className="mb-1 text-xs font-extrabold tracking-[.08em] uppercase text-[rgba(242,237,227,.5)]">{V.L.faqTitle}</div>
+      <div className="mb-[18px] text-[12.5px] text-[rgba(242,237,227,.45)]">{V.L.faqSub}</div>
+      {/* Two per row on desktop. `items-start` matters: without it the grid
+          stretches both cells in a row to the same height, so opening one
+          answer would leave a tall empty box next to it. */}
+      <div className={V.isMobile ? 'flex max-w-[720px] flex-col gap-2' : 'grid max-w-[1040px] grid-cols-2 items-start gap-2'}>
+        {V.faq.map((item: any, i: number) => {
+          const isOpen = open === i;
+          return (
+            <div key={i} className="overflow-hidden rounded-[14px] border border-[rgba(255,255,255,.1)] bg-[rgba(255,255,255,.03)]">
+              <button
+                onClick={() => setOpen(isOpen ? null : i)}
+                aria-expanded={isOpen}
+                // min-h fits the longest question's two lines, so every closed
+                // card in a row is the same height whether its question wraps
+                // or not — a one-liner centres in the same box instead of
+                // leaving its neighbour hanging. Combined with the grid's
+                // items-start, that keeps the rows tidy in both states:
+                // aligned while closed, and an open answer grows only its own
+                // card rather than stretching the one beside it.
+                className="flex min-h-[66px] w-full cursor-pointer items-center gap-3 border-0 bg-transparent px-[16px] py-[14px] text-left font-[inherit]"
+              >
+                <span className="flex-1 text-[13.5px] font-bold leading-[1.4] text-cream-2">{item.q}</span>
+                <span
+                  className="flex-none text-[13px] font-bold text-[var(--accent,#E8B84B)] transition-transform duration-200"
+                  style={{ transform: isOpen ? 'rotate(45deg)' : 'none' }}
+                >+</span>
+              </button>
+              {isOpen && (
+                <div className="animate-bbFadeDown px-[16px] pb-[15px] text-[12.5px] leading-[1.6] text-[rgba(242,237,227,.6)]">{item.a}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // Reusable favorite / place card (Profile page places + scenic).
 function FavCard({ d }: { d: any }) {
@@ -232,12 +278,22 @@ export default function ProfilePage() {
                   <div className="text-sm font-extrabold text-cream-2">{ev.name}</div>
                   <div className="text-xs text-[rgba(242,237,227,.55)] mt-[3px]">{ev.meta}</div>
                 </div>
+                {/* How many people pressed "Очно" on this event — the point of
+                    the card for the organiser, so it gets the accent chip. */}
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[rgba(232,184,75,.35)] bg-[rgba(232,184,75,.1)] py-1 px-[11px] text-[10.5px] font-bold text-[var(--accent,#E8B84B)]">
+                  <Users size={11} />{ev.attendLabel}
+                </span>
                 <span className="text-[10.5px] font-bold py-1 px-[11px] rounded-full bg-[rgba(255,255,255,.07)] text-[rgba(242,237,227,.7)] whitespace-nowrap">{ev.tag}</span>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* Last thing on the page, deliberately — everything above is the
+          user's own content, and the answers here mostly explain the rules
+          that content just went through. */}
+      <FaqSection V={V} />
     </section>
   );
 }

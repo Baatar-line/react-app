@@ -96,6 +96,9 @@ export default function EventDetail() {
             >
               <Users size={15} />{ev.joinLabel}
             </button>
+            {/* Live headcount beside the button — the total across everyone,
+                not just whether this visitor pressed it. */}
+            <span className="inline-flex items-center text-[13px] font-semibold text-[rgba(242,237,227,.6)]">{ev.attendLabel}</span>
           </div>
         </div>
       </div>
