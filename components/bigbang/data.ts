@@ -120,13 +120,73 @@ export interface Pin {
 // fetched and shaped into Pin[] by BigBangLayout.fetchLiveContent — nothing
 // hardcoded here anymore.
 
-export const TEAM: [string, string, string][] = [
-  ['Азаа', 'Багийн ахлагч · Бүтээгдэхүүн', 'Team lead · Product'],
-  ['Баска', 'Хөгжүүлэгч · Backend', 'Developer · Backend'],
-  ['Чинзо', 'Хөгжүүлэгч · Frontend', 'Developer · Frontend'],
-  ['Номио', 'Дизайнер · UI/UX', 'Designer · UI/UX'],
-  ['Нямка', 'Контент · Газрын судалгаа', 'Content · Place research'],
-  ['Магнай', 'Маркетинг · Хамтын ажиллагаа', 'Marketing · Partnerships'],
+// [name, role (mn), role (en), slug]. The slug is the stable key the admin
+// panel stores each member's uploaded photo under (SiteSettings.teamImages,
+// a slug→url JSON map) — kept separate from the display name so renaming a
+// person doesn't orphan their photo.
+export const TEAM: [string, string, string, string][] = [
+  ['Азаа', 'Багийн ахлагч · Бүтээгдэхүүн', 'Team lead · Product', 'azaa'],
+  ['Баска', 'Хөгжүүлэгч · Backend', 'Developer · Backend', 'baska'],
+  ['Чинзо', 'Хөгжүүлэгч · Frontend', 'Developer · Frontend', 'chinzo'],
+  ['Номио', 'Дизайнер · UI/UX', 'Designer · UI/UX', 'nomio'],
+  ['Нямка', 'Контент · Газрын судалгаа', 'Content · Place research', 'nyamka'],
+  ['Магнай', 'Маркетинг · Хамтын ажиллагаа', 'Marketing · Partnerships', 'magnai'],
+];
+
+// FAQ accordion at the bottom of the Profile page — [question, answer] in
+// Mongolian then English, same tuple-per-language shape as TEAM above. These
+// answer the questions the app's own rules actually raise (why a place waits
+// on approval, why the profile gate exists, why every submission re-verifies
+// by OTP), so they need updating whenever those rules change.
+export const FAQ: [string, string, string, string][] = [
+  [
+    'Нэмсэн газар маань яагаад шууд харагдахгүй байна вэ?',
+    'Газар нь админ баталгаажуулсны дараа бүх хэрэглэгчид харагддаг. Үзэсгэлэнт газар болон эвент шууд нийтлэгддэг. Илгээсэн газрынхаа явцыг профайлаасаа "Миний нэмсэн газрууд" хэсгээс харна.',
+    'Why is the place I added not visible yet?',
+    'A place goes live for everyone only after an admin approves it. Scenic spots and events publish instantly. You can follow your submission under "My submitted places" on this page.',
+  ],
+  [
+    'Контент нэмэхийн тулд яагаад профайлаа бүрэн бөглөх ёстой вэ?',
+    'Нэр, утасны дугаар, Instagram/Facebook, и-мэйл — эдгээр нь админ болон бусад хэрэглэгч тантай холбогдох цорын ганц зам. Тиймээс газар, үзэсгэлэнт газар, эвент нэмэхээс өмнө эдгээрийг бөглөсөн байх шаардлагатай.',
+    'Why do I have to complete my profile before adding content?',
+    'Your name, phone, Instagram/Facebook and email are the only way an admin or another user can reach you. That is why they are required before you can add a place, scenic spot or event.',
+  ],
+  [
+    'Илгээх болгонд яагаад дахин код авах шаардлагатай вэ?',
+    'Илгээлт бүр дээр таны бүртгэлтэй утас эсвэл и-мэйл рүү нэг удаагийн код очиж баталгаажуулдаг. Ингэснээр бусдын нэрийн өмнөөс контент нэмэх боломжгүй болно.',
+    'Why do I need a code every time I submit?',
+    'Every submission sends a one-time code to the phone or email on your account. It is what stops anyone from posting content in someone else’s name.',
+  ],
+  [
+    'Утас, и-мэйлээ яагаад өөрчилж болохгүй байна вэ?',
+    'Нэвтрэхдээ болон илгээлт бүр дээр яг тэр утас/и-мэйлээр баталгаажуулдаг тул тэдгээр талбар түгжигдсэн байдаг. Өөрчлөх шаардлагатай бол бидэнтэй холбогдоно уу.',
+    'Why can’t I change my phone or email?',
+    'Those exact values are what your sign-in and every submission verify against, so the fields stay locked. Contact us if one of them genuinely needs to change.',
+  ],
+  [
+    '"Энэ и-мэйл өөр бүртгэлд ашиглагдсан байна" гэж гарвал яах вэ?',
+    'Та өмнө нь тэр и-мэйлээр тусдаа бүртгэл үүсгэсэн байна. Тэр бүртгэлээрээ нэвтэрч орох, эсвэл одоогийн бүртгэлдээ өөр и-мэйл оруулна уу. Утсаар нэвтрэх, и-мэйлээр нэвтрэх нь тус тусдаа бүртгэл үүсгэдэг.',
+    'What if it says this email belongs to another account?',
+    'You created a separate account with that email earlier. Either sign in with that account, or use a different email here — signing in by phone and by email create two separate accounts.',
+  ],
+  [
+    'Байршлаа хэрхэн зөв тэмдэглэх вэ?',
+    'Хайлтын талбарт газрын нэрээ бичихэд санал гарч ирнэ (латин үсгээр бичсэн ч болно). Мөн Google Maps-ийн холбоос эсвэл what3words хаяг буулгаж, эсвэл газрын зураг дээр шууд дарж тэмдэглэж болно.',
+    'How do I set the location correctly?',
+    'Type the place name in the search box and pick from the suggestions (Latin spelling works too). You can also paste a Google Maps link or a what3words address, or simply click straight on the map.',
+  ],
+  [
+    '"Очно" товч юу хийдэг вэ?',
+    'Тухайн эвентэд очих гэж байгаагаа тэмдэглэнэ. Хэдэн хүн очихоор тэмдэглэснийг эвентийн дэлгэрэнгүй хуудсанд харуулах бөгөөд эвент зохион байгуулагч профайлаасаа мөн хардаг.',
+    'What does the "Going" button do?',
+    'It marks that you plan to attend. The total number of people going shows on the event page, and the organiser also sees it on their profile.',
+  ],
+  [
+    'Хэдэн зураг оруулах боломжтой вэ?',
+    'Нэг контентод дор хаяж 1, хамгийн ихдээ 4 зураг оруулна.',
+    'How many photos can I upload?',
+    'At least 1 and at most 4 photos per submission.',
+  ],
 ];
 
 // Real events now come from the Event table (see /api/events), fetched and
@@ -698,6 +758,15 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     addScenicTitle: 'Үзэсгэлэнт газар', addScenicDesc: 'Байгалийн үзэсгэлэнт цэг нэмэх',
     addEventTitle: 'Эвент нэмэх', addEventDesc: 'Тодорхой огноо, цагтай арга хэмжээ',
     addInstantNote: 'Шууд нийтлэгдэнэ',
+    // Success card shown right after a place/scenic/event clears its final
+    // OTP confirm — see CreateSuccessCard.
+    createdPlaceTitle: 'Газар амжилттай үүслээ',
+    createdScenicTitle: 'Үзэсгэлэнт газар амжилттай үүслээ',
+    createdEventTitle: 'Эвент амжилттай үүслээ',
+    createdPlaceNote: 'Админ баталгаажуулсны дараа бүх хэрэглэгчид харагдана. Профайлаасаа явцыг харж болно.',
+    createdInstantNote: 'Шууд нийтлэгдлээ — профайлаасаа харж болно.',
+    createdGoProfile: 'Профайл руу очих →',
+    createdClose: 'Хаах',
     myPlacesTitle: 'Миний нэмсэн газрууд',
     myScenicTitle: 'Миний нэмсэн үзэсгэлэнт газрууд', myEventsTitle: 'Миний нэмсэн эвентүүд',
     scModalTitle: 'Үзэсгэлэнт газар нэмэх', scName: 'Газрын нэр', scNamePh: 'Ж: Тэрхийн цагаан нуур',
@@ -710,7 +779,11 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     appsTitle: 'Аялахад хэрэгтэй апп-ууд', appsSub: 'Монголд аялахад тусалдаг апп-ууд — гарахаасаа өмнө татаж аваарай', appsBadge: 'Аяллын багц', appsCta: 'Бүгдийг татах',
     topRowTitle: 'Хамгийн өндөр үнэлгээтэй', save: 'Хадгалах', savedLabel: 'Хадгалсан ✓',
     brandsTitle: 'Алдартай брэндээс санал болгож байна', brandsSub: 'Atlas-ийн хамтрагч брэндүүд',
-    evJoin: 'Нэгдэх', evJoined: 'Нэгдсэн ✓',
+    evJoin: 'Очно', evJoined: 'Очно ✓',
+    // Follows the headcount: "12 хүн очно".
+    evAttendSuffix: 'хүн очно',
+    faqTitle: 'Түгээмэл асуулт хариулт',
+    faqSub: 'Хэрэглэгчээс хамгийн их асуудаг зүйлс',
     fav: 'Дуртай', favTitle: 'Дуртай газрууд', favSub: 'Таны ♥ дарж хадгалсан газрууд — төрлөөрөө ангилагдсан',
     favPlaces: 'Газрууд', favScenic: 'Үзэсгэлэнт газрууд',
     favEmpty: 'Одоогоор хоосон байна — газрын карт дээрх ♡ товчийг дарж нэмээрэй',
@@ -751,6 +824,13 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     addScenicTitle: 'Scenic spot', addScenicDesc: 'Add a natural scenic place',
     addEventTitle: 'Add event', addEventDesc: 'A happening with a date and time',
     addInstantNote: 'Publishes instantly',
+    createdPlaceTitle: 'Place created',
+    createdScenicTitle: 'Scenic spot created',
+    createdEventTitle: 'Event created',
+    createdPlaceNote: 'It goes live for everyone once an admin approves it. You can follow that from your profile.',
+    createdInstantNote: 'It is live already — you can see it on your profile.',
+    createdGoProfile: 'Go to profile →',
+    createdClose: 'Close',
     myPlacesTitle: 'My submitted places',
     myScenicTitle: 'My scenic spots', myEventsTitle: 'My events',
     scModalTitle: 'Add scenic spot', scName: 'Name', scNamePh: 'e.g. Terkhiin Tsagaan Lake',
@@ -764,6 +844,9 @@ export const STR: Record<'mn' | 'en', Record<string, string>> = {
     topRowTitle: 'Top rated', save: 'Save', savedLabel: 'Saved ✓',
     brandsTitle: 'Recommended from top brands', brandsSub: 'Atlas partner brands',
     evJoin: 'Join', evJoined: 'Joined ✓',
+    evAttendSuffix: 'going',
+    faqTitle: 'Frequently asked questions',
+    faqSub: 'What users ask us most',
     fav: 'Favorites', favTitle: 'Favorite places', favSub: 'Places you saved with ♥ — grouped by type',
     favPlaces: 'Places', favScenic: 'Scenic spots',
     favEmpty: 'Nothing here yet — tap ♡ on a place card to add',
