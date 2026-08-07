@@ -44,8 +44,14 @@ export async function POST(request: Request) {
     // checked too, not just presence — mirrors CreateForm.tsx's own
     // client-side check, but this is the check that actually can't be
     // bypassed by calling the API directly.
-    if (!phone || !instagramUrl || !facebookUrl || !contactEmail) {
-      return NextResponse.json({ error: 'Утасны дугаар, Instagram, Facebook, имэйл хаяг заавал шаардлагатай' }, { status: 400 });
+    // Instagram and Facebook are required as a pair, not individually —
+    // plenty of venues only run one of the two, and either one is enough to
+    // reach them. Phone and email stay individually mandatory.
+    if (!phone || !contactEmail) {
+      return NextResponse.json({ error: 'Утасны дугаар, имэйл хаяг заавал шаардлагатай' }, { status: 400 });
+    }
+    if (!instagramUrl && !facebookUrl) {
+      return NextResponse.json({ error: 'Instagram эсвэл Facebook хаягийн аль нэгийг заавал оруулна уу' }, { status: 400 });
     }
     if (!/^\d{8}$/.test(phone)) {
       return NextResponse.json({ error: 'Утасны дугаар 8 оронтой тоо байх ёстой — жишээ: 99112233' }, { status: 400 });

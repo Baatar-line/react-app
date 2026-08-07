@@ -22,7 +22,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const user = await requireAuth(request);
     requireRole(user, 'admin');
     const { id } = await params;
-    const { name, tag, meta, images, startDate, endDate, aimagId, lat, lng, featured, instagram, phone, phone2 } = await request.json();
+    const { name, tag, meta, images, startDate, endDate, aimagId, lat, lng, featured, instagram, facebook, phone, phone2 } = await request.json();
     if (images !== undefined && (!Array.isArray(images) || images.length < 1 || images.length > 4)) {
       return NextResponse.json({ error: 'Дор хаяж 1, хамгийн ихдээ 4 зураг оруулна уу' }, { status: 400 });
     }
@@ -48,7 +48,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         lat: lat != null ? Number(lat) : undefined,
         lng: lng != null ? Number(lng) : undefined,
         featured: featured != null ? !!featured : undefined,
-        instagram, phone, phone2: phone2 !== undefined ? (phone2 || null) : undefined,
+        instagram, facebook: facebook !== undefined ? (facebook || null) : undefined,
+        phone, phone2: phone2 !== undefined ? (phone2 || null) : undefined,
       },
       include: { aimag: true },
     });

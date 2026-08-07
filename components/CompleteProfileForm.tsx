@@ -8,10 +8,10 @@
 // admin/other users to actually reach them. Whatever place/scenic/event
 // submission triggered the prompt is replayed automatically once this is
 // saved (see BigBangLayout's onProfileCompleted).
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Camera } from 'lucide-react';
 import { useIsMobile } from './bigbang/ui';
-import { apiPut, uploadImage, ApiClientError } from '../lib/api';
+import { apiGetAuthed, apiPut, uploadImage, ApiClientError } from '../lib/api';
 import { imgUrl } from './bigbang/data';
 
 export interface ProfileInfo {
@@ -37,6 +37,11 @@ interface Props {
 
 const PHONE_RE = /^\d{8}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Both name the way out, not just the problem: the conflicting account is
+// almost always the same person's own earlier sign-in with the other contact
+// method, so "sign in with it instead" is the actual fix.
+const TAKEN_EMAIL_MSG = 'Энэ и-мэйл өөр бүртгэлд ашиглагдсан байна. Тэр бүртгэлээрээ нэвтэрч орох, эсвэл өөр и-мэйл оруулна уу.';
+const TAKEN_PHONE_MSG = 'Энэ утасны дугаар өөр бүртгэлд ашиглагдсан байна. Тэр бүртгэлээрээ нэвтэрч орох, эсвэл өөр дугаар оруулна уу.';
 
 export default function CompleteProfileForm({ initial, token, onClose, onSaved, onSessionExpired }: Props) {
   const isMobile = useIsMobile();
@@ -62,6 +67,32 @@ export default function CompleteProfileForm({ initial, token, onClose, onSaved, 
   const phoneLocked = !!(initial?.phoneNumber && initial.phoneNumber.trim());
   const emailLocked = !!(initial?.email && initial.email.trim());
 
+  // Signing in by phone and signing in by email each create their own account
+  // (both are optional-and-unique on User), so one person can easily end up
+  // with two — and then typing their real email here collides with the other
+  // account and the save can never succeed. Checking as they type turns that
+  // into an inline hint on the field itself, instead of a red error only
+  // after Хадгалах with no indication of what to change.
+  const [emailTaken, setEmailTaken] = useState(false);
+  const [phoneTaken, setPhoneTaken] = useState(false);
+  useEffect(() => {
+    const candidateEmail = emailLocked || !EMAIL_RE.test(email.trim()) ? '' : email.trim();
+    const candidatePhone = phoneLocked || !PHONE_RE.test(phone.trim()) ? '' : phone.trim();
+    if (!candidateEmail && !candidatePhone) { setEmailTaken(false); setPhoneTaken(false); return; }
+    if (!token) return;
+    let alive = true;
+    // Debounced — this fires per keystroke otherwise.
+    const timer = setTimeout(() => {
+      const qs = new URLSearchParams();
+      if (candidateEmail) qs.set('email', candidateEmail);
+      if (candidatePhone) qs.set('phone', candidatePhone);
+      apiGetAuthed<{ emailTaken: boolean; phoneTaken: boolean }>(`/profile/contact-taken?${qs}`, token)
+        .then((r) => { if (!alive) return; setEmailTaken(!!candidateEmail && r.emailTaken); setPhoneTaken(!!candidatePhone && r.phoneTaken); })
+        .catch(() => {});
+    }, 400);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [email, phone, emailLocked, phoneLocked, token]);
+
   const stop = (ev: React.MouseEvent) => ev.stopPropagation();
 
   const pickAvatar = (ev: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,6 +108,8 @@ export default function CompleteProfileForm({ initial, token, onClose, onSaved, 
     if (!PHONE_RE.test(phone.trim())) { setErr('Утасны дугаар 8 оронтой тоо байх ёстой — жишээ: 99112233'); return; }
     if (!instagram.trim()) { setErr('Instagram хаягаа оруулна уу'); return; }
     if (!EMAIL_RE.test(email.trim())) { setErr('Зөв и-мэйл хаяг оруулна уу'); return; }
+    if (emailTaken) { setErr(TAKEN_EMAIL_MSG); return; }
+    if (phoneTaken) { setErr(TAKEN_PHONE_MSG); return; }
     setBusy(true);
     setErr('');
     try {
@@ -135,8 +168,9 @@ export default function CompleteProfileForm({ initial, token, onClose, onSaved, 
               disabled={phoneLocked}
               onChange={(e) => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 8)); setErr(''); }}
               placeholder="99112233" inputMode="numeric" maxLength={8}
-              className={`${inputClass} ${inputFontClass} ${phoneLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              className={`${inputClass} ${inputFontClass} ${phoneLocked ? 'cursor-not-allowed opacity-60' : ''} ${phoneTaken ? 'border-[#f08a8a]' : ''}`}
             />
+            {phoneTaken && <span className="text-[11px] leading-snug text-[#f08a8a]">{TAKEN_PHONE_MSG}</span>}
           </label>
           <label className="flex flex-col gap-1.5">
             <span className={labelSpanClass}>Instagram</span>
@@ -150,8 +184,9 @@ export default function CompleteProfileForm({ initial, token, onClose, onSaved, 
               type="email" value={email} disabled={emailLocked}
               onChange={(e) => { setEmail(e.target.value); setErr(''); }}
               placeholder="tanii@email.com"
-              className={`${inputClass} ${inputFontClass} ${emailLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+              className={`${inputClass} ${inputFontClass} ${emailLocked ? 'cursor-not-allowed opacity-60' : ''} ${emailTaken ? 'border-[#f08a8a]' : ''}`}
             />
+            {emailTaken && <span className="text-[11px] leading-snug text-[#f08a8a]">{TAKEN_EMAIL_MSG}</span>}
           </label>
         </div>
         <button onClick={save} disabled={busy} className="mt-4 w-full cursor-pointer rounded-xl border-none bg-[var(--accent,#E8B84B)] py-[11px] font-[inherit] text-[14px] font-extrabold text-[#132a1f] transition-transform hover:-translate-y-0.5 disabled:opacity-60">

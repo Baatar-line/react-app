@@ -40,12 +40,35 @@ export async function PUT(request: Request) {
     const finalEmail = existing?.email || String(email).trim();
     // phoneNumber/email live on User, not Profile — updated separately since
     // both are @unique there and can collide with another account.
+    //
+    // Which of the two collided is worked out here rather than read off the
+    // P2002 below: `err.meta.target` isn't reliably populated through the
+    // driver adapter, and the old fallback blamed the phone whenever it was
+    // missing. That was actively misleading — an account that signed up by
+    // phone keeps its number locked in the form (see phoneLocked in
+    // CompleteProfileForm), so "this phone is taken" pointed at the one field
+    // the user cannot possibly change, while the real conflict was the email
+    // they'd just typed.
+    const [phoneTakenBy, emailTakenBy] = await Promise.all([
+      prisma.user.findFirst({ where: { phoneNumber: finalPhone, id: { not: user.userId } }, select: { id: true } }),
+      prisma.user.findFirst({ where: { email: finalEmail, id: { not: user.userId } }, select: { id: true } }),
+    ]);
+    if (emailTakenBy) throw new ApiError(409, 'Энэ и-мэйл өөр бүртгэлд ашиглагдсан байна. Тэр бүртгэлээрээ нэвтэрч орох, эсвэл өөр и-мэйл оруулна уу.');
+    if (phoneTakenBy) throw new ApiError(409, 'Энэ утасны дугаар өөр бүртгэлд ашиглагдсан байна. Тэр бүртгэлээрээ нэвтэрч орох, эсвэл өөр дугаар оруулна уу.');
     try {
       await prisma.user.update({ where: { id: user.userId }, data: { phoneNumber: finalPhone, email: finalEmail } });
     } catch (err: any) {
+      // Still possible if another account claims the same value between the
+      // check above and this write. Names whichever field the constraint
+      // points at when that's readable, and stays vague rather than guessing
+      // wrong when it isn't.
       if (err?.code === 'P2002') {
-        const field = err?.meta?.target?.includes?.('email') ? 'и-мэйл' : 'утасны дугаар';
-        throw new ApiError(409, `Энэ ${field} өөр хаягт бүртгэлтэй байна`);
+        const target = err?.meta?.target;
+        const targetText = Array.isArray(target) ? target.join(',') : String(target ?? '');
+        const field = targetText.includes('email') ? 'и-мэйл'
+          : targetText.includes('phone') ? 'утасны дугаар'
+          : 'и-мэйл эсвэл утасны дугаар';
+        throw new ApiError(409, `Энэ ${field} өөр бүртгэлд ашиглагдсан байна`);
       }
       throw err;
     }

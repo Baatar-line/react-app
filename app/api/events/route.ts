@@ -8,7 +8,11 @@ export async function GET(request: Request) {
     const aimagId = searchParams.get('aimagId');
     const events = await prisma.event.findMany({
       where: aimagId ? { aimagId: Number(aimagId) } : undefined,
-      include: { aimag: true },
+      // _count.attendees backs the "N хүн очно" headcount on the event's
+      // detail page and its organizer's profile card. Public (this route
+      // takes no auth) since the number itself isn't private — only who
+      // pressed it is, and that's never sent.
+      include: { aimag: true, _count: { select: { attendees: true } } },
       orderBy: { startDate: 'asc' },
     });
     return NextResponse.json(events);
@@ -20,7 +24,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
-    const { name, tag, meta, images, startDate, endDate, aimagId, lat, lng, featured, instagram, phone, phone2 } = await request.json();
+    const { name, tag, meta, images, startDate, endDate, aimagId, lat, lng, featured, instagram, facebook, phone, phone2 } = await request.json();
     if (!name || !meta || !startDate || !aimagId) {
       return NextResponse.json({ error: 'Нэр, тайлбар, эхлэх огноо, аймаг шаардлагатай' }, { status: 400 });
     }
@@ -31,8 +35,13 @@ export async function POST(request: Request) {
     // a real way to reach the organizer. Format-checked too, not just
     // presence — mirrors CreateForm.tsx's own client-side check, but this is
     // the check that actually can't be bypassed by calling the API directly.
-    if (!phone || !instagram) {
-      return NextResponse.json({ error: 'Утасны дугаар, Instagram заавал шаардлагатай' }, { status: 400 });
+    // One social is enough to reach a host, so Instagram and Facebook are
+    // required as a pair rather than individually — same rule as POST /places.
+    if (!phone) {
+      return NextResponse.json({ error: 'Утасны дугаар заавал шаардлагатай' }, { status: 400 });
+    }
+    if (!instagram && !facebook) {
+      return NextResponse.json({ error: 'Instagram эсвэл Facebook хаягийн аль нэгийг заавал оруулна уу' }, { status: 400 });
     }
     if (!/^\d{8}$/.test(phone)) {
       return NextResponse.json({ error: 'Утасны дугаар 8 оронтой тоо байх ёстой — жишээ: 99112233' }, { status: 400 });
@@ -48,7 +57,8 @@ export async function POST(request: Request) {
         aimagId: Number(aimagId),
         lat: lat != null ? Number(lat) : undefined,
         lng: lng != null ? Number(lng) : undefined,
-        instagram, phone, phone2: phone2 || undefined,
+        instagram: instagram || undefined, facebook: facebook || undefined,
+        phone, phone2: phone2 || undefined,
         // Only an admin can pin an event to the home page's featured banner —
         // a host marking their own event featured would otherwise be a
         // self-service promotion with no moderation at all.
