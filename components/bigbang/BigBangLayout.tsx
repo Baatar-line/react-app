@@ -16,8 +16,9 @@ import CreateForm, { CreateFormData } from '../CreateForm';
 import UserAuthForm from '../UserAuthForm';
 import CompleteProfileForm, { type ProfileInfo } from '../CompleteProfileForm';
 import ConfirmSubmitOtp from '../ConfirmSubmitOtp';
+import CreateSuccessCard from '../CreateSuccessCard';
 import {
-  ratingOf, STR, CATS, TEAM, SUGGESTS, TRAVEL_APPS, sitesFor, AIMAGS, AIMAG_MN_SCRIPT,
+  ratingOf, STR, CATS, FAQ, TEAM, SUGGESTS, TRAVEL_APPS, sitesFor, AIMAGS, AIMAG_MN_SCRIPT,
   GEO_MN, LABEL_OFF, AIMAG_BG,
   catBgOf, itemThumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, xyToLonLat, mapsUrlFor,
   type Pin, type CatItem, type Cat, type CountrySiteRow,
@@ -26,7 +27,7 @@ import { apiGet, apiGetAuthed } from '../../lib/api';
 import { getSession, saveSession, clearSession } from '../../lib/session';
 import { createPlace, createScenicPin, createEvent } from '../../lib/userContent';
 import { getFavoriteKeys, addFavorite, removeFavorite } from '../../lib/favorites';
-import { BgMedia } from './ui';
+import { getAttendingEventIds, attendEvent, unattendEvent } from '../../lib/eventAttend';
 
 // Replaces react-router's <Outlet context={V}/> + useOutletContext() pair —
 // Next.js layouts render `children`, not an Outlet, so the computed `V`
@@ -125,6 +126,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // React state, since it carries raw File objects from CreateForm) so it
   // can be replayed automatically once UserAuthForm produces a session.
   _pendingCreate: { kind: 'place' | 'scenic' | 'event'; data: CreateFormData } | null = null;
+  // Which "Контент нэмэх" card was clicked while the sign-in / complete-profile
+  // gate was still unmet — the create form it asked for is opened once that
+  // gate clears (see openCreateForm / onUserAuthed / onProfileCompleted).
+  // Distinct from _pendingCreate, which holds an already-filled submission.
+  _pendingOpen: 'place' | 'scenic' | 'event' | null = null;
   globeEngine: any = null;
   _globeEl: any = null;
   _globeTimer: any = null;
@@ -146,7 +152,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   state: any = {
     active: -1, aimag: 'Бүгд', lang: 'mn', locOpen: false,
-    pin: -1, favs: {}, joined: {}, mapAimag: null, hoverAimag: null,
+    // joined: eventId → is this session attending; attendCounts: eventId →
+    // how many people in total are (see fetchLiveContent/fetchMyAttending).
+    pin: -1, favs: {}, joined: {}, attendCounts: {}, mapAimag: null, hoverAimag: null,
     spNeeds: false, bigText: false, globeCountry: null, globeHover: null, globeFilter: null,
     globeQuery: '', globeReady: false, countrySites: [] as CountrySiteRow[], globeActiveSite: null as number | null,
     showScenicForm: false,
@@ -163,6 +171,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // profile-complete both already passed. See ConfirmSubmitOtp /
     // onConfirmOtpVerified.
     showConfirmOtp: false,
+    // Which kind just finished creating ('place' | 'scenic' | 'event'), which
+    // is also what puts CreateSuccessCard on screen. null = nothing to confirm.
+    createdKind: null as 'place' | 'scenic' | 'event' | null,
     // This session's own name/phoneNumber/socialMediaURL, fetched once signed
     // in — see fetchMyProfile. null until fetched (or if never completed).
     myProfile: null as ProfileInfo | null,
@@ -198,6 +209,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
     catVideoOverride: cachedMap('bb_cat_video_bg'),
     // Per-"Санал болгох" card background photo, keyed by SUGGESTS slug.
     suggestBgOverride: cachedMap('bb_suggest_bg'),
+    // Per-team-member photo shown inside their About-page badge, keyed by the
+    // TEAM slug — uploaded in Admin Panel → Фон зураг → Багийн гишүүдийн зураг.
+    teamImgOverride: cachedMap('bb_team_img'),
     heroVertPos: null,
     // Tracked via a resize listener (see componentDidMount) since this whole
     // file styles elements with inline style objects — inline styles can't
@@ -245,7 +259,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // lib/session.ts), not kept in this component's own state — this just
     // loads this session's own place submissions once, on mount.
     const session = getSession();
-    if (session) { this.fetchMyPlaces(session.token); this.fetchMyFavorites(session.token); this.fetchMyProfile(session.token); }
+    if (session) { this.fetchMyPlaces(session.token); this.fetchMyFavorites(session.token); this.fetchMyAttending(session.token); this.fetchMyProfile(session.token); }
     this._mnVertResize = () => { this.updateHeroVertPos(); };
     window.addEventListener('resize', this._mnVertResize);
     this._vwResize = () => { if (this.state.vw !== window.innerWidth) this.setState({ vw: window.innerWidth }); };
@@ -320,7 +334,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   // Admin Panel can update these via the "Фон зураг" tab — if the backend isn't
   // running or hasn't been set up yet, this silently keeps the built-in placeholder.
   fetchSettings = () => {
-    apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; travelAppsBackgroundImages: Record<string, string> | null }>('/settings')
+    apiGet<{ aboutBackgroundImage: string | null; homeBackgroundImage: string | null; mongoliaFlagImage: string | null; suggestBackgroundImages: Record<string, string> | null; travelAppsBackgroundImages: Record<string, string> | null; teamImages: Record<string, string> | null }>('/settings')
       .then((s) => {
         if (s.aboutBackgroundImage) this.setState({ aboutBgOverride: s.aboutBackgroundImage });
         if (s.homeBackgroundImage) this.setState({ homeBgOverride: s.homeBackgroundImage });
@@ -330,12 +344,14 @@ export default class BigBangLayout extends React.Component<Props, any> {
         }
         if (s.suggestBackgroundImages) this.setState({ suggestBgOverride: s.suggestBackgroundImages });
         if (s.travelAppsBackgroundImages) this.setState({ travelAppsBgOverride: s.travelAppsBackgroundImages });
+        if (s.teamImages) this.setState({ teamImgOverride: s.teamImages });
         try {
           if (s.aboutBackgroundImage) localStorage.setItem('bb_about_bg', s.aboutBackgroundImage);
           if (s.homeBackgroundImage) localStorage.setItem('bb_home_bg', s.homeBackgroundImage);
           if (s.mongoliaFlagImage) localStorage.setItem('bb_mn_flag', s.mongoliaFlagImage);
           if (s.suggestBackgroundImages) localStorage.setItem('bb_suggest_bg', JSON.stringify(s.suggestBackgroundImages));
           if (s.travelAppsBackgroundImages) localStorage.setItem('bb_travelapps_bg', JSON.stringify(s.travelAppsBackgroundImages));
+          if (s.teamImages) localStorage.setItem('bb_team_img', JSON.stringify(s.teamImages));
         } catch (err) { /* ignore */ }
       })
       .catch(() => {});
@@ -382,7 +398,23 @@ export default class BigBangLayout extends React.Component<Props, any> {
       apiGet<any[]>('/scenic-pins'),
       apiGet<any[]>('/brands/active'),
     ]).then(([livePlaces, liveEvents, liveScenicPins, liveBrands]) => {
-      this.setState({ livePlaces, liveEvents, liveScenicPins, liveBrands });
+      // GET /events carries _count.attendees — flattened into its own id→count
+      // map so the "Очно" button's optimistic bump has one place to write to,
+      // instead of having to patch rows inside liveEvents.
+      const attendCounts: Record<number, number> = {};
+      liveEvents.forEach((ev: any) => { attendCounts[ev.id] = ev._count?.attendees ?? 0; });
+      this.setState({ livePlaces, liveEvents, liveScenicPins, liveBrands, attendCounts });
+    }).catch(() => {});
+  };
+
+  // Which events this session has already pressed "Очно" on, so the button
+  // comes back pressed after a refresh (the public /events payload carries
+  // only the totals, never who is attending).
+  fetchMyAttending = (token: string) => {
+    getAttendingEventIds(token).then((ids) => {
+      const joined: Record<number, boolean> = {};
+      ids.forEach((id) => { joined[id] = true; });
+      this.setState({ joined });
     }).catch(() => {});
   };
 
@@ -1140,12 +1172,46 @@ export default class BigBangLayout extends React.Component<Props, any> {
     };
     const heartOf = (on: boolean) => ({ favOn: on, heartColor: on ? accent : 'rgba(242,237,227,.9)' });
 
+    // "Очно" — a real EventAttendee row per (event, user) rather than the
+    // local-only toggle this used to be, keyed by the event's own id. Same
+    // shape as toggleFav above: sign-in required, optimistic flip, reverted
+    // if the write fails. The headcount is nudged alongside it so the number
+    // next to the button moves in the same frame as the button itself; the
+    // backend's own fresh count then replaces the guess.
     const joined = this.state.joined || {};
-    const toggleJoin = (key: string) => (ev: any) => { if (ev && ev.stopPropagation) ev.stopPropagation(); this.setState((s: any) => ({ joined: { ...s.joined, [key]: !s.joined[key] } })); };
-    const joinOf = (on: boolean) => ({
+    const attendCounts = this.state.attendCounts || {};
+    const toggleJoin = (eventId: number) => async (ev: any) => {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      const session = getSession();
+      if (!session) { this.setState({ showUserAuthForm: true }); return; }
+      const nowOn = !joined[eventId];
+      const before = attendCounts[eventId] ?? 0;
+      this.setState((s: any) => ({
+        joined: { ...s.joined, [eventId]: nowOn },
+        attendCounts: { ...s.attendCounts, [eventId]: Math.max(0, (s.attendCounts?.[eventId] ?? 0) + (nowOn ? 1 : -1)) },
+      }));
+      try {
+        if (nowOn) {
+          const count = await attendEvent(session.token, eventId);
+          this.setState((s: any) => ({ attendCounts: { ...s.attendCounts, [eventId]: count } }));
+        } else {
+          await unattendEvent(session.token, eventId);
+        }
+      } catch (err) {
+        this.setState((s: any) => ({
+          joined: { ...s.joined, [eventId]: !nowOn },
+          attendCounts: { ...s.attendCounts, [eventId]: before },
+        }));
+      }
+    };
+    const joinOf = (on: boolean, count: number) => ({
       joinedOn: on, joinLabel: on ? L.evJoined : L.evJoin,
       joinBg: on ? accent : 'rgba(0,0,0,.55)', joinColor: on ? '#132a1f' : '#f6f1e7',
       joinBorder: on ? accent : 'rgba(255,255,255,.28)',
+      // Rendered next to the button; the "0 хүн очно" case is deliberately
+      // still shown rather than hidden — a brand-new event reading "0 хүн
+      // очно" is clearer than a number that silently appears later.
+      attendCount: count, attendLabel: count + ' ' + L.evAttendSuffix,
     });
 
     const favPlaces: any[] = [];
@@ -1208,15 +1274,39 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // Same shared "add place/scenic/event" modal Admin uses too (map picker +
     // what3words + satellite tiles included) — see CreateForm.tsx. No "host"
     // tier: any signed-in account can submit all three (a place just lands
-    // `pending` until an admin approves it — see app/api/places/route.ts). A
-    // signed-out visitor is prompted with the lightweight OTP UserAuthForm;
-    // a signed-in one without a complete profile (name/phone/Instagram/email)
-    // is prompted with CompleteProfileForm instead; either way, once both of
-    // those clear, ConfirmSubmitOtp gates the actual create — an OTP
-    // re-verify required on every single submission, not just once (see
-    // onConfirmOtpVerified). The submission itself is replayed automatically
-    // once every gate clears.
-    const openPlaceForm = () => this.setState({ showPlaceForm: true });
+    // `pending` until an admin approves it — see app/api/places/route.ts).
+    //
+    // Two gates stand in front of the form, and both are checked up-front on
+    // the "Контент нэмэх" card click rather than at submit time, so nobody
+    // fills in a whole place/event form only to be told at the end that they
+    // can't post it: a signed-out visitor gets the lightweight OTP
+    // UserAuthForm, and a signed-in one whose profile is still missing a
+    // name/phone/Instagram/email gets CompleteProfileForm. Whichever card was
+    // clicked is remembered in _pendingOpen and opened for real once the gate
+    // it tripped clears.
+    //
+    // The submit handlers below re-check both anyway (a session can expire
+    // while the form sits open), and past them ConfirmSubmitOtp gates the
+    // actual create — an OTP re-verify required on every single submission,
+    // not just once (see onConfirmOtpVerified). A submission held up by any
+    // of this is replayed automatically once every gate clears.
+    const showFormFor = (kind: 'place' | 'scenic' | 'event') =>
+      this.setState(kind === 'place' ? { showPlaceForm: true } : kind === 'scenic' ? { showScenicForm: true } : { showEventForm: true });
+    const openCreateForm = async (kind: 'place' | 'scenic' | 'event') => {
+      const session = getSession();
+      if (!session) { this._pendingOpen = kind; this.setState({ showUserAuthForm: true }); return; }
+      // myProfile is fetched once on mount, so it can be null (clicked before
+      // that landed) or stale (completed in another tab). Only re-fetch when
+      // the cached copy looks incomplete — that keeps the common case instant
+      // while making sure nobody gets a "complete your profile" prompt they've
+      // already satisfied.
+      let profile = this.state.myProfile;
+      if (!this.isProfileComplete(profile)) profile = await this.fetchMyProfile(session.token);
+      if (!this.isProfileComplete(profile)) { this._pendingOpen = kind; this.setState({ showCompleteProfileForm: true }); return; }
+      this._pendingOpen = null;
+      showFormFor(kind);
+    };
+    const openPlaceForm = () => openCreateForm('place');
     const onPlaceSubmit = async (data: CreateFormData) => {
       const session = getSession();
       if (!session) { this._pendingCreate = { kind: 'place', data }; this.setState({ showPlaceForm: false, showUserAuthForm: true }); return; }
@@ -1224,7 +1314,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       this._pendingCreate = { kind: 'place', data };
       this.setState({ showPlaceForm: false, showConfirmOtp: true });
     };
-    const openScenicForm = () => this.setState({ showScenicForm: true });
+    const openScenicForm = () => openCreateForm('scenic');
     const onScenicSubmit = async (data: CreateFormData) => {
       const session = getSession();
       if (!session) { this._pendingCreate = { kind: 'scenic', data }; this.setState({ showScenicForm: false, showUserAuthForm: true }); return; }
@@ -1232,7 +1322,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       this._pendingCreate = { kind: 'scenic', data };
       this.setState({ showScenicForm: false, showConfirmOtp: true });
     };
-    const openEventForm = () => this.setState({ showEventForm: true });
+    const openEventForm = () => openCreateForm('event');
     const onEventSubmit = async (data: CreateFormData) => {
       const session = getSession();
       if (!session) { this._pendingCreate = { kind: 'event', data }; this.setState({ showEventForm: false, showUserAuthForm: true }); return; }
@@ -1240,7 +1330,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       this._pendingCreate = { kind: 'event', data };
       this.setState({ showEventForm: false, showConfirmOtp: true });
     };
-    const closeUserAuthForm = () => { this._pendingCreate = null; this.setState({ showUserAuthForm: false }); };
+    const closeUserAuthForm = () => { this._pendingCreate = null; this._pendingOpen = null; this.setState({ showUserAuthForm: false }); };
     // UserAuthForm already did the OTP verify (that's the sign-in check) —
     // this saves the resulting session, then checks the (freshly-fetched, not
     // possibly-stale state) profile before continuing whatever place/scenic/
@@ -1254,14 +1344,24 @@ export default class BigBangLayout extends React.Component<Props, any> {
       this.setState({ showUserAuthForm: false });
       this.fetchMyPlaces(token);
       this.fetchMyFavorites(token);
+      this.fetchMyAttending(token);
       const profile = await this.fetchMyProfile(token);
       const pending = this._pendingCreate;
+      // Signed in from a "Контент нэмэх" card rather than mid-submission —
+      // the profile gate still has to clear before that form can open.
+      if (!pending && this._pendingOpen) {
+        if (!this.isProfileComplete(profile)) { this.setState({ showCompleteProfileForm: true }); return; }
+        const kind = this._pendingOpen;
+        this._pendingOpen = null;
+        showFormFor(kind);
+        return;
+      }
       if (!pending) return;
       if (!this.isProfileComplete(profile)) { this.setState({ showCompleteProfileForm: true }); return; }
       this.setState({ showConfirmOtp: true });
     };
-    const closeCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: false }); };
-    const openCompleteProfileForm = () => { this._pendingCreate = null; this.setState({ showCompleteProfileForm: true }); };
+    const closeCompleteProfileForm = () => { this._pendingCreate = null; this._pendingOpen = null; this.setState({ showCompleteProfileForm: false }); };
+    const openCompleteProfileForm = () => { this._pendingCreate = null; this._pendingOpen = null; this.setState({ showCompleteProfileForm: true }); };
     // CompleteProfileForm's save hit a 401 because the account behind this
     // session no longer exists (a long-lived token outliving a removed
     // account) — the stale session can't be salvaged, so clear it and
@@ -1280,6 +1380,14 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const onProfileCompleted = async (profile: ProfileInfo) => {
       this.setState({ showCompleteProfileForm: false, myProfile: profile });
       const pending = this._pendingCreate;
+      // Came from a "Контент нэмэх" card that was blocked on this gate — now
+      // that the profile is on file, open the form they actually asked for.
+      if (!pending && this._pendingOpen) {
+        const kind = this._pendingOpen;
+        this._pendingOpen = null;
+        showFormFor(kind);
+        return;
+      }
       if (!pending) return;
       this.setState({ showConfirmOtp: true });
     };
@@ -1295,10 +1403,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
       if (!pending || !session) return;
       try {
         await this.submitPending(pending.kind, pending.data, session.token);
+        // Only after the create actually lands — a failed submit falls into
+        // the catch below and must not look like a success.
+        this.setState({ createdKind: pending.kind });
       } catch (err) {
         alert(err instanceof Error ? err.message : String(err));
       }
     };
+    const closeCreated = () => this.setState({ createdKind: null });
+    const createdGoProfile = () => { this.setState({ createdKind: null }); go('profile'); };
     // Clears the session (lib/session.ts) and this session's own fetched
     // place list — myScenic/myEvents don't need clearing since they're
     // re-derived from getSession() fresh on every render (see mySession
@@ -1307,7 +1420,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // account's data until a refresh.
     const logout = () => {
       clearSession();
-      this.setState({ myPlaces: [], favs: {} });
+      // `joined` goes too — it's this session's own attendance, not public
+      // data; attendCounts stays, since the totals are the same for everyone.
+      this.setState({ myPlaces: [], favs: {}, joined: {} });
       // Otherwise "Гарах" leaves you sitting on /profile, which — now
       // logged out — has nothing of its own to show and falls back to a
       // "please sign in" placeholder instead of just taking you somewhere
@@ -1429,6 +1544,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // sitting there under a flat black scrim.
     const aimagBgLoading = aimag !== 'Бүгд' && !aimagBgLayers.some((l) => l.key === aimag && l.bg);
 
+    // Admin-uploaded team portraits (slug → url), used by V.team below. Gated
+    // on _mounted for the same reason mySession is — teamImgOverride is seeded
+    // from localStorage, which the server can't read, so using it during the
+    // hydration render would put photos where the server rendered initials.
+    const teamImgs: Record<string, string> = this._mounted ? (this.state.teamImgOverride || {}) : {};
+
     // "Миний нэмсэн..." on the Profile page — this session's own submissions.
     // Places come pre-filtered from the server (GET /places/mine, see
     // fetchMyPlaces) since only approved ones are public in the first place;
@@ -1466,7 +1587,14 @@ export default class BigBangLayout extends React.Component<Props, any> {
       ? liveEvents.map((ev: any, idx: number) => ({ ev, idx })).filter((o) => o.ev.addedBy === mySession.user.id)
         .map((o) => {
           const { day, mon } = eventDayMon(o.ev.startDate);
-          return { day, mon, name: o.ev.name, meta: o.ev.meta || '', tag: o.ev.tag || L.eTagFallback, open: () => this.openEventDetail(o.idx) };
+          const count = attendCounts[o.ev.id] ?? 0;
+          return {
+            day, mon, name: o.ev.name, meta: o.ev.meta || '', tag: o.ev.tag || L.eTagFallback,
+            // How many people pressed "Очно" — the organiser's own headcount,
+            // shown right on their card so they don't have to open the event.
+            attendCount: count, attendLabel: count + ' ' + L.evAttendSuffix,
+            open: () => this.openEventDetail(o.idx),
+          };
         })
       : [];
 
@@ -1519,6 +1647,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
       showUserAuthForm: st.showUserAuthForm, closeUserAuthForm, onUserAuthed,
       showCompleteProfileForm: st.showCompleteProfileForm, closeCompleteProfileForm, openCompleteProfileForm, onProfileCompleted, onProfileFormSessionExpired,
       showConfirmOtp: st.showConfirmOtp, closeConfirmOtp, onConfirmOtpVerified,
+      createdKind: st.createdKind, closeCreated, createdGoProfile,
+      // The account's own OTP-verified contact pair, handed to CreateForm so
+      // its phone/email fields come pre-filled and locked.
+      lockedContact: { phone: st.myProfile?.phoneNumber || '', email: st.myProfile?.email || '' },
       myProfile: st.myProfile,
       // Lets a page-level "rate this" widget (PlaceDetail/EventDetail) prompt
       // sign-in on demand, same modal as place/scenic/event submission —
@@ -1530,7 +1662,20 @@ export default class BigBangLayout extends React.Component<Props, any> {
       hasMyScenic: myScenicItems.length > 0, myScenicItems,
       hasMyEvents: myEventItems.length > 0, myEventItems,
       aboutNavColor: route === 'about' ? accent : 'rgba(242,237,227,.75)',
-      team: TEAM.map((t, i) => ({ name: t[0], role: lang === 'en' ? t[2] : t[1], initial: t[0].charAt(0), avatarBg: 'oklch(78% 0.1 ' + (30 + i * 34) + ')' })),
+      // `img` is the admin-uploaded portrait for that member (Admin Panel → Фон
+      // зураг → Багийн гишүүдийн зураг), keyed by the TEAM slug — empty for
+      // anyone without one, which keeps their coloured initial circle. Gated on
+      // _mounted for the same reason mySession is: teamImgOverride is seeded
+      // from localStorage, which the server can't see, so reading it during
+      // hydration would render photos where the server rendered letters.
+      // FAQ accordion at the bottom of the Profile page — question/answer in
+      // whichever language is active (see FAQ in data.ts).
+      faq: FAQ.map((f) => ({ q: lang === 'en' ? f[2] : f[0], a: lang === 'en' ? f[3] : f[1] })),
+      team: TEAM.map((t, i) => ({
+        name: t[0], role: lang === 'en' ? t[2] : t[1], initial: t[0].charAt(0),
+        avatarBg: 'oklch(78% 0.1 ' + (30 + i * 34) + ')',
+        img: teamImgs[t[3]] ? imgUrl(teamImgs[t[3]], 300) : '',
+      })),
       abHeroFullBg: 'url("' + imgUrl(this.state.aboutBgOverride || '1470071459604-3b5ec3a7fe05', 1800) + '")',
       abHeroIsVideo: isVideoUrl(this.state.aboutBgOverride || ''), abHeroRawUrl: this.state.aboutBgOverride || '',
       homeHeroBg: this.state.homeBgOverride
@@ -1604,10 +1749,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
           lat: ev.lat ?? undefined, lng: ev.lng ?? undefined,
           thumb: 'linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35)), url("' + imgUrl((ev.images && ev.images[0]) || '', 800) + '")',
         };
-      }).map((ev: any, i: number) => {
-        const key = 'e:' + ev.name;
-        return { ...ev, toggleJoin: toggleJoin(key), ...joinOf(!!joined[key]), onClick: () => this.openEventDetail(i) };
-      }),
+      }).map((ev: any, i: number) => ({
+        ...ev,
+        toggleJoin: toggleJoin(ev.id),
+        ...joinOf(!!joined[ev.id], attendCounts[ev.id] ?? 0),
+        onClick: () => this.openEventDetail(i),
+      })),
       // Backs ScenicDetail (/scenic/:index) — same index-into-this-array
       // convention as V.events, built straight off this.allPins() so the
       // index openScenicDetail(i) navigates with always matches.
@@ -1762,12 +1909,17 @@ export default class BigBangLayout extends React.Component<Props, any> {
         <BigBangContext.Provider value={V}>{this.props.children}</BigBangContext.Provider>
 
         {/* Same shared modal Host/Admin use — map picker, what3words, satellite tiles included. */}
-        {V.showPlaceForm && <CreateForm kind="place" onClose={V.closePlaceForm} onSubmit={V.onPlaceSubmit} />}
-        {V.showScenicForm && <CreateForm kind="scenic" onClose={V.closeScenicForm} onSubmit={V.onScenicSubmit} />}
-        {V.showEventForm && <CreateForm kind="event" onClose={V.closeEventForm} onSubmit={V.onEventSubmit} />}
+        {/* lockedContact pre-fills and freezes the phone/email fields with this
+            account's own registered pair — both are already OTP-verified (at
+            sign-in, and again per submission via ConfirmSubmitOtp), so the
+            listing always carries a contact that's actually reachable. */}
+        {V.showPlaceForm && <CreateForm kind="place" lockedContact={V.lockedContact} onClose={V.closePlaceForm} onSubmit={V.onPlaceSubmit} />}
+        {V.showScenicForm && <CreateForm kind="scenic" lockedContact={V.lockedContact} onClose={V.closeScenicForm} onSubmit={V.onScenicSubmit} />}
+        {V.showEventForm && <CreateForm kind="event" lockedContact={V.lockedContact} onClose={V.closeEventForm} onSubmit={V.onEventSubmit} />}
         {V.showUserAuthForm && <UserAuthForm onClose={V.closeUserAuthForm} onAuthed={V.onUserAuthed} />}
         {V.showCompleteProfileForm && <CompleteProfileForm initial={V.myProfile} token={V.mySessionToken} onClose={V.closeCompleteProfileForm} onSaved={V.onProfileCompleted} onSessionExpired={V.onProfileFormSessionExpired} />}
         {V.showConfirmOtp && <ConfirmSubmitOtp phone={V.myProfile?.phoneNumber || ''} email={V.myProfile?.email || ''} token={V.mySessionToken} onClose={V.closeConfirmOtp} onVerified={V.onConfirmOtpVerified} />}
+        {V.createdKind && <CreateSuccessCard kind={V.createdKind} L={V.L} onClose={V.closeCreated} onGoProfile={V.createdGoProfile} />}
       </div>
     );
   }
