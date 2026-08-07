@@ -1713,7 +1713,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
                         <Link href="/login" onClick={V.closeMobileMenu} className="cursor-pointer rounded-full border border-[rgba(242,237,227,.28)] bg-transparent px-[15px] py-1.5 font-[inherit] text-[12.5px] font-semibold text-cream no-underline">{V.L.signin}</Link>
                       )}
                       {V.loggedIn && (
-                        <button onClick={() => { V.openProfile(); V.closeMobileMenu(); }} title={V.L.profile} className="flex h-[34px] w-[34px] flex-none cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
+                        <button onClick={() => { V.openProfile(); V.closeMobileMenu(); }} title={V.L.profile} className="flex h-[34px] w-[34px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-full font-[inherit] text-[13px] font-extrabold transition-colors duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>
+                          {V.myProfile?.avatarImage ? <img src={imgUrl(V.myProfile.avatarImage, 68)} alt="" className="h-full w-full object-cover" /> : (V.myProfile?.name || 'Б').charAt(0).toUpperCase()}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1753,7 +1755,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
               )}
 
               {V.loggedIn && (
-                <button onClick={V.openProfile} title={V.L.profile} className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-full font-[inherit] text-[13px] font-extrabold transition-all duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>Б</button>
+                <button onClick={V.openProfile} title={V.L.profile} className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center overflow-hidden rounded-full font-[inherit] text-[13px] font-extrabold transition-all duration-200 hover:border-[var(--accent,#E8B84B)]" style={{ border: `1px solid ${V.profileBorder}`, background: V.profileBg, color: V.profileColor }}>
+                  {V.myProfile?.avatarImage ? <img src={imgUrl(V.myProfile.avatarImage, 56)} alt="" className="h-full w-full object-cover" /> : (V.myProfile?.name || 'Б').charAt(0).toUpperCase()}
+                </button>
               )}
             </div>
           )}
