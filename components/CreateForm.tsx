@@ -6,7 +6,7 @@
 // image-upload + accessibility-criteria logic isn't duplicated a second time.
 // Reuses the same static data as BigBang (bigbang/data.ts). No "host" tier —
 // place submissions from any signed-in account land pending admin approval.
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Accessibility, MapPin } from 'lucide-react';
 import { useIsMobile } from './bigbang/ui';
 import { AIMAGS, CATS, FCRIT } from './bigbang/data';
@@ -78,6 +78,14 @@ interface Props {
   // submit() produces, plus `id`/`existingImages` for round-tripping the
   // unchanged photos. Ignored when mode is 'create' (or omitted).
   initial?: Partial<CreateFormData>;
+  // The signed-in account's own registered phone/email (see BigBangLayout's
+  // myProfile). When passed, those two contact fields are pre-filled from it
+  // and locked — the account already proved ownership of both by OTP at
+  // sign-in and again at submit (ConfirmSubmitOtp), so letting someone type a
+  // different number here would put an unverified contact on the listing.
+  // Omitted by Admin, which creates rows on other people's behalf and does
+  // need to type their contact details in.
+  lockedContact?: { phone?: string | null; email?: string | null };
   onClose: () => void;
   onSubmit: (data: CreateFormData) => void | Promise<void>;
 }
@@ -96,7 +104,22 @@ const EDIT_TITLES: Record<CreateKind, string> = {
 const SCENIC_ICONS = ['🏔️', '🏞️', '🌄', '⛺', '🌅', '🏝️', '🎭', '🌲', '⛰️', '🏛️', '🌌', '🎯'];
 const MAX_IMAGES = 4;
 
-export default function CreateForm({ kind, mode = 'create', initial, onClose, onSubmit }: Props) {
+// Sits under the input rather than beside the label (which is where
+// CompleteProfileForm puts its own version): these fields are laid out two to
+// a row here, and a note long enough to wrap the label onto a second line
+// pushed that column's input down out of line with its neighbour's.
+// Instagram/Facebook are one requirement between them, so the rule is stated
+// once under the pair instead of an asterisk on each field (which would read
+// as "both mandatory"). Turns red only once a submit has actually failed.
+const SOCIAL_HINT_TEXT = 'Instagram эсвэл Facebook хаягийн аль нэгийг заавал оруулна уу';
+const SOCIAL_HINT = 'text-[11px] text-[rgba(242,237,227,.45)]';
+const SOCIAL_HINT_ERR = 'text-[11px] font-bold text-[#f08a8a]';
+
+const LOCKED_NOTE = 'Бүртгэлтэй дугаар/хаяг — өөрчлөх боломжгүй';
+const lockedNoteClass = 'text-[11px] text-[rgba(242,237,227,.4)]';
+const lockedInputClass = 'cursor-not-allowed opacity-60';
+
+export default function CreateForm({ kind, mode = 'create', initial, lockedContact, onClose, onSubmit }: Props) {
   const isMobile = useIsMobile();
   // Inputs below 16px make iOS Safari zoom the whole page in on focus — bump
   // to 16px only on small screens so the desktop layout stays as designed.
@@ -105,11 +128,16 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const [name, setName] = useState(initial?.name || '');
   const [desc, setDesc] = useState(initial?.desc || '');
   const [aimag, setAimag] = useState(initial?.aimag || 'Улаанбаатар');
-  const [phone, setPhone] = useState(initial?.phone || '');
+  // A locked value wins over `initial` — it's the account's own verified
+  // contact, and `initial` only carries a different one when Admin is editing
+  // someone else's row (which never passes lockedContact in the first place).
+  const lockedPhone = (lockedContact?.phone || '').trim();
+  const lockedEmail = (lockedContact?.email || '').trim();
+  const [phone, setPhone] = useState(lockedPhone || initial?.phone || '');
   const [phone2, setPhone2] = useState(initial?.phone2 || '');
   const [instagram, setInstagram] = useState(initial?.instagram || '');
   const [facebook, setFacebook] = useState(initial?.facebook || '');
-  const [contactEmail, setContactEmail] = useState(initial?.contactEmail || '');
+  const [contactEmail, setContactEmail] = useState(lockedEmail || initial?.contactEmail || '');
   const [catSlug, setCatSlug] = useState(initial?.catSlug || CATS[0].slug);
   const [sub, setSub] = useState(initial?.sub || (CATS.find((c) => c.slug === initial?.catSlug) || CATS[0]).subs[0]);
   const [openTime, setOpenTime] = useState(initial?.openTime || '');
@@ -153,7 +181,12 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   const [locQuery, setLocQuery] = useState('');
   const [locLoading, setLocLoading] = useState(false);
   const [locErr, setLocErr] = useState('');
-  const [placeResults, setPlaceResults] = useState<{ name: string; lat: number; lng: number }[]>([]);
+  const [placeResults, setPlaceResults] = useState<{ name: string; label?: string; lat: number; lng: number }[]>([]);
+  // Set the moment a suggestion is picked (or a pin is dropped from a
+  // URL/w3w lookup), so the debounced as-you-type search below doesn't
+  // immediately re-query the name it just wrote into the box and reopen the
+  // dropdown over a location the user already chose.
+  const suppressSuggestRef = useRef(false);
 
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -221,7 +254,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
     setPlaceResults([]);
     try {
       const direct = extractGoogleMapsCoords(val);
-      if (direct) { applyLocation(direct.lat, direct.lng, 17); return; }
+      if (direct) { suppressSuggestRef.current = true; applyLocation(direct.lat, direct.lng, 17); return; }
 
       if (GMAPS_SHORT_RE.test(val)) {
         const res = await fetch(`/api/resolve-maps-url?url=${encodeURIComponent(val)}`);
@@ -255,10 +288,43 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   }, [locQuery, applyLocation]);
 
   const pickPlaceResult = useCallback((r: { name: string; lat: number; lng: number }) => {
+    suppressSuggestRef.current = true;
     applyLocation(r.lat, r.lng, 15);
     setPlaceResults([]);
     setLocQuery(r.name);
   }, [applyLocation]);
+
+  // Google-Maps-style as-you-type suggestions. The "Хайх" button stays for
+  // the pasted-link / what3words paths, which are one-shot lookups that drop
+  // the pin directly and would be wasteful (and jarring) to run per keystroke
+  // — this only ever runs the free-text branch.
+  useEffect(() => {
+    if (suppressSuggestRef.current) { suppressSuggestRef.current = false; return; }
+    const val = locQuery.trim();
+    // Two characters is where Mongolian queries start being worth a lookup;
+    // anything shorter matches half the country.
+    if (val.length < 2) { setPlaceResults([]); return; }
+    // Links and 3-word addresses resolve to one exact point — those belong to
+    // the button, not to a suggestion list.
+    if (GMAPS_SHORT_RE.test(val) || W3W_URL_RE.test(val) || W3W_DETECT_RE.test(val) || extractGoogleMapsCoords(val)) {
+      setPlaceResults([]);
+      return;
+    }
+    let alive = true;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(val)}`);
+        if (!res.ok) return;
+        const body = await res.json();
+        if (alive && Array.isArray(body)) setPlaceResults(body);
+      } catch {
+        // Silent — an as-you-type lookup failing shouldn't put an error under
+        // the field while the user is still typing. The explicit "Хайх"
+        // button still surfaces failures properly.
+      }
+    }, 350);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [locQuery]);
 
   const attachMap = useCallback((node: HTMLDivElement | null) => {
     if (!node) {
@@ -319,17 +385,21 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
   // app/api/places/route.ts, which requires + format-checks these too).
   const PHONE_RE = /^\d{8}$/;
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const placeContactMissing = kind === 'place' && (!phone.trim() || !instagram.trim() || !facebook.trim() || !contactEmail.trim());
+  // Instagram/Facebook count as one requirement between them — plenty of
+  // venues and organizers only run one of the two, and either is enough to
+  // reach them. Both API routes enforce the same pairing.
+  const socialMissing = !instagram.trim() && !facebook.trim();
+  const placeContactMissing = kind === 'place' && (!phone.trim() || socialMissing || !contactEmail.trim());
   const placePhoneInvalid = kind === 'place' && !!phone.trim() && !PHONE_RE.test(phone.trim());
   const placeEmailInvalid = kind === 'place' && !!contactEmail.trim() && !EMAIL_RE.test(contactEmail.trim());
   const placeContactInvalid = placeContactMissing || placePhoneInvalid || placeEmailInvalid;
   const placeHoursMissing = kind === 'place' && (!openTime || !closeTime);
   const eventMissing = kind === 'event' && (!date || !time || !max.trim());
-  // Event contact info mirrors place's (see PHONE_RE above) minus
-  // facebook/email — attendees/admin reach the organizer by phone or
-  // Instagram. `phone2` is a genuinely optional second number, never
-  // required and never format-checked unless something's actually in it.
-  const eventContactMissing = kind === 'event' && (!phone.trim() || !instagram.trim());
+  // Event contact info mirrors place's (see PHONE_RE above) minus email —
+  // attendees/admin reach the organizer by phone or one of the two socials.
+  // `phone2` is a genuinely optional second number, never required and never
+  // format-checked unless something's actually in it.
+  const eventContactMissing = kind === 'event' && (!phone.trim() || socialMissing);
   const eventPhoneInvalid = kind === 'event' && !!phone.trim() && !PHONE_RE.test(phone.trim());
   const eventPhone2Invalid = kind === 'event' && !!phone2.trim() && !PHONE_RE.test(phone2.trim());
   const eventContactInvalid = eventContactMissing || eventPhoneInvalid || eventPhone2Invalid;
@@ -383,7 +453,8 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
       data.icon = icon; data.scenicType = scenicType.trim();
     } else {
       data.date = date; data.time = time; data.max = max.trim();
-      data.phone = phone.trim(); data.phone2 = phone2.trim(); data.instagram = instagram.trim();
+      data.phone = phone.trim(); data.phone2 = phone2.trim();
+      data.instagram = instagram.trim(); data.facebook = facebook.trim();
     }
     setSubmitting(true);
     try {
@@ -417,32 +488,39 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Утасны дугаар <span className="text-[#f08a8a]">*</span></span>
                   <input
-                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} onBlur={() => setPhoneTouched(true)} placeholder="99112233" inputMode="numeric" maxLength={8}
-                    className={`${inputClass} ${inputFontClass}`}
+                    value={phone} disabled={!!lockedPhone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} onBlur={() => setPhoneTouched(true)} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    className={`${inputClass} ${inputFontClass} ${lockedPhone ? lockedInputClass : ''}`}
                     style={{ borderColor: (err || phoneTouched) && placePhoneInvalid ? '#f08a8a' : undefined }}
                   />
+                  {lockedPhone && <span className={lockedNoteClass}>{LOCKED_NOTE}</span>}
                   {(err || phoneTouched) && placePhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
                 </label>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Имэйл хаяг <span className="text-[#f08a8a]">*</span></span>
                   <input
-                    value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} onBlur={() => setEmailTouched(true)} placeholder="tanii@email.mn" inputMode="email"
-                    className={`${inputClass} ${inputFontClass}`}
+                    value={contactEmail} disabled={!!lockedEmail}
+                    onChange={(e) => setContactEmail(e.target.value)} onBlur={() => setEmailTouched(true)} placeholder="tanii@email.mn" inputMode="email"
+                    className={`${inputClass} ${inputFontClass} ${lockedEmail ? lockedInputClass : ''}`}
                     style={{ borderColor: (err || emailTouched) && placeEmailInvalid ? '#f08a8a' : undefined }}
                   />
+                  {lockedEmail && <span className={lockedNoteClass}>{LOCKED_NOTE}</span>}
                   {(err || emailTouched) && placeEmailInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">Имэйл хаяг буруу байна — жишээ: tanii@email.mn</span>}
                 </label>
               </div>
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <label className="flex flex-col gap-1.5">
-                  <span className={labelSpanClass}>Instagram <span className="text-[#f08a8a]">*</span></span>
+                  <span className={labelSpanClass}>Instagram</span>
                   <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="instagram.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className={labelSpanClass}>Facebook <span className="text-[#f08a8a]">*</span></span>
+                  <span className={labelSpanClass}>Facebook</span>
                   <input value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="facebook.com/skylounge21" className={`${inputClass} ${inputFontClass}`} />
                 </label>
               </div>
+              {/* The asterisk sits on the pair rather than on either field —
+                  one of the two is required, not both. */}
+              <span className={socialMissing && err ? SOCIAL_HINT_ERR : SOCIAL_HINT}>{SOCIAL_HINT_TEXT}</span>
               <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Ангилал</span>
@@ -507,10 +585,12 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                 <label className="flex flex-col gap-1.5">
                   <span className={labelSpanClass}>Утасны дугаар <span className="text-[#f08a8a]">*</span></span>
                   <input
-                    value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} onBlur={() => setPhoneTouched(true)} placeholder="99112233" inputMode="numeric" maxLength={8}
-                    className={`${inputClass} ${inputFontClass}`}
+                    value={phone} disabled={!!lockedPhone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 8))} onBlur={() => setPhoneTouched(true)} placeholder="99112233" inputMode="numeric" maxLength={8}
+                    className={`${inputClass} ${inputFontClass} ${lockedPhone ? lockedInputClass : ''}`}
                     style={{ borderColor: (err || phoneTouched) && eventPhoneInvalid ? '#f08a8a' : undefined }}
                   />
+                  {lockedPhone && <span className={lockedNoteClass}>{LOCKED_NOTE}</span>}
                   {(err || phoneTouched) && eventPhoneInvalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
                 </label>
                 <label className="flex flex-col gap-1.5">
@@ -523,10 +603,18 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                   {(err || phone2Touched) && eventPhone2Invalid && <span className="text-[11px] font-bold text-[#f08a8a]">8 оронтой тоо байх ёстой — жишээ: 99112233</span>}
                 </label>
               </div>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelSpanClass}>Instagram <span className="text-[#f08a8a]">*</span></span>
-                <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="instagram.com/yourevent" className={`${inputClass} ${inputFontClass}`} />
-              </label>
+              <div className={`grid gap-3 ${isMobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Instagram</span>
+                  <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="instagram.com/yourevent" className={`${inputClass} ${inputFontClass}`} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={labelSpanClass}>Facebook</span>
+                  <input value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="facebook.com/yourevent" className={`${inputClass} ${inputFontClass}`} />
+                </label>
+              </div>
+              {/* Same pairing as the place form above — either one satisfies it. */}
+              <span className={socialMissing && err ? SOCIAL_HINT_ERR : SOCIAL_HINT}>{SOCIAL_HINT_TEXT}</span>
             </>
           )}
 
@@ -556,16 +644,22 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                 {locLoading ? '...' : 'Хайх'}
               </button>
               {placeResults.length > 0 && (
-                <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[1100] max-h-[220px] overflow-auto rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[#1a1712] shadow-[0_12px_30px_rgba(0,0,0,.5)]">
-                  <div className="sticky top-0 bg-[#1a1712] px-3 pt-2.5 pb-1.5 text-[10.5px] font-bold uppercase tracking-[.04em] text-[rgba(242,237,227,.45)]">Тохирох илэрцээ сонгоно уу</div>
+                <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[1100] max-h-[280px] overflow-auto rounded-[10px] border border-[rgba(242,237,227,.18)] bg-[#1a1712] shadow-[0_12px_30px_rgba(0,0,0,.5)]">
+                  {/* Name on its own line, address underneath in grey — the
+                      full display_name on one line (what this used to show)
+                      buried the actual place name in a comma-separated
+                      address chain. */}
                   {placeResults.map((r, i) => (
                     <button
                       key={i}
                       onClick={() => pickPlaceResult(r)}
-                      className="flex w-full cursor-pointer items-start gap-2 border-0 border-t border-[rgba(255,255,255,.06)] bg-transparent px-3 py-2.5 text-left font-[inherit] text-[12.5px] leading-[1.4] text-[rgba(242,237,227,.85)] hover:bg-[rgba(255,255,255,.06)]"
+                      className="flex w-full cursor-pointer items-start gap-2.5 border-0 border-t border-[rgba(255,255,255,.06)] bg-transparent px-3 py-2.5 text-left font-[inherit] leading-[1.35] hover:bg-[rgba(255,255,255,.06)] first:border-t-0"
                     >
-                      <MapPin size={13} className="mt-0.5 flex-shrink-0 text-[var(--accent,#E8B84B)]" />
-                      <span>{r.name}</span>
+                      <MapPin size={14} className="mt-0.5 flex-shrink-0 text-[var(--accent,#E8B84B)]" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-bold text-cream">{r.name}</span>
+                        {r.label && <span className="mt-0.5 block truncate text-[11.5px] text-[rgba(242,237,227,.5)]">{r.label}</span>}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -638,7 +732,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                   : kind === 'place' && (placePhoneInvalid || placeEmailInvalid)
                   ? 'Дээрх талбаруудыг зөв бөглөнө үү'
                   : kind === 'place' && placeContactMissing
-                  ? 'Утас, имэйл, Instagram, Facebook-оо бөглөнө үү'
+                  ? 'Утас, имэйл, мөн Instagram/Facebook-ийн аль нэгийг бөглөнө үү'
                   : kind === 'place' && placeHoursMissing
                   ? 'Нээх, хаах цагаа сонгоно уу'
                   : kind === 'event' && eventMissing
@@ -646,7 +740,7 @@ export default function CreateForm({ kind, mode = 'create', initial, onClose, on
                   : kind === 'event' && (eventPhoneInvalid || eventPhone2Invalid)
                   ? 'Дээрх утасны дугаарыг зөв бөглөнө үү'
                   : kind === 'event' && eventContactMissing
-                  ? 'Утас, Instagram-аа бөглөнө үү'
+                  ? 'Утас, мөн Instagram/Facebook-ийн аль нэгийг бөглөнө үү'
                   : 'Талбаруудаа бүрэн бөглөнө үү'}
               </span>
             )}
