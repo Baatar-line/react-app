@@ -101,7 +101,7 @@ export default function AboutPage() {
               so the page below doesn't overlap them. */}
           <div className="flex min-h-[300px] flex-wrap items-start justify-center gap-8 pt-2">
             {V.team.map((tm: any, i: number) => (
-              <LanyardBadge key={i} large letter={tm.initial} name={tm.name} role={tm.role} color={tm.avatarBg} />
+              <LanyardBadge key={i} large letter={tm.initial} name={tm.name} role={tm.role} color={tm.avatarBg} img={tm.img} />
             ))}
           </div>
         </div>

@@ -40,13 +40,20 @@ type Props = {
   role?: string;
   /** Avatar circle color for the `large` card (defaults to the accent gold). */
   color?: string;
+  /** Portrait shown inside the avatar circle instead of the initial — uploaded
+   * per member in Admin Panel → Фон зураг → Багийн гишүүдийн зураг. */
+  img?: string;
 };
 
-export default function LanyardBadge({ letter = 'b', large = false, name, role, color }: Props) {
+export default function LanyardBadge({ letter = 'b', large = false, name, role, color, img }: Props) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const cordRef = useRef<SVGPathElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  // Set by the simulation effect below; called after every render so a layout
+  // shift caused by new props (e.g. the MN/EN switch swapping every role for a
+  // differently-sized translation) re-pins the cord under the ring's new spot.
+  const syncAnchorRef = useRef<(() => void) | null>(null);
   const cardW = large ? 104 : 29;
 
   useEffect(() => {
@@ -81,7 +88,6 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
       anchorY = rect.top + 5; // ring's bottom edge
     };
     measureAnchor();
-    window.addEventListener('resize', measureAnchor);
     // The nav row this was built for is `position:fixed`, so the ring never
     // moves and a resize listener alone was enough. Used inside normal
     // scrolling content (e.g. the About page team grid) the ring moves with
@@ -92,9 +98,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
     // isn't something a lanyard actually feels, so instead of simulating it,
     // just re-pin the whole cord straight under the new anchor position —
     // real swinging is still reserved for an actual grab/release/knock.
-    const onScroll = () => {
-      measureAnchor();
-      if (dragging) return;
+    const repinUnderAnchor = () => {
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
         p.x = anchorX; p.y = anchorY + i * segLen;
@@ -103,7 +107,28 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
       spin = 0; spinVel = 0;
       render();
     };
-    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+    // The cord and card are `position:fixed` and stop redrawing entirely once
+    // the chain settles (tick() drops its rAF), so anything that moves the
+    // in-flow ring afterwards — a scroll, a resize, or a re-render that
+    // reflows the page (the MN/EN switch retranslates every role, which
+    // resizes the blocks above this row) — would leave them stranded at the
+    // old position, visibly detached from their ring. Re-measure and re-pin
+    // whenever the anchor has actually moved; an unchanged anchor is a no-op
+    // so ordinary re-renders never interrupt a swing in progress.
+    function syncAnchor() {
+      const prevX = anchorX, prevY = anchorY;
+      measureAnchor();
+      if (dragging) return;
+      if (Math.abs(anchorX - prevX) < 0.5 && Math.abs(anchorY - prevY) < 0.5) return;
+      repinUnderAnchor();
+    }
+    syncAnchorRef.current = syncAnchor;
+    window.addEventListener('scroll', syncAnchor, { passive: true, capture: true });
+    window.addEventListener('resize', syncAnchor);
+    // Catches reflows nothing else reports — webfonts swapping in, images
+    // above finishing their load, another badge's row wrapping differently.
+    const bodyObserver = new ResizeObserver(() => syncAnchor());
+    bodyObserver.observe(document.body);
 
     const pts: Pt[] = [];
     for (let i = 0; i < SEGMENTS; i++) {
@@ -347,8 +372,10 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
     window.addEventListener('pointermove', onProximityMove);
     window.addEventListener('pointerup', onPointerUp);
     return () => {
-      window.removeEventListener('resize', measureAnchor);
-      window.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions);
+      window.removeEventListener('resize', syncAnchor);
+      window.removeEventListener('scroll', syncAnchor, { capture: true } as EventListenerOptions);
+      bodyObserver.disconnect();
+      syncAnchorRef.current = null;
       card.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointermove', onProximityMove);
@@ -358,6 +385,11 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
       if (idx !== -1) registry.splice(idx, 1);
     };
   }, []);
+
+  // Deliberately dependency-free: any re-render can be the one that reflows
+  // the page (switching MN/EN retranslates every name/role), and syncAnchor
+  // itself no-ops unless the ring actually moved.
+  useEffect(() => { syncAnchorRef.current?.(); });
 
   const anchorW = large ? cardW : 28;
   const ringLeft = large ? cardW / 2 - 4 : 10; // centers the 8px ring on the anchor slot
@@ -391,13 +423,16 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
             display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
             padding: '14px 8px 12px', gap: 8,
           } as React.CSSProperties}>
-            <div style={{ width: '62%', height: 2, borderRadius: 1, background: 'var(--accent,#E8B84B)', opacity: .85 }} />
+            {/* Fixed 46×46 with flex:none — as an ordinary flex child in this
+                column it got squeezed vertically by longer two-line roles,
+                which turned the "circle" into a visible ellipse. */}
             <div style={{
-              width: 46, height: 46, borderRadius: '50%', background: color || 'var(--accent,#E8B84B)',
+              width: 46, height: 46, flex: 'none', borderRadius: '50%',
+              background: img ? `#0d0b08 center/cover no-repeat url("${img}")` : (color || 'var(--accent,#E8B84B)'),
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 16, fontWeight: 800, color: '#14100b', marginTop: 3,
               boxShadow: '0 0 0 3px rgba(255,255,255,.09), 0 4px 10px rgba(0,0,0,.4)',
-            }}>{letter}</div>
+            }}>{img ? '' : letter}</div>
             <div>
               <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{name}</div>
               <div style={{ fontSize: 9, color: 'rgba(255,255,255,.65)', marginTop: 3 }}>{role}</div>
