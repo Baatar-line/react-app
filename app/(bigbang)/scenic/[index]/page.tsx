@@ -81,7 +81,7 @@ export default function ScenicDetail() {
                 <button
                   key={k}
                   onClick={() => setPdImgIdx(k)}
-                  className={`relative aspect-[4/3] max-h-24 flex-1 cursor-pointer overflow-hidden rounded-xl p-0 ${k === sel ? 'opacity-100' : 'opacity-60'}`}
+                  className={`relative aspect-[4/3] max-h-24 max-w-44 flex-1 cursor-pointer overflow-hidden rounded-xl p-0 ${k === sel ? 'opacity-100' : 'opacity-60'}`}
                   style={{ border: `1.5px solid ${k === sel ? accent : 'rgba(255,255,255,.14)'}` }}
                 >
                   <BgMedia bg={`url("${imgUrl(id, 300)}")`} className="absolute inset-0" imgClassName="bg-cover bg-center" />

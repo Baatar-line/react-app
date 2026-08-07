@@ -7,8 +7,15 @@ import FloatingRocks from '@/components/bigbang/FloatingRocks';
 
 export default function Home() {
   const V: any = useContext(BigBangContext);
+  // Hovering a category swaps these to that category's own top-3-rated
+  // places (see catFloatingCards in BigBangLayout) — same list the old
+  // bottom-right mini cluster showed, now merged into the one floating
+  // display instead of the two disagreeing with each other. At rest (no
+  // category hovered) falls back to the global top-3 mix.
   const placeCards = (V.topItems || []).filter((item: any) => item && item.kind === V.L.favPlaces);
-  const floatingCards = (placeCards.length ? placeCards : (V.topItems || []).filter(Boolean)).slice(0, 3);
+  const floatingCards = V.catFloatingCards?.length
+    ? V.catFloatingCards
+    : (placeCards.length ? placeCards : (V.topItems || []).filter(Boolean)).slice(0, 3);
   const [backgroundReady, setBackgroundReady] = useState(false);
   const [rocksReady, setRocksReady] = useState(false);
   const [cardsReady, setCardsReady] = useState(false);
@@ -170,8 +177,6 @@ export default function Home() {
               <div className="absolute right-[80px] top-[110px] z-[7] max-w-[240px] text-right text-[12px] text-[rgba(242,237,227,.45)] animate-bbFadeDown">{V.L.mapHint}</div>
             </>
           )}
-
-          <div className="absolute right-12 bottom-11 z-10 flex items-end gap-[14px]">{V.previewCards}</div>
         </>
       )}
     </section>

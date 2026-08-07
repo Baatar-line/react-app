@@ -1109,19 +1109,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const topItems = activeCat
       ? activeCat.items.map((it, idx) => ({ it, idx, rating: ratingOf(it.name) })).sort((a, b) => +b.rating - +a.rating).slice(0, 3)
       : [];
-    const previewCards = activeCat ? topItems.map((o, i) =>
-      e('button', {
-        key: activeCat.slug + '-' + o.idx, onClick: () => this.openPlace(activeCat, o.idx), 'aria-label': o.it.name,
-        style: { all: 'unset', cursor: 'pointer', width: '160px', height: '200px', boxSizing: 'border-box', position: 'relative', overflow: 'hidden', border: '1px solid rgba(255,255,255,.1)', borderRadius: '18px', animation: 'bbCardIn .55s cubic-bezier(.22,.8,.3,1) both', animationDelay: (i * 80) + 'ms' } as any,
-      },
-        e(BgMedia, { bg: itemThumbOf(o.it.img).replace('rgba(0,0,0,.12)', 'rgba(0,0,0,.05)').replace('rgba(0,0,0,.42)', 'rgba(0,0,0,.15)'), className: 'absolute inset-0', imgClassName: 'bg-cover bg-center' }),
-        e('div', { style: { position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.18) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.92) 100%)', pointerEvents: 'none' } }),
-        e('div', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: '13px 15px', pointerEvents: 'none' } },
-          e('div', { style: { display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '7px' } },
-            e('span', { style: { fontSize: '11px', lineHeight: 1, color: 'var(--accent,#E8B84B)' } }, '★'),
-            e('span', { style: { fontSize: '11.5px', fontWeight: 800, lineHeight: 1, color: '#f6f1e7' } }, o.rating)),
-          e('div', { style: { fontSize: '14px', fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.2, color: '#f6f1e7' } }, o.it.name),
-          e('div', { style: { fontSize: '11.5px', color: 'rgba(242,237,227,.62)', marginTop: '4px' } }, o.it.meta))) as any) : null;
+    // Top-3-by-rating within the hovered category, reshaped for
+    // FloatingRocks' polaroid cards — replaces the old bottom-right mini
+    // cluster, which showed this same list separately (see Home's
+    // floatingCards).
+    const catFloatingCards = activeCat ? topItems.map((o) => ({
+      name: o.it.name, sub: o.it.sub, rating: o.rating,
+      thumb: 'linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.2)), url("' + imgUrl(o.it.img || '', 500) + '")',
+      onClick: () => this.openPlace(activeCat, o.idx),
+    })) : null;
 
     const placeCountFor = (a: string) => cats.reduce((n, c) => n + c.items.filter((it) => (it.aimag || 'Улаанбаатар') === a).length, 0);
     const totalPlaces = cats.reduce((n, c) => n + c.items.length, 0);
@@ -1629,7 +1625,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
         thumb: 'linear-gradient(rgba(0,0,0,.05),rgba(0,0,0,.15)), url("' + imgUrl(b.image || '', 500) + '")',
         logoUrl: b.logo ? imgUrl(b.logo, 80) : '',
       })),
-      suggests, cats, navCats, bgLayers, previewCards, topItems: topItems2,
+      suggests, cats, navCats, bgLayers, catFloatingCards, topItems: topItems2,
       travelApps: TRAVEL_APPS.map((a) => {
         const raw = (this.state.travelAppsBgOverride || {})[a.slug] || '';
         return {
