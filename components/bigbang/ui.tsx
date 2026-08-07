@@ -26,7 +26,7 @@ const POSITIONED = /(^|\s)(absolute|relative|fixed|sticky)(\s|$)/;
 // `isVideo`/`videoSrc` for the spots that can hold an admin-uploaded video
 // instead of a photo.
 export function BgMedia({
-  bg, isVideo, videoSrc, className = '', imgClassName = '', videoClassName = '', style, children,
+  bg, isVideo, videoSrc, className = '', imgClassName = '', videoClassName = '', style, children, onReady,
 }: {
   bg?: string;
   isVideo?: boolean;
@@ -36,6 +36,7 @@ export function BgMedia({
   videoClassName?: string;
   style?: React.CSSProperties;
   children?: React.ReactNode;
+  onReady?: () => void;
 }) {
   const { url, scrim } = useMemo(() => parseBg(bg), [bg]);
   const vSrc = videoSrc || url;
@@ -72,6 +73,9 @@ export function BgMedia({
     im.src = url;
     return () => { alive = false; };
   }, [url, isVideo, inView]);
+  useEffect(() => {
+    if (ready) onReady?.();
+  }, [ready, onReady]);
 
   return (
     <div ref={wrapRef} className={(POSITIONED.test(className) ? '' : 'relative ') + 'overflow-hidden ' + className} style={style}>

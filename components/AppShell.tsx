@@ -9,6 +9,8 @@ import { apiGet } from '@/lib/api';
 // for good, same as the old App.tsx's loading gate.
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [animationFinished, setAnimationFinished] = useState(false);
+  const [homeReady, setHomeReady] = useState(false);
   // Admin Panel can set this via the "Ачаалж буй дэлгэцийн фон" tab — same
   // best-effort fetch as BigBangLayout's own fetchSettings; silently keeps
   // the built-in gradient if the backend isn't reachable.
@@ -26,17 +28,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => {})
       .finally(() => setSettingsReady(true));
   }, []);
+  useEffect(() => {
+    const ready = () => setHomeReady(true);
+    window.addEventListener('atlas:home-ready', ready);
+    const fallback = window.setTimeout(ready, 15000);
+    return () => { window.removeEventListener('atlas:home-ready', ready); window.clearTimeout(fallback); };
+  }, []);
+  useEffect(() => {
+    if (animationFinished && homeReady) setLoading(false);
+  }, [animationFinished, homeReady]);
 
-  if (loading) {
-    if (!settingsReady) return <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#0b0d0b' }} />;
-    // MarauderLoader's own animation length is independent of how fast the
-    // real page/data loaded — it always runs the full duration below, then
-    // waits for the pin-drop (a fixed .9s baked into MarauderLoader) before
-    // calling onFinish. So on a fast connection this is what makes the site
-    // still hold on the loader instead of revealing itself the instant it's
-    // ready; 2100ms + that .9s = a consistent ~3s splash either way.
-    return <MarauderLoader loop={false} duration={2100} onFinish={() => setLoading(false)} backgroundImage={loaderBg} />;
-  }
-
-  return <>{children}</>;
+  return <>
+    {children}
+    {loading && (settingsReady
+      ? <MarauderLoader loop={false} duration={2100} onFinish={() => setAnimationFinished(true)} backgroundImage={loaderBg} />
+      : <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#0b0d0b' }} />)}
+  </>;
 }

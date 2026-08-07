@@ -102,6 +102,14 @@ export default class BigBangLayout extends React.Component<Props, any> {
   geo: any = null;
   _bgOk: any = {};
   _bgLd: any = {};
+  // bgReady() below fires during render (not an effect), so the Image it
+  // creates can finish loading and call back before this component has
+  // actually mounted — forceUpdate()ing then is what React's "state update
+  // on a component that hasn't mounted yet" warning is about. Guards that
+  // callback; _bgOk itself is still set immediately either way; the next
+  // render (mount finishing, or literally anything else re-rendering this)
+  // picks up the now-ready image, so nothing is lost by skipping the update.
+  _mounted = false;
   // Backstop for the aimag hero crossfade — see aimagBgLayers/aimagBgBackstop
   // in render(). Switching straight from aimag A to aimag B fades A:1→0 and
   // B:0→1 at the same time (a real two-photo dissolve, kept on purpose); at
@@ -196,11 +204,23 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // contain @media queries, so "responsive" here means branching JS values
     // on viewport width instead, the same way `bigText`/`mini` already branch
     // style strings elsewhere in this file.
-    vw: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    // Always starts at this fixed default — reading the real window.innerWidth
+    // here would make the very first client render (hydration) branch on
+    // whatever width the browser actually is, while the server (no window)
+    // always rendered the desktop layout, producing a nav structure mismatch
+    // on any mobile/tablet-width load. componentDidMount corrects it to the
+    // real width immediately post-mount instead (see _vwResize below).
+    vw: 1280,
     mobileMenuOpen: false,
   };
 
   componentDidMount() {
+    this._mounted = true;
+    // Picks up any background image whose preload (kicked off by bgReady()
+    // during the very first render, before mount) already resolved in the
+    // meantime — that callback saw _mounted still false and skipped its own
+    // forceUpdate, so this is what actually shows the now-ready image.
+    this.forceUpdate();
     fetch('/assets/mn-aimags.json').then((r) => r.json()).then((g) => { this.geo = g; this.forceUpdate(); this.syncMainMap(); }).catch(() => {});
     // Default aimag hero photos (AIMAG_BG) are a static import, not a fetch —
     // start warming their cache immediately instead of waiting on
@@ -230,6 +250,10 @@ export default class BigBangLayout extends React.Component<Props, any> {
     window.addEventListener('resize', this._mnVertResize);
     this._vwResize = () => { if (this.state.vw !== window.innerWidth) this.setState({ vw: window.innerWidth }); };
     window.addEventListener('resize', this._vwResize);
+    // Corrects the fixed hydration-safe default (see `vw` in state above) to
+    // the real width right after mount, instead of waiting for an actual
+    // resize event that may never come.
+    this._vwResize();
   }
 
   componentDidUpdate(_prevProps: Props, prevState: any) {
@@ -282,6 +306,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
   };
 
   componentWillUnmount() {
+    this._mounted = false;
     this.unmountGlobe();
     this.unmountMainMap();
     window.removeEventListener('focus', this.fetchSettings);
@@ -732,6 +757,18 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
     this._pinLayer.clearLayers();
     if (nearMeActive && myLocation) {
+      // The selected radius (1/5/15/50/100km), drawn as a dashed yellow
+      // (accent) ring around the visitor's own position — purely visual, so
+      // it doesn't intercept clicks meant for the pins/basemap under it.
+      // Kept as its own reference (not just added-and-forgotten) so the
+      // fit-bounds below can size the view to the actual circle instead of
+      // just whatever pins happened to fall inside it.
+      const radiusCircle = window.L.circle([myLocation.lat, myLocation.lng], {
+        radius: this.state.nearRadiusKm * 1000,
+        color: accent, weight: 2, opacity: 0.85, dashArray: '6 6',
+        fill: true, fillColor: accent, fillOpacity: 0.04,
+        interactive: false,
+      }).addTo(this._pinLayer);
       // My own position — a plain blue dot (the usual "you are here"
       // convention), not clickable, not part of the pin index space below.
       const meHtml = '<div style="width:16px;height:16px;border-radius:50%;background:#4285F4;border:3px solid #fff;box-shadow:0 0 0 6px rgba(66,133,244,.35)"></div>';
@@ -755,16 +792,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
       // Re-fit only when the location/radius actually changed — this also
       // re-runs on every pin click (same reason as the aimag branch below),
-      // and re-flying then would fight the user's own pan/zoom.
+      // and re-flying then would fight the user's own pan/zoom. Fits to the
+      // full radius circle (not just however many pins landed inside it) so
+      // picking e.g. 100km always shows the whole 100km, even with 0 results.
       const nearKey = this.state.nearRadiusKm + ':' + myLocation.lat.toFixed(4) + ':' + myLocation.lng.toFixed(4);
       if (this._lastFlownNearKey !== nearKey) {
-        const withCoords = near.filter((o) => o.p.lat != null);
-        if (withCoords.length > 0) {
-          const bounds = [[myLocation.lat, myLocation.lng], ...withCoords.map((o) => [o.p.lat, o.p.lng])] as [number, number][];
-          m.flyToBounds(bounds, { paddingTopLeft: [50, 145], paddingBottomRight: [385, 80], maxZoom: 13, duration: 0.9 });
-        } else {
-          m.flyTo([myLocation.lat, myLocation.lng], 12, { duration: 0.9 });
-        }
+        const bounds = radiusCircle.getBounds();
+        m.flyToBounds(bounds, { paddingTopLeft: [50, 145], paddingBottomRight: [385, 80], maxZoom: 13, duration: 0.9 });
         this._lastFlownNearKey = nearKey;
       }
       this._wasZoomed = true;
@@ -885,13 +919,17 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
   bgReady(imgId: string, size: number) {
     if (this._bgOk[imgId]) return true;
+    // renderVals also runs during Next.js server rendering. Image only exists
+    // in the browser, where the client render will call this again and start
+    // the real preload.
+    if (typeof Image === 'undefined') return false;
     // A video URL can never fire an <img> load event, so the usual preload-then-
     // crossfade below would wait forever — treat it as ready immediately instead.
     if (isVideoUrl(imgId)) { this._bgOk[imgId] = true; return true; }
     if (!this._bgLd[imgId]) {
       this._bgLd[imgId] = true;
       const im = new Image();
-      im.onload = () => { this._bgOk[imgId] = true; this.forceUpdate(); };
+      im.onload = () => { this._bgOk[imgId] = true; if (this._mounted) this.forceUpdate(); };
       im.src = imgUrl(imgId, size);
     }
     return false;
@@ -1323,12 +1361,13 @@ export default class BigBangLayout extends React.Component<Props, any> {
 
     // globe / country card / results
     const gq = (this.state.globeQuery || '').trim().toLowerCase();
-    const curatedCountries = window.GLOBE_COUNTRIES || [];
+    const browserWindow = typeof window !== 'undefined' ? window : undefined;
+    const curatedCountries = browserWindow?.GLOBE_COUNTRIES || [];
     const globeNames: string[] = this.globeEngine?.countryNames || [];
     const countryByName = new Map<string, any>();
     curatedCountries.forEach((c) => countryByName.set(c.name, c));
     globeNames.forEach((name) => {
-      if (!countryByName.has(name)) countryByName.set(name, window.resolveCountry(name));
+      if (!countryByName.has(name) && browserWindow?.resolveCountry) countryByName.set(name, browserWindow.resolveCountry(name));
     });
     const allC = Array.from(countryByName.values());
     const res = gq ? allC.map((c) => {
@@ -1399,7 +1438,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
     // fetchMyPlaces) since only approved ones are public in the first place;
     // scenic pins/events are filtered out of the same live-fetched lists
     // everyone else sees, since those have no separate "mine" endpoint.
-    const mySession = getSession();
+    // Gated on _mounted (not just read unconditionally) so the very first
+    // client render — during hydration — reports the same signed-out session
+    // the server saw (no localStorage there), instead of immediately
+    // reading the real session and mismatching the server HTML. componentDidMount
+    // flips _mounted and forceUpdate()s, so the real session shows up a beat later.
+    const mySession = this._mounted ? getSession() : null;
     // `open` navigates to the same detail page every other card of that type
     // uses — only possible once a place clears moderation (pending/rejected
     // places aren't in `cats` at all, since that's built from the public
@@ -1441,7 +1485,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       travelTitle: lang === 'en' ? 'The World → Mongolia' : 'Дэлхийгээс Монгол руу',
       travelSub: lang === 'en' ? 'Top 20 source countries of tourists to Mongolia, by annual arrivals.' : 'Монгол руу хамгийн олон жуулчин илгээдэг 20 улс — жилийн ирэлтээр.',
       travelNote: lang === 'en' ? 'Ranks 1–7: official 2024 figures. 8–20: representative estimates.' : 'Эрэмбэ 1–7: 2024 оны албан ёсны тоо. 8–20: төлөөллийн тооцоо.',
-      travelRows: (window.TRAVEL_ORIGINS || []).map((o) => ({ rank: o.rank, country: o.country, v: o.v.toLocaleString('en-US'), est: !!o.est })),
+      travelRows: (browserWindow?.TRAVEL_ORIGINS || []).map((o) => ({ rank: o.rank, country: o.country, v: o.v.toLocaleString('en-US'), est: !!o.est })),
       globeTitle: lang === 'en' ? 'The World Archive' : 'Дэлхийн архив',
       globeHint: lang === 'en' ? 'Drag to spin, scroll to zoom. Click a country to open its archive.' : 'Чирж эргүүлээд, scroll-оор томруулна. Улс дээр дарж архивыг нээ.',
       globeSearchPh: lang === 'en' ? 'Search a country…' : 'Улс хайх…',
@@ -1493,7 +1537,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
       team: TEAM.map((t, i) => ({ name: t[0], role: lang === 'en' ? t[2] : t[1], initial: t[0].charAt(0), avatarBg: 'oklch(78% 0.1 ' + (30 + i * 34) + ')' })),
       abHeroFullBg: 'url("' + imgUrl(this.state.aboutBgOverride || '1470071459604-3b5ec3a7fe05', 1800) + '")',
       abHeroIsVideo: isVideoUrl(this.state.aboutBgOverride || ''), abHeroRawUrl: this.state.aboutBgOverride || '',
-      homeHeroBg: 'linear-gradient(rgba(0,0,0,.5), rgba(0,0,0,.72)), url(\'' + imgUrl(this.state.homeBgOverride || '1470071459604-3b5ec3a7fe05', 1800) + '\')',
+      homeHeroBg: this.state.homeBgOverride
+        ? 'url(\'' + imgUrl(this.state.homeBgOverride, 1800) + '\')'
+        : 'linear-gradient(rgba(0,0,0,.28), rgba(0,0,0,.42)), url(\'' + imgUrl('1470071459604-3b5ec3a7fe05', 1800) + '\')',
       homeBgIsVideo: isVideoUrl(this.state.homeBgOverride || ''), homeBgRawUrl: this.state.homeBgOverride || '',
       abHashtag: lang === 'en' ? 'AtlasDateSpace' : 'AtlasБолзоо',
       // Traditional (vertical) Mongolian script accent for each header/desc —

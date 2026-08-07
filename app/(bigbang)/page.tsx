@@ -1,21 +1,51 @@
 'use client';
 
 // Big Bang — Home (/): category nav list + aimag hero picker + preview cards.
-import React, { useContext } from 'react';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { BigBangContext } from '@/components/bigbang/BigBangLayout';
-import { BgMedia } from '@/components/bigbang/ui';
+import FloatingRocks from '@/components/bigbang/FloatingRocks';
 
 export default function Home() {
   const V: any = useContext(BigBangContext);
+  const placeCards = (V.topItems || []).filter((item: any) => item && item.kind === V.L.favPlaces);
+  const floatingCards = (placeCards.length ? placeCards : (V.topItems || []).filter(Boolean)).slice(0, 3);
+  const [backgroundReady, setBackgroundReady] = useState(false);
+  const [rocksReady, setRocksReady] = useState(false);
+  const [cardsReady, setCardsReady] = useState(false);
+  const markBackgroundReady = useCallback(() => setBackgroundReady(true), []);
+  const markRocksReady = useCallback(() => setRocksReady(true), []);
+  useEffect(() => {
+    // The admin-managed home photo/video is intentionally paused while the
+    // procedural moss-cliff scene is being used. Keep an immediate placeholder
+    // ready signal so the global loader does not wait for disabled media.
+    markBackgroundReady();
+  }, [markBackgroundReady]);
+  useEffect(() => {
+    if (!floatingCards.length) { setCardsReady(true); return; }
+    let alive = true;
+    const urls = floatingCards.map((card: any) => /url\((['"]?)(.*?)\1\)/.exec(card.thumb || '')?.[2]).filter(Boolean);
+    Promise.all(urls.map((url: string) => new Promise<void>((resolve) => {
+      const image = new Image();
+      image.onload = image.onerror = () => resolve();
+      image.src = url;
+    }))).then(() => { if (alive) setCardsReady(true); });
+    return () => { alive = false; };
+  }, [floatingCards.map((card: any) => card?.thumb || '').join('|')]);
+  useEffect(() => {
+    if (backgroundReady && rocksReady && cardsReady) window.dispatchEvent(new Event('atlas:home-ready'));
+  }, [backgroundReady, rocksReady, cardsReady]);
   return (
     <section
       data-screen-label="Нүүр — ангилал хайлт"
       className={`relative bg-ink ${V.isTablet ? 'min-h-screen' : 'h-screen overflow-hidden'}`}
     >
-      <BgMedia
-        bg={V.homeHeroBg} isVideo={V.homeBgIsVideo} videoSrc={V.homeBgRawUrl}
-        className="absolute inset-0" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
-      />
+      {/* Temporary home-media placeholder. The uploaded home background stays
+          saved in settings; it is simply not fetched or rendered here. */}
+      <div className="absolute inset-0 bg-[#07100b]" aria-hidden="true">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_42%,rgba(91,123,32,.16),transparent_42%),linear-gradient(135deg,#09130d_0%,#030705_58%,#071009_100%)]" />
+        <div className="absolute inset-0 opacity-[.13] bb-skeleton" />
+      </div>
+      <FloatingRocks places={floatingCards} onReady={markRocksReady} />
       {/* Aimag hero — every aimag keeps its own stable layer (never a shared
           element whose background-image url gets swapped), and switching
           straight from one aimag's photo to another's is a real two-photo
@@ -27,31 +57,10 @@ export default function Home() {
           of the outgoing aimag's own photo. While the picked aimag's photo
           hasn't loaded yet, a skeleton shows through instead of the flat
           black scrim. */}
-      {V.aimagBgLoading && <div className="absolute inset-0 bb-skeleton" />}
-      {V.aimagBgBackstop && (
-        <BgMedia
-          bg={V.aimagBgBackstop.bg} isVideo={V.aimagBgBackstop.isVideo} videoSrc={V.aimagBgBackstop.rawUrl}
-          className="absolute inset-0" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
-        />
-      )}
-      {V.aimagBgLayers.map((layer: any) => (
-        <BgMedia
-          key={layer.key} bg={layer.bg} isVideo={layer.isVideo} videoSrc={layer.rawUrl}
-          className="absolute inset-0 transition-opacity duration-[550ms] ease-in-out" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
-          style={{ opacity: layer.opacity }}
-        />
-      ))}
       {/* Category hover/selection preview — always a still photo, even for a
           category with an uploaded background video (that only plays once
           you're inside the category's own page). */}
-      {V.bgLayers.map((layer: any, i: number) => (
-        <BgMedia
-          key={i} bg={layer.bg}
-          className="absolute inset-0 transition-opacity duration-[550ms] ease-in-out" imgClassName="bg-cover bg-center [animation:var(--drift,none)]"
-          style={{ opacity: layer.opacity }}
-        />
-      ))}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_100%_at_50%_50%,_rgba(0,0,0,0)_45%,_rgba(0,0,0,.55)_100%),_linear-gradient(90deg,_rgba(0,0,0,.88)_0%,_rgba(0,0,0,.35)_45%,_rgba(0,0,0,0)_72%)]"></div>
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,_rgba(3,8,5,.74)_0%,_rgba(3,8,5,.2)_42%,_transparent_72%)]"></div>
 
       <div
         onMouseLeave={V.clearActive}

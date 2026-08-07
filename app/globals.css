@@ -108,3 +108,116 @@ a:hover {
     background-position: -60% 0;
   }
 }
+
+.floating-rocks-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: floating-rocks-grain 1.2s steps(4) infinite;
+}
+
+.floating-rock-card {
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid #050605 !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .08) 0%, transparent 20%),
+    linear-gradient(135deg, #171917 0%, #070807 38%, #000 72%, #111311 100%);
+  box-shadow:
+    0 18px 44px -14px rgba(0, 0, 0, .82),
+    inset 0 1px 1px rgba(255, 255, 255, .2),
+    inset 0 -2px 3px rgba(0, 0, 0, .9),
+    0 0 0 1px #000;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+
+.floating-rock-card::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  z-index: 2;
+  clip-path: polygon(0 0, 84% 0, 100% 28%, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 30%, rgba(4, 10, 7, .18) 56%, rgba(4, 10, 7, .8) 100%);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .68);
+}
+
+.floating-case-photo {
+  position: absolute;
+  inset: 7px;
+  z-index: 1;
+  display: block;
+  clip-path: polygon(0 0, 84% 0, 100% 28%, 100% 100%, 0 100%);
+  background-color: #172018;
+  background-position: center;
+  background-size: cover;
+  filter: saturate(.92) contrast(1.04);
+  box-shadow:
+    0 0 0 2px #050706,
+    0 0 0 3px rgba(0, 0, 0, .92),
+    inset 0 0 0 1px rgba(255, 255, 255, .08),
+    inset 0 5px 10px rgba(0, 0, 0, .38);
+}
+
+.floating-rock-card::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  z-index: 0;
+  clip-path: polygon(0 0, 85% 0, 100% 27%, 100% 100%, 0 100%);
+  background: linear-gradient(135deg, #252825 0%, #090a09 24%, #000 52%, #171917 100%);
+}
+
+.floating-place-rating,
+.floating-place-name,
+.floating-place-sub {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  display: block;
+  color: #f2efe6;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .75);
+}
+
+.floating-place-rating { bottom: 52px; color: #c2ef57; font-size: 10px; font-weight: 800; }
+.floating-place-name { bottom: 29px; overflow: hidden; font-size: 14px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.floating-place-sub { bottom: 12px; overflow: hidden; color: rgba(242, 239, 230, .7); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+.floating-rock-card-dragging {
+  border-color: #252b27 !important;
+  box-shadow: 0 30px 64px -12px rgba(0, 0, 0, .85), 0 0 0 1px rgba(194, 239, 87, .14), inset 0 1px 0 rgba(255, 255, 255, .07);
+}
+
+.floating-case-screw {
+  position: absolute;
+  z-index: 4;
+  width: 6px;
+  height: 6px;
+  border: 1px solid #0c0e0d;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #fff 0 9%, #c9cbc7 21%, #747a76 47%, #2b302d 72%, #0b0d0c 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .9), inset 0 0 0 1px rgba(255, 255, 255, .32);
+}
+
+.floating-case-screw::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 2px;
+  height: 1px;
+  border-radius: 2px;
+  background: #252927;
+  transform: rotate(35deg);
+}
+
+.floating-case-screw.screw-tl { left: 2px; top: 2px; }
+.floating-case-screw.screw-tr { right: 2px; top: 2px; }
+.floating-case-screw.screw-bl { left: 2px; bottom: 2px; }
+.floating-case-screw.screw-br { right: 2px; bottom: 2px; }
+
+@keyframes floating-rocks-grain {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-3%, 2%); }
+  50% { transform: translate(2%, -3%); }
+  75% { transform: translate(-2%, -2%); }
+}
