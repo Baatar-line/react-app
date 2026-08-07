@@ -5,10 +5,12 @@ import { useEffect, useRef } from 'react';
 type ThreeWindow = Window & typeof globalThis & { THREE?: any };
 type PlaceCard = { name: string; sub?: string; rating?: string | number; thumb?: string; onClick?: () => void };
 
-export default function FloatingRocks({ places, onReady }: { places: PlaceCard[]; onReady?: () => void }) {
+export default function FloatingRocks({ places, mapOpen = false, onReady }: { places: PlaceCard[]; mapOpen?: boolean; onReady?: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const placesRef = useRef(places);
+  const mapOpenRef = useRef(mapOpen);
   placesRef.current = places;
+  mapOpenRef.current = mapOpen;
 
   useEffect(() => {
     let disposed = false;
@@ -387,6 +389,7 @@ export default function FloatingRocks({ places, onReady }: { places: PlaceCard[]
           phase: index * 2.4, speed: 0.22 + index * 0.05,
           dragging: false, depth: 0, grabOffset: new THREE.Vector3(), tilt: 0, tiltTarget: 0,
           halfWidth: 105, halfHeight: 70, placeKey: '', moved: false,
+          revealOffset: new THREE.Vector3(), revealAmount: 0,
         };
       });
       const syncPlaceCards = () => {
@@ -615,12 +618,47 @@ export default function FloatingRocks({ places, onReady }: { places: PlaceCard[]
           shadow.sprite.position.y -= 0.2;
           shadow.sprite.position.z -= 0.72;
         });
-        cards.forEach((card) => {
+        // Opening the map pulls only cards covered by its footprint completely
+        // outside the SVG: one above it and two beside it. The cards never sit
+        // on top of the map. Closing it eases them back to their original
+        // floating positions. Keeping this in world space
+        // means dragging, camera parallax and the return animation compose
+        // naturally instead of fighting separate CSS transforms.
+        const mapIsOpen = mapOpenRef.current;
+        cards.forEach((card, cardIndex) => {
           if (!card.dragging && card.velocity.lengthSq() > 1e-7) {
             card.anchor.add(card.velocity);
             card.velocity.multiplyScalar(0.962);
           }
-          const world = card.anchor.clone();
+          const revealTarget = mapIsOpen ? 1 : 0;
+          const revealEase = mapIsOpen ? 0.09 : 0.018;
+          card.revealAmount = lerp(card.revealAmount, revealTarget, reducedMotion ? 1 : revealEase);
+
+          const baseScreen = card.anchor.clone().project(camera);
+          const baseX = (baseScreen.x * 0.5 + 0.5) * innerWidth;
+          const baseY = (-baseScreen.y * 0.5 + 0.5) * innerHeight;
+          const mapLeft = innerWidth * 0.3;
+          const mapRight = innerWidth - 30;
+          const mapTop = 136;
+          const mapBottom = innerHeight - 114;
+          const covered = baseX + card.halfWidth > mapLeft && baseX - card.halfWidth < mapRight
+            && baseY + card.halfHeight > mapTop && baseY - card.halfHeight < mapBottom;
+          // These three responsive targets match the blue X marks in the
+          // supplied 1920x864 composition: upper-left, below the map, and
+          // lower-right. Ratios preserve the same layout on other desktops.
+          const targetRatios = [
+            [0.257, 0.161],
+            [0.407, 0.859],
+            [0.906, 0.764],
+          ];
+          const slotX = clamp(innerWidth * targetRatios[cardIndex][0], card.halfWidth, innerWidth - card.halfWidth);
+          const slotY = clamp(innerHeight * targetRatios[cardIndex][1], card.halfHeight, innerHeight - card.halfHeight);
+          const targetX = covered ? slotX : baseX;
+          const targetY = covered ? slotY : baseY;
+          const targetWorld = toWorld(targetX, targetY, baseScreen.z);
+          card.revealOffset.copy(targetWorld).sub(card.anchor).multiplyScalar(card.revealAmount);
+
+          const world = card.anchor.clone().add(card.revealOffset);
           if (!card.dragging) world.y += Math.sin(time * card.speed + card.phase) * 0.2 * motion;
           if (!card.dragging) {
             bounceAtWall(world, card.velocity);
@@ -638,6 +676,7 @@ export default function FloatingRocks({ places, onReady }: { places: PlaceCard[]
           card.tilt = lerp(card.tilt, card.tiltTarget, 0.14);
           card.element.style.transform = `translate3d(${x - card.halfWidth}px,${y - card.halfHeight}px,0) scale(${scale}) rotate(${card.tilt}deg)`;
           card.element.style.opacity = '1';
+          card.element.style.zIndex = '3';
           card.element.style.cursor = card.dragging ? 'grabbing' : 'grab';
           const rockPoint = rocks[card.rockIndex].mesh.position.clone().project(camera);
           const rockX = (rockPoint.x * 0.5 + 0.5) * innerWidth;

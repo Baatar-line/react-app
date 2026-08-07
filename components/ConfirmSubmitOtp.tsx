@@ -32,7 +32,6 @@ export default function ConfirmSubmitOtp({ phone, email, token, onClose, onVerif
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const stop = (ev: React.MouseEvent) => ev.stopPropagation();
   const contact = method === 'phone' ? phone : email;
 
   const requestCode = async () => {
@@ -83,9 +82,14 @@ export default function ConfirmSubmitOtp({ phone, email, token, onClose, onVerif
     borderColor: active ? 'var(--accent,#E8B84B)' : 'rgba(255,255,255,.25)',
   });
 
+  // Deliberately no click-to-close on the backdrop, unlike the other modals:
+  // this one sits on top of a submission that's already been filled in and
+  // paid for with a code send, and a stray click just outside the card would
+  // throw all of that away (see closeConfirmOtp — closing drops
+  // _pendingCreate). The × is the only way out.
   return (
-    <div onClick={onClose} className="fixed inset-0 z-[75] box-border flex items-center justify-center bg-[rgba(6,8,12,.72)] backdrop-blur-[8px] [animation:bbFadeUp_.25s_ease_both]" style={{ padding: isMobile ? '14px' : '36px' }}>
-      <div onClick={stop} className="box-border w-[400px] max-w-full rounded-2xl border border-[rgba(255,255,255,.14)] bg-[#171410] shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '26px 28px 28px' }}>
+    <div className="fixed inset-0 z-[75] box-border flex items-center justify-center bg-[rgba(6,8,12,.72)] backdrop-blur-[8px] [animation:bbFadeUp_.25s_ease_both]" style={{ padding: isMobile ? '14px' : '36px' }}>
+      <div className="box-border w-[400px] max-w-full rounded-2xl border border-[rgba(255,255,255,.14)] bg-[#171410] shadow-[0_30px_80px_rgba(0,0,0,.6)]" style={{ padding: isMobile ? '18px 16px 20px' : '26px 28px 28px' }}>
         <div className="mb-4 flex items-center justify-between">
           <div className="text-lg font-extrabold tracking-[-0.02em] text-cream-2">Баталгаажуулах</div>
           <button onClick={onClose} className="h-8 w-8 cursor-pointer rounded-full border border-[rgba(242,237,227,.2)] bg-transparent font-[inherit] text-lg leading-none text-[rgba(242,237,227,.75)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]">×</button>

@@ -52,7 +52,7 @@ export default function Home() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_42%,rgba(91,123,32,.16),transparent_42%),linear-gradient(135deg,#09130d_0%,#030705_58%,#071009_100%)]" />
         <div className="absolute inset-0 opacity-[.13] bb-skeleton" />
       </div>
-      <FloatingRocks places={floatingCards} onReady={markRocksReady} />
+      <FloatingRocks places={floatingCards} mapOpen={V.locOpen} onReady={markRocksReady} />
       {/* Aimag hero — every aimag keeps its own stable layer (never a shared
           element whose background-image url gets swapped), and switching
           straight from one aimag's photo to another's is a real two-photo
@@ -177,6 +177,9 @@ export default function Home() {
               <div className="absolute right-[80px] top-[110px] z-[7] max-w-[240px] text-right text-[12px] text-[rgba(242,237,227,.45)] animate-bbFadeDown">{V.L.mapHint}</div>
             </>
           )}
+          {/* The bottom-right stack of hovered-category preview cards used to
+              live here. Top-rated places are now shown only on the floating
+              rock cards above, so the corner stays empty. */}
         </>
       )}
     </section>
