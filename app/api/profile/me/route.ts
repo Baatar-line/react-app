@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../../lib/prisma';
 import { requireAuth, jsonError, ApiError } from '../../../../lib/auth-helpers';
+import { destroyCloudinaryImages, orphanedUrls } from '../../../../lib/cloudinary';
 
 const PHONE_RE = /^\d{8}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -72,11 +73,25 @@ export async function PUT(request: Request) {
       }
       throw err;
     }
+    // Picking a new avatar uploads it before this call (see save() in
+    // CompleteProfileForm), so the one it replaces is now unreferenced and
+    // has to be destroyed or it stays in Cloudinary for good. Only fields the
+    // request actually sent are considered — the form sends avatarImage every
+    // time but never backgroundImage, and an absent field means "unchanged"
+    // here exactly as it does to Prisma's update below.
+    const previousProfile = await prisma.profile.findUnique({
+      where: { userId: user.userId },
+      select: { avatarImage: true, backgroundImage: true },
+    });
     const profile = await prisma.profile.upsert({
       where: { userId: user.userId },
       update: { name, about, avatarImage, socialMediaURL, backgroundImage },
       create: { userId: user.userId, name, about, avatarImage, socialMediaURL, backgroundImage },
     });
+    await destroyCloudinaryImages([
+      ...(avatarImage !== undefined ? orphanedUrls(previousProfile?.avatarImage, avatarImage) : []),
+      ...(backgroundImage !== undefined ? orphanedUrls(previousProfile?.backgroundImage, backgroundImage) : []),
+    ]);
     return NextResponse.json(profile);
   } catch (err) {
     return jsonError(err);

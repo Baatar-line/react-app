@@ -21,6 +21,24 @@ function publicIdFromUrl(url: string): { publicId: string; resourceType: 'image'
   return { publicId: dot > -1 ? rest.slice(0, dot) : rest, resourceType: m[1] as 'image' | 'video' };
 }
 
+// Which of `previous`'s URLs a save just orphaned — i.e. what it still
+// pointed at that `next` no longer does. Handles a plain URL and a slug → URL
+// JSON map alike, since SiteSettings stores backgrounds both ways (a single
+// `homeBackgroundImage` string, but `teamImages`/`suggestBackgroundImages`
+// maps keyed by member/card slug).
+//
+// Callers must only pass fields the request actually sent: an absent field
+// arrives as undefined and means "unchanged", which is indistinguishable here
+// from "cleared" and would otherwise destroy an image still in use.
+export function orphanedUrls(previous: unknown, next: unknown): string[] {
+  if (typeof previous === 'string') return previous && previous !== next ? [previous] : [];
+  if (!previous || typeof previous !== 'object') return [];
+  const nextMap = (next && typeof next === 'object' ? next : {}) as Record<string, unknown>;
+  return Object.entries(previous as Record<string, unknown>)
+    .filter(([slug, url]) => typeof url === 'string' && url && url !== nextMap[slug])
+    .map(([, url]) => url as string);
+}
+
 // Best-effort delete — deleting the DB row is what actually matters, so a
 // Cloudinary hiccup here (rate limit, already-gone asset, etc.) is logged and
 // swallowed rather than failing the whole request.
