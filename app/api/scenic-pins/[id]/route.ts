@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '../../../../lib/prisma';
 import { requireAuth, requireRole, jsonError, ApiError } from '../../../../lib/auth-helpers';
 import { destroyCloudinaryImages } from '../../../../lib/cloudinary';
+import { deleteCardSideRows } from '../../../../lib/cardCleanup';
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -53,6 +54,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const { id } = await params;
     const pin = await prisma.scenicPin.delete({ where: { id: Number(id) } });
     await destroyCloudinaryImages(pin.images);
+    await deleteCardSideRows('scenic', pin.id, 's:' + pin.name);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return jsonError(err);
