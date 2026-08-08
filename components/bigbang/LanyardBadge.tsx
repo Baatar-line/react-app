@@ -54,7 +54,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
   // shift caused by new props (e.g. the MN/EN switch swapping every role for a
   // differently-sized translation) re-pins the cord under the ring's new spot.
   const syncAnchorRef = useRef<(() => void) | null>(null);
-  const cardW = large ? 104 : 29;
+  const cardW = large ? 126 : 29;
 
   useEffect(() => {
     const anchor = anchorRef.current;
@@ -65,7 +65,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
 
     const ringOffsetX = large ? cardW / 2 : 14; // ring sits centered over the anchor slot either way
     // The card's own footprint (see the `large` JSX below — must match).
-    const cardHeight = large ? 140 : 37;
+    const cardHeight = large ? 168 : 37;
     // Large (About-page) cards hang from a noticeably longer cord than the
     // tiny nav badge — same segment count, just stretched rest-length.
     const segLen = large ? SEG_LEN * 2.2 : SEG_LEN;
@@ -393,7 +393,7 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
 
   const anchorW = large ? cardW : 28;
   const ringLeft = large ? cardW / 2 - 4 : 10; // centers the 8px ring on the anchor slot
-  const cardH = large ? 140 : 37;
+  const cardH = large ? 168 : 37;
 
   return (
     <div ref={anchorRef} style={{ position: 'relative', width: anchorW, height: 1, flex: 'none', zIndex: 1, pointerEvents: 'none' }}>
@@ -421,25 +421,24 @@ export default function LanyardBadge({ letter = 'b', large = false, name, role, 
             border: '1px solid rgba(255,255,255,.22)',
             boxShadow: '0 14px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.16)',
             display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
-            padding: '14px 8px 12px', gap: 8,
+            padding: '16px 10px 14px', gap: 9,
           } as React.CSSProperties}>
-            {/* Fixed 46×46 with flex:none — as an ordinary flex child in this
+            {/* Fixed size with flex:none — as an ordinary flex child in this
                 column it got squeezed vertically by longer two-line roles,
-                which turned the "circle" into a visible ellipse. */}
+                which turned the "circle" into a visible ellipse.
+                56 is about as large as this can go inside the 140px card: a
+                two-line role plus the name needs roughly 42px under it, and
+                the card clips rather than grows. */}
             <div style={{
-              width: 46, height: 46, flex: 'none', borderRadius: '50%',
+              width: 66, height: 66, flex: 'none', borderRadius: '50%',
               background: img ? `#0d0b08 center/cover no-repeat url("${img}")` : (color || 'var(--accent,#E8B84B)'),
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 16, fontWeight: 800, color: '#14100b', marginTop: 3,
+              fontSize: 22, fontWeight: 800, color: '#14100b', marginTop: 3,
               boxShadow: '0 0 0 3px rgba(255,255,255,.09), 0 4px 10px rgba(0,0,0,.4)',
             }}>{img ? '' : letter}</div>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{name}</div>
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,.65)', marginTop: 3 }}>{role}</div>
-            </div>
-            <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
-              <span style={{ width: 13, height: 1.6, borderRadius: 1, background: 'rgba(255,255,255,.28)' }} />
-              <span style={{ width: 9, height: 1.6, borderRadius: 1, background: 'rgba(255,255,255,.16)' }} />
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{name}</div>
+              <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.65)', marginTop: 3 }}>{role}</div>
             </div>
           </div>
         ) : (
