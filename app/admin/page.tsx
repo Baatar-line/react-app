@@ -167,6 +167,9 @@ export default function AdminPanel() {
   const [sgEditId, setSgEditId] = useState<number | null>(null);
   const [sgName, setSgName] = useState('');
   const [sgDesc, setSgDesc] = useState('');
+  // Optional destination the card opens when clicked — a Steam store page for
+  // a game, for instance. Blank leaves the card as a plain tile.
+  const [sgLink, setSgLink] = useState('');
   // Preview value (may be the existing raw image, or a fresh data: URI while
   // a newly-picked file hasn't finished uploading yet).
   const [sgImg, setSgImg] = useState('');
@@ -528,9 +531,9 @@ export default function AdminPanel() {
     const r = new FileReader(); r.onload = () => setBrandLogoImg(String(r.result)); r.readAsDataURL(f);
   };
 
-  const openSuggestForm = () => { setSgEditId(null); setSgName(''); setSgDesc(''); setSgImg(''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true); };
+  const openSuggestForm = () => { setSgEditId(null); setSgName(''); setSgDesc(''); setSgLink(''); setSgImg(''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true); };
   const openSuggestEditForm = (card: any) => {
-    setSgEditId(card.id); setSgName(card.name); setSgDesc(card.description || ''); setSgImg(card.image || ''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true);
+    setSgEditId(card.id); setSgName(card.name); setSgDesc(card.description || ''); setSgLink(card.link || ''); setSgImg(card.image || ''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true);
   };
   // No token passed — falls back to AdminPanel's own bootstrapped admin
   // token (see lib/api.ts), same as every other write this screen does.
@@ -540,10 +543,12 @@ export default function AdminPanel() {
     setSuggestActionErr('');
     try {
       const image = sgImgFile ? await uploadImage(sgImgFile, 'bigbang/suggests') : sgImg || undefined;
-      const payload = { collectionSlug: suggestActiveSlug, name: sgName.trim(), description: sgDesc.trim() || undefined, image };
+      // link is always sent (as '' when cleared) so emptying the field
+      // actually removes it — PATCH only skips a link it never receives.
+      const payload = { collectionSlug: suggestActiveSlug, name: sgName.trim(), description: sgDesc.trim() || undefined, image, link: sgLink.trim() };
       if (sgEditId != null) await apiPatch(`/suggest-cards/${sgEditId}`, payload);
       else await apiPost('/suggest-cards', payload);
-      setSuggestFormOpen(false); setSgEditId(null); setSgName(''); setSgDesc(''); setSgImg(''); setSgImgFile(null); setSgErr(false);
+      setSuggestFormOpen(false); setSgEditId(null); setSgName(''); setSgDesc(''); setSgLink(''); setSgImg(''); setSgImgFile(null); setSgErr(false);
       refetchContent();
     } catch (err) {
       alert('Хадгалахад алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
@@ -1055,6 +1060,11 @@ export default function AdminPanel() {
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Тайлбар</span>
                 <input value={sgDesc} onChange={(e) => setSgDesc(e.target.value)} placeholder="Энэ картын тайлбар" className={inputClass} style={inputStyle} />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Холбоос (заавал биш)</span>
+                <input value={sgLink} onChange={(e) => setSgLink(e.target.value)} placeholder="https://store.steampowered.com/app/..." className={inputClass} style={inputStyle} />
+                <span className="text-[11px] text-[rgba(242,237,227,.4)]">Бөглөвөл карт дээр дарахад шинэ цонхонд нээгдэнэ. Хоосон бол зүгээр карт хэвээр.</span>
               </label>
               <div className="flex flex-col gap-1.5">
                 <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Зураг</span>

@@ -23,12 +23,12 @@ export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
     requireRole(user, 'admin');
-    const { collectionSlug, name, description, image } = await request.json();
+    const { collectionSlug, name, description, image, link } = await request.json();
     if (!collectionSlug || !name) {
       return NextResponse.json({ error: 'Ангилал, нэр шаардлагатай' }, { status: 400 });
     }
     const card = await prisma.suggestCard.create({
-      data: { collectionSlug, name, description, image, addedBy: user.userId },
+      data: { collectionSlug, name, description, image, link: link || undefined, addedBy: user.userId },
     });
     return NextResponse.json(card, { status: 201 });
   } catch (err) {

@@ -326,6 +326,11 @@ model SuggestCard {
   name           String
   description    String?
   image          String?
+  // Where the card sends you when clicked — a Steam store page for a game, or
+  // whatever the equivalent is for the other collections. Optional: a card
+  // without one stays a plain, non-clickable tile the way all of them were
+  // before this existed.
+  link           String?
   addedBy        Int
   addedByUser    User     @relation("SuggestCardAddedBy", fields: [addedBy], references: [id])
   createdAt      DateTime @default(now())
