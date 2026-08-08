@@ -197,7 +197,7 @@ export interface EventItem { day: string; mon: string; name: string; meta: strin
 
 export const SUGGESTS = [
   { slug: 'games', title: '2 хүний хурдан тоглоомууд', count: '10 тоглоом', tag: 'Тоглоом', img: '1550745165-9bc0b252726f' },
-  { slug: 'movies', title: 'Хосоор үзэх 10 кино', count: '10 кино', tag: 'Кино', img: '1489599849927-2ee91cede3ba' },
+  { slug: 'movies', title: 'Хамтдаа үзэх кино', count: '80 кино', tag: 'Кино', img: '1489599849927-2ee91cede3ba' },
   { slug: 'boardgame', title: 'Гэр бүлээрээ тоглох board game', count: '12 тоглоом', tag: 'Тоглоом', img: '1529699211952-734e80c4d42b' },
 ];
 

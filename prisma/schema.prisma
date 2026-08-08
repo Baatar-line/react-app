@@ -331,6 +331,17 @@ model SuggestCard {
   // without one stays a plain, non-clickable tile the way all of them were
   // before this existed.
   link           String?
+  // Pins the card ahead of the rest on its collection page, which otherwise
+  // orders purely by newest-first. Four cards fill the first row on desktop,
+  // so this is how an admin decides which four a visitor sees without
+  // scrolling. Not capped at four — a fifth just starts the second row.
+  featured       Boolean  @default(false)
+  // Optional filter bucket within a collection ("Хосоороо үзэх",
+  // "Найзуудтайгаа үзэх", ...). Free text rather than an enum or its own
+  // table: the collection page builds its filter chips from whichever distinct
+  // values its own cards carry, so a collection that never sets this simply
+  // shows no chips and a new bucket needs no migration.
+  group          String?
   addedBy        Int
   addedByUser    User     @relation("SuggestCardAddedBy", fields: [addedBy], references: [id])
   createdAt      DateTime @default(now())

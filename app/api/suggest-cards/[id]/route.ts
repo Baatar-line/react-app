@@ -8,7 +8,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const user = await requireAuth(request);
     requireRole(user, 'admin');
     const { id } = await params;
-    const { collectionSlug, name, description, image, link } = await request.json();
+    const { collectionSlug, name, description, image, link, featured, group } = await request.json();
     // A replaced photo would otherwise just leave the old one orphaned on
     // Cloudinary — only worth the extra lookup when a new image is actually
     // being set.
@@ -17,7 +17,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       where: { id: Number(id) },
       // Cleared to null rather than left alone when the admin empties the
       // field — an untouched link arrives as undefined, which Prisma skips.
-      data: { collectionSlug, name, description, image, link: link !== undefined ? (link || null) : undefined },
+      data: {
+        collectionSlug, name, description, image,
+        link: link !== undefined ? (link || null) : undefined,
+        featured: featured !== undefined ? !!featured : undefined,
+        group: group !== undefined ? (group || null) : undefined,
+      },
     });
     if (previous && previous.image && previous.image !== image) await destroyCloudinaryImages([previous.image]);
     return NextResponse.json(card);

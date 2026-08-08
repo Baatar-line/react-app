@@ -8,6 +8,9 @@ export interface SuggestItem {
   link?: string;
   /** Absolute URL, or '' to fall back to the placeholder graphic. */
   image?: string;
+  /** Filter chip the card sits under on its collection page. Cards with no
+   * group produce no chip and appear only under "Бүгд". */
+  group?: string;
 }
 
 /**
@@ -53,6 +56,7 @@ export async function replaceSuggestCollection(collectionSlug: string, items: Su
         description: item.description,
         link: item.link || undefined,
         image: item.image || undefined,
+        group: item.group || undefined,
         addedBy: admin.id,
       },
     });

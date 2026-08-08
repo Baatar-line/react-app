@@ -170,6 +170,13 @@ export default function AdminPanel() {
   // Optional destination the card opens when clicked — a Steam store page for
   // a game, for instance. Blank leaves the card as a plain tile.
   const [sgLink, setSgLink] = useState('');
+  // Pins the card to the front of its collection page. Four fill the first
+  // row on desktop, which is what this is for.
+  const [sgFeatured, setSgFeatured] = useState(false);
+  // Which filter chip the card sits under on its collection page. Free text —
+  // the page builds its chips from whatever values its cards carry, so a new
+  // bucket is just a new string typed here.
+  const [sgGroup, setSgGroup] = useState('');
   // Preview value (may be the existing raw image, or a fresh data: URI while
   // a newly-picked file hasn't finished uploading yet).
   const [sgImg, setSgImg] = useState('');
@@ -531,9 +538,18 @@ export default function AdminPanel() {
     const r = new FileReader(); r.onload = () => setBrandLogoImg(String(r.result)); r.readAsDataURL(f);
   };
 
-  const openSuggestForm = () => { setSgEditId(null); setSgName(''); setSgDesc(''); setSgLink(''); setSgImg(''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true); };
+  const openSuggestForm = () => { setSgEditId(null); setSgName(''); setSgDesc(''); setSgLink(''); setSgFeatured(false); setSgGroup(''); setSgImg(''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true); };
   const openSuggestEditForm = (card: any) => {
-    setSgEditId(card.id); setSgName(card.name); setSgDesc(card.description || ''); setSgLink(card.link || ''); setSgImg(card.image || ''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true);
+    setSgEditId(card.id); setSgName(card.name); setSgDesc(card.description || ''); setSgLink(card.link || ''); setSgFeatured(!!card.featured); setSgGroup(card.group || ''); setSgImg(card.image || ''); setSgImgFile(null); setSgErr(false); setSuggestFormOpen(true);
+  };
+  // Pin/unpin straight from a list card, without opening the edit form —
+  // choosing the front row means comparing cards against each other, which is
+  // what the list view is already showing.
+  const toggleSuggestFeatured = (card: any) => {
+    setSuggestActionErr('');
+    apiPatch(`/suggest-cards/${card.id}`, { featured: !card.featured })
+      .then(() => refetchContent())
+      .catch((err) => setSuggestActionErr(err instanceof Error ? err.message : String(err)));
   };
   // No token passed — falls back to AdminPanel's own bootstrapped admin
   // token (see lib/api.ts), same as every other write this screen does.
@@ -545,10 +561,10 @@ export default function AdminPanel() {
       const image = sgImgFile ? await uploadImage(sgImgFile, 'bigbang/suggests') : sgImg || undefined;
       // link is always sent (as '' when cleared) so emptying the field
       // actually removes it — PATCH only skips a link it never receives.
-      const payload = { collectionSlug: suggestActiveSlug, name: sgName.trim(), description: sgDesc.trim() || undefined, image, link: sgLink.trim() };
+      const payload = { collectionSlug: suggestActiveSlug, name: sgName.trim(), description: sgDesc.trim() || undefined, image, link: sgLink.trim(), featured: sgFeatured, group: sgGroup.trim() };
       if (sgEditId != null) await apiPatch(`/suggest-cards/${sgEditId}`, payload);
       else await apiPost('/suggest-cards', payload);
-      setSuggestFormOpen(false); setSgEditId(null); setSgName(''); setSgDesc(''); setSgLink(''); setSgImg(''); setSgImgFile(null); setSgErr(false);
+      setSuggestFormOpen(false); setSgEditId(null); setSgName(''); setSgDesc(''); setSgLink(''); setSgFeatured(false); setSgGroup(''); setSgImg(''); setSgImgFile(null); setSgErr(false);
       refetchContent();
     } catch (err) {
       alert('Хадгалахад алдаа гарлаа: ' + (err instanceof Error ? err.message : String(err)));
@@ -905,14 +921,42 @@ export default function AdminPanel() {
                 );
               })}
             </div>
+            {/* Counts against 4 because that's what the public page fits in
+                its first row — pinning a fifth doesn't break anything, it just
+                starts a second row, so this reports rather than restricts. */}
+            {(() => {
+              const pinned = suggestCards.filter((c) => c.collectionSlug === suggestActiveSlug && c.featured).length;
+              return (
+                <div className="mb-3 text-[12px] text-[rgba(242,237,227,.5)]">
+                  Эхэнд харуулахаар <span className="font-bold text-[var(--accent,#E8B84B)]">{pinned}</span> карт тэмдэглэсэн — эхний мөрөнд 4 багтана.
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
               {suggestCards.filter((c) => c.collectionSlug === suggestActiveSlug && matches(c.name)).map((c) => (
                 <div key={c.id} className="flex flex-col border border-[rgba(255,255,255,.1)] rounded-2xl overflow-hidden bg-[rgba(255,255,255,.03)]">
-                  <div className="relative aspect-[16/10] bg-cover bg-center" style={{ backgroundImage: thumb(c.image || '') }}></div>
+                  <div className="relative aspect-[16/10] bg-cover bg-center" style={{ backgroundImage: thumb(c.image || '') }}>
+                    {c.featured && (
+                      <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1 rounded-full border border-[rgba(232,184,75,.5)] bg-[rgba(0,0,0,.6)] py-1 px-[9px] text-[10px] font-bold text-[var(--accent,#E8B84B)] backdrop-blur-[10px]"><Star size={10} fill="currentColor" />Эхэнд</span>
+                    )}
+                  </div>
                   <div className="flex flex-1 flex-col pt-[13px] px-[15px] pb-[15px]">
                     <div className="text-sm font-extrabold">{c.name}</div>
                     <div className="text-[11.5px] text-[rgba(242,237,227,.5)] mt-[3px]">{c.description || '—'}</div>
-                    <div className="flex gap-2 mt-auto pt-3">
+                    <div className="flex flex-wrap gap-2 mt-auto pt-3">
+                      {/* Toggles straight from the list rather than through the
+                          edit form — picking the front row means weighing cards
+                          against each other, which is what this grid shows. */}
+                      <button
+                        onClick={() => toggleSuggestFeatured(c)}
+                        title={c.featured ? 'Эхнээс нь хасах' : 'Эхэнд харуулах'}
+                        className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full transition-all duration-200"
+                        style={{
+                          border: `1px solid ${c.featured ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.3)'}`,
+                          background: c.featured ? 'var(--accent,#E8B84B)' : 'transparent',
+                          color: c.featured ? '#132a1f' : 'rgba(242,237,227,.85)',
+                        }}
+                      ><Star size={12} fill={c.featured ? 'currentColor' : 'none'} />Эхэнд</button>
                       <button onClick={() => openSuggestEditForm(c)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(242,237,227,.3)] bg-transparent text-[rgba(242,237,227,.85)] transition-all duration-200 hover:border-[var(--accent,#E8B84B)] hover:text-[var(--accent,#E8B84B)]"><Pencil size={12} />Засах</button>
                       <button onClick={() => deleteSuggestCard(c)} className="cursor-pointer font-[inherit] flex items-center gap-1.5 text-[11.5px] font-bold py-[7px] px-[15px] rounded-full border border-[rgba(240,138,138,.35)] bg-transparent text-[#f08a8a] transition-all duration-200 hover:bg-[rgba(240,138,138,.1)]"><Trash2 size={12} />Устгах</button>
                     </div>
@@ -1065,6 +1109,29 @@ export default function AdminPanel() {
                 <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Холбоос (заавал биш)</span>
                 <input value={sgLink} onChange={(e) => setSgLink(e.target.value)} placeholder="https://store.steampowered.com/app/..." className={inputClass} style={inputStyle} />
                 <span className="text-[11px] text-[rgba(242,237,227,.4)]">Бөглөвөл карт дээр дарахад шинэ цонхонд нээгдэнэ. Хоосон бол зүгээр карт хэвээр.</span>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Бүлэг (заавал биш)</span>
+                <input
+                  value={sgGroup} onChange={(e) => setSgGroup(e.target.value)} list="sg-group-options"
+                  placeholder="Ж: Хосоороо үзэх" className={inputClass} style={inputStyle}
+                />
+                {/* Suggests the buckets this collection already uses so the
+                    spelling matches — a typo would silently create a second
+                    chip instead of joining the existing one. Still free text,
+                    which is how a new bucket gets added. */}
+                <datalist id="sg-group-options">
+                  {Array.from(new Set(suggestCards.filter((c) => c.collectionSlug === suggestActiveSlug && c.group).map((c) => c.group as string)))
+                    .map((g) => <option key={g} value={g} />)}
+                </datalist>
+                <span className="text-[11px] text-[rgba(242,237,227,.4)]">Бөглөвөл хуудсан дээр шүүлтүүрийн товч болж гарна. Хоосон бол зөвхөн "Бүгд"-д харагдана.</span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2.5">
+                <input type="checkbox" checked={sgFeatured} onChange={(e) => setSgFeatured(e.target.checked)} className="mt-0.5 h-4 w-4 flex-none cursor-pointer accent-[var(--accent,#E8B84B)]" />
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Эхэнд харуулах</span>
+                  <span className="text-[11px] text-[rgba(242,237,227,.4)]">Тэмдэглэсэн картууд жагсаалтын тэргүүнд гарна. Дэлгэц дээр эхний мөрөнд 4 карт багтана.</span>
+                </span>
               </label>
               <div className="flex flex-col gap-1.5">
                 <span className="text-[11.5px] font-bold text-[rgba(242,237,227,.65)]">Зураг</span>

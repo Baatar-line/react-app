@@ -8,7 +8,10 @@ export async function GET(request: Request) {
     const collectionSlug = searchParams.get('collectionSlug');
     const cards = await prisma.suggestCard.findMany({
       where: collectionSlug ? { collectionSlug } : undefined,
-      orderBy: { createdAt: 'desc' },
+      // Pinned cards first, newest-first within each group — so the admin
+      // decides which cards fill the collection page's first row (four across
+      // on desktop) instead of it being whatever was added last.
+      orderBy: [{ featured: 'desc' }, { createdAt: 'desc' }],
     });
     return NextResponse.json(cards);
   } catch (err) {
@@ -23,12 +26,16 @@ export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
     requireRole(user, 'admin');
-    const { collectionSlug, name, description, image, link } = await request.json();
+    const { collectionSlug, name, description, image, link, featured, group } = await request.json();
     if (!collectionSlug || !name) {
       return NextResponse.json({ error: 'Ангилал, нэр шаардлагатай' }, { status: 400 });
     }
     const card = await prisma.suggestCard.create({
-      data: { collectionSlug, name, description, image, link: link || undefined, addedBy: user.userId },
+      data: {
+        collectionSlug, name, description, image,
+        link: link || undefined, featured: !!featured, group: group || undefined,
+        addedBy: user.userId,
+      },
     });
     return NextResponse.json(card, { status: 201 });
   } catch (err) {

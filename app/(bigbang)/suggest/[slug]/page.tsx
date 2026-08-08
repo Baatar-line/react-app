@@ -8,7 +8,7 @@ import { SUGGESTS, imgUrl } from '@/components/bigbang/data';
 import { BgMedia } from '@/components/bigbang/ui';
 import { apiGet } from '@/lib/api';
 
-interface SuggestCardRow { id: number; name: string; description: string | null; image: string | null; link: string | null; }
+interface SuggestCardRow { id: number; name: string; description: string | null; image: string | null; link: string | null; group: string | null; }
 
 export default function SuggestDetail() {
   const V: any = useContext(BigBangContext);
@@ -24,7 +24,21 @@ export default function SuggestDetail() {
       .then(setCards)
       .catch(() => setCards([]));
   }, [slug]);
-  const items = cards.map((it) => ({
+  // Filter chips are built from whichever groups this collection's own cards
+  // actually carry, in the order the API returned them — so a collection that
+  // never sets a group (games, board games) shows no chips at all, and adding
+  // a new bucket is a data change rather than a code change. Cards without a
+  // group stay visible under "Бүгд" only.
+  const groups: string[] = [];
+  cards.forEach((c) => { if (c.group && !groups.includes(c.group)) groups.push(c.group); });
+  const [activeGroup, setActiveGroup] = useState('');
+  // A group that disappears (renamed in admin, or a different collection
+  // opened) would otherwise leave the page filtered to nothing with no way
+  // back except reloading.
+  useEffect(() => { setActiveGroup(''); }, [slug]);
+  const shown = activeGroup ? cards.filter((c) => c.group === activeGroup) : cards;
+
+  const items = shown.map((it) => ({
     name: it.name, desc: it.description || '—', link: it.link || '',
     cover: 'linear-gradient(rgba(0,0,0,.12), rgba(0,0,0,.3)), url("' + imgUrl(it.image || '', 700) + '")',
   }));
@@ -37,10 +51,32 @@ export default function SuggestDetail() {
       >
         ← {L.suggestTitle}
       </button>
-      <h2 className="m-0 mb-2 text-[clamp(24px,2.6vw,34px)] font-extrabold tracking-[-0.02em] text-cream">{info ? info.title : ''}</h2>
-      <p className="m-0 mb-[30px] max-w-[560px] text-[13.5px] leading-[1.5] text-[rgba(242,237,227,.55)]">
-        {V.lang === 'en' ? 'Curated picks for this category.' : 'Энэ ангилалд зориулсан тусгайлан бэлтгэсэн жагсаалтууд.'}
-      </p>
+      {/* The generic "curated picks for this category" line that used to sit
+          here said nothing the title didn't — it carried the gap down to the
+          content, which is why the title now holds that margin itself. */}
+      <h2 className="m-0 mb-[30px] text-[clamp(24px,2.6vw,34px)] font-extrabold tracking-[-0.02em] text-cream">{info ? info.title : ''}</h2>
+      {/* Same pill row as the category page's chips, so filtering looks the
+          same wherever it appears in the app. "Бүгд" leads because it's the
+          state the page opens in. */}
+      {groups.length > 0 && (
+        <div className="mb-[26px] flex flex-wrap gap-2">
+          {['', ...groups].map((g) => {
+            const on = activeGroup === g;
+            return (
+              <button
+                key={g || 'all'}
+                onClick={() => setActiveGroup(g)}
+                className="cursor-pointer rounded-full py-[9px] px-[18px] font-[inherit] text-[12.5px] font-bold transition-all duration-200"
+                style={{
+                  border: `1px solid ${on ? 'var(--accent,#E8B84B)' : 'rgba(242,237,227,.28)'}`,
+                  background: on ? 'var(--accent,#E8B84B)' : 'transparent',
+                  color: on ? '#132a1f' : 'rgba(242,237,227,.8)',
+                }}
+              >{g || (V.lang === 'en' ? 'All' : 'Бүгд')}</button>
+            );
+          })}
+        </div>
+      )}
       {items.length === 0 && (
         <div className="p-[22px] border border-dashed border-[rgba(242,237,227,.22)] rounded-[14px] text-[13px] text-[rgba(242,237,227,.45)] max-w-[560px]">
           {V.lang === 'en' ? 'No cards here yet.' : 'Одоогоор дэд карт алга байна.'}
