@@ -36,13 +36,31 @@ export default function SuggestPage() {
         <div className="mb-10">
           <h2 className="m-0 text-lg font-extrabold tracking-[-0.02em] text-cream">{V.L.brandsTitle}</h2>
           <p className="mt-1.5 mb-3.5 text-[13px] text-[rgba(242,237,227,.55)]">{V.L.brandsSub}</p>
-          <div className="bb-hscroll flex gap-4 overflow-x-auto pt-3 pb-1.5">
-            {V.brands.map((b: any, i: number) => {
+          {/* Drifts on its own instead of waiting to be scrolled — a partner
+              rail nobody scrolls shows the same three logos forever. The list
+              is rendered twice so the loop has no seam (see .bb-marquee in
+              globals.css); the duplicate is aria-hidden so screen readers and
+              tab order still see each brand once.
+
+              Speed is per-card rather than fixed, so adding brands makes the
+              rail longer instead of faster — a fixed duration would speed
+              every card up as the list grows. */}
+          <div className="bb-marquee bb-hscroll pt-3 pb-1.5">
+            <div
+              className="bb-marquee-track flex gap-4"
+              style={{ animationDuration: `${Math.max(V.brands.length * 9, 30)}s` }}
+            >
+            {[...V.brands, ...V.brands].map((b: any, i: number) => {
+              const isClone = i >= V.brands.length;
               // The sizing/flex-item classes live on whichever element ends
               // up as the actual direct child of the scroll rail (<a> when
               // there's a link, <div> otherwise) — putting them one level
               // deeper instead left the wrapper with no size of its own.
-              const cardClass = 'relative block grow-0 shrink-0 basis-[190px] aspect-[3/4] cursor-pointer overflow-hidden rounded-2xl border border-[rgba(255,255,255,.1)] no-underline transition-transform duration-300 ease-[cubic-bezier(.22,.8,.3,1)] hover:-translate-y-2';
+              // basis/aspect deliberately match the "Хамгийн өндөр үнэлгээтэй"
+              // rail below: the two sit one above the other on this page, and
+              // at 190px/3-4 the brand rail read as a lesser, half-finished
+              // version of it rather than a section of its own.
+              const cardClass = `relative block grow-0 shrink-0 basis-[220px] aspect-[4/5] cursor-pointer overflow-hidden rounded-2xl border border-[rgba(255,255,255,.1)] no-underline transition-transform duration-300 ease-[cubic-bezier(.22,.8,.3,1)] hover:-translate-y-2${isClone ? ' bb-marquee-clone' : ''}`;
               const inner = (
                 <>
                   <BgMedia bg={b.thumb} className="absolute inset-0" imgClassName="bg-cover bg-center" />
@@ -58,12 +76,13 @@ export default function SuggestPage() {
                   </div>
                 </>
               );
-              return b.link ? (
+              return b.link && !isClone ? (
                 <a key={i} href={b.link} target="_blank" rel="noopener noreferrer" className={cardClass}>{inner}</a>
               ) : (
-                <div key={i} className={cardClass}>{inner}</div>
+                <div key={i} className={cardClass} aria-hidden={isClone || undefined}>{inner}</div>
               );
             })}
+            </div>
           </div>
         </div>
       )}

@@ -39,6 +39,88 @@ a:hover {
   -ms-overflow-style: none;
 }
 
+/* Leaflet's own zoom control, restyled to match the app's floating map chrome
+   (dark translucent pill, white glyphs) instead of its stock white-on-white
+   box, which sat on satellite imagery as a bright rectangle. Positioned
+   bottom-right in code — see mountMainMap. */
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+  border-radius: 999px !important;
+  overflow: hidden;
+}
+.leaflet-control-zoom a.leaflet-control-zoom-in,
+.leaflet-control-zoom a.leaflet-control-zoom-out {
+  background: rgba(20, 20, 20, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f6f1e7;
+  width: 30px;
+  height: 30px;
+  line-height: 28px;
+  font-size: 17px;
+  font-weight: 700;
+}
+/* Otherwise the two buttons show a doubled 2px seam where their borders meet. */
+.leaflet-control-zoom a.leaflet-control-zoom-out {
+  border-top: none;
+}
+.leaflet-control-zoom a.leaflet-control-zoom-in:hover,
+.leaflet-control-zoom a.leaflet-control-zoom-out:hover {
+  background: rgba(20, 20, 20, 0.9);
+  color: var(--accent, #e8b84b);
+}
+/* Leaflet greys out a button at the zoom limits; its default is nearly
+   invisible against this dark pill. */
+.leaflet-control-zoom a.leaflet-disabled {
+  color: rgba(242, 237, 227, 0.3);
+  background: rgba(20, 20, 20, 0.5);
+}
+
+/* Endless auto-scrolling rail (the suggest page's brand row). The track holds
+   the card list twice and slides left by exactly one set, which lands card
+   n+1 where card 1 was — so the loop restarts with no visible seam.
+
+   The -8px is half the 16px gap: the track's own 50% falls in the middle of
+   the gap between the two sets rather than at the first card of the second
+   set, and without correcting for it the row would jump by half a gap on
+   every cycle. Change the gap and this has to change with it. */
+.bb-marquee {
+  overflow: hidden;
+}
+.bb-marquee-track {
+  width: max-content;
+  animation: bb-marquee linear infinite;
+}
+/* These cards are links — pausing on hover is what makes them clickable
+   rather than a moving target. */
+.bb-marquee:hover .bb-marquee-track {
+  animation-play-state: paused;
+}
+@keyframes bb-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-50% - 8px));
+  }
+}
+/* The blanket reduced-motion rule below stops the animation, which would
+   otherwise strand the track on its first few cards with no way to reach the
+   rest. Fall back to an ordinary scroll rail and hide the duplicate set. */
+@media (prefers-reduced-motion: reduce) {
+  .bb-marquee {
+    overflow-x: auto;
+  }
+  .bb-marquee-track {
+    width: auto;
+  }
+  .bb-marquee-clone {
+    display: none;
+  }
+}
+
 /* globe button beside the Big Bang logo — always visible, lifts on hover */
 .bb-logo-group {
   display: inline-flex;
