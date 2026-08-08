@@ -23,6 +23,7 @@ import {
   catBgOf, itemThumbOf, aimagName, isAccessible, imgUrl, isVideoUrl, xyToLonLat, mapsUrlFor,
   type Pin, type CatItem, type Cat, type CountrySiteRow,
 } from './data';
+import { DANGER_ZONES } from './dangerZones';
 import { apiGet, apiGetAuthed } from '../../lib/api';
 import { getSession, saveSession, clearSession } from '../../lib/session';
 import { createPlace, createScenicPin, createEvent } from '../../lib/userContent';
@@ -135,6 +136,11 @@ export default class BigBangLayout extends React.Component<Props, any> {
   _globeEl: any = null;
   _globeTimer: any = null;
   _globeResize: any = null;
+  // Leaflet layer per OSM overlay, and the parsed GeoJSON behind it. The data
+  // is kept separately so toggling a layer off and on again doesn't re-fetch a
+  // megabyte — the files never change between page loads.
+  _osmLayer: Record<string, any> = {};
+  _osmData: Record<string, any> = {};
   _mainMap: any = null;
   _aimagPolyLayer: any = null;
   _aimagLabelLayer: any = null;
@@ -288,6 +294,12 @@ export default class BigBangLayout extends React.Component<Props, any> {
       const hoverChanged = prevState.hoverAimag !== this.state.hoverAimag;
       if (pinsChanged) this.syncMainMap();
       else if (hoverChanged) this.syncMainMap(false);
+      // Its own check rather than riding along inside syncMainMap: nothing in
+      // pinsChanged/hoverChanged covers the hazard toggle, so switching zones
+      // redrew nothing until the next unrelated map interaction happened to
+      // trigger a sync — the old zone stayed on screen until you nudged the
+      // map.
+      else if (prevState.dangerZone !== this.state.dangerZone) this.syncDangerZone();
     }
   }
 
@@ -652,6 +664,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
       this._pinLayer = window.L.layerGroup().addTo(m);
       this._aimagLayers = {};
       this._aimagBuilt = false;
+      // Bottom-right, away from the layer/hazard panels that run down the
+      // left edge — the default top-left put it underneath them.
+      if (m.zoomControl) m.zoomControl.setPosition('bottomright');
       this._mainMap = m;
       setTimeout(() => m.invalidateSize(), 120);
       this.syncMainMap();
@@ -659,8 +674,146 @@ export default class BigBangLayout extends React.Component<Props, any> {
     init();
   };
 
+  // Road/rail overlays from OpenStreetMap, generated into public/osm by
+  // `bun run sync:osm`. Fetched on first use rather than at page load: each
+  // file is close to a megabyte, and most visits never turn a layer on.
+  //
+  // All three solid, and picked bright rather than tinted: they sit on
+  // satellite imagery, whose greens, browns and greys are all mid-tone and
+  // desaturated, so a muted line disappears into the terrain. Yellow, orange
+  // and cyan are the three that stay separable against that ground and against
+  // each other. Weight does the secondary work now that none of them is
+  // dashed.
+  static OSM_LAYERS: { key: string; file: string; label: string; color: string; weight: number; fill?: boolean }[] = [
+    { key: 'paved', file: 'mn-roads-paved', label: 'Хатуу зам', color: '#FFD23F', weight: 2.4 },
+    { key: 'unpaved', file: 'mn-roads-unpaved', label: 'Шороон зам', color: '#FF7A45', weight: 1.8 },
+    { key: 'rail', file: 'mn-railways', label: 'Төмөр зам', color: '#35E0E0', weight: 2 },
+    // Areas and points rather than lines, hence `fill`. Named for what OSM
+    // actually holds — individual pits and shafts, not licence areas; see the
+    // note in scripts/sync-osm-layers.ts.
+    { key: 'mining', file: 'mn-mining', label: 'Уурхай, карьер', color: '#FF5C7A', weight: 1.6, fill: true },
+    // From WDPA, not OSM — see scripts/sync-protected-areas.ts. Green because
+    // it is the one layer about land being left alone, and it reads as that
+    // against the reds and yellows of what people have built.
+    { key: 'protected', file: 'mn-protected', label: 'Дархан цаазат газар', color: '#5BE37A', weight: 1.4, fill: true },
+  ];
+
+  // Brings the drawn layers in line with state.osmOn. Called from syncMainMap
+  // rather than from the toggle handler so a map that gets torn down and
+  // rebuilt (route change, mobile/desktop switch) comes back with whatever was
+  // switched on still switched on.
+  syncOsmLayers() {
+    const m = this._mainMap;
+    if (!m || !window.L) return;
+    const on: Record<string, boolean> = this.state.osmOn || {};
+    BigBangLayout.OSM_LAYERS.forEach((cfg) => {
+      if (!on[cfg.key]) {
+        if (this._osmLayer[cfg.key]) { this._osmLayer[cfg.key].remove(); delete this._osmLayer[cfg.key]; }
+        return;
+      }
+      if (this._osmLayer[cfg.key]) return;
+      const data = this._osmData[cfg.key];
+      if (!data) return; // still downloading; this runs again when it lands
+      this._osmLayer[cfg.key] = window.L.geoJSON(data, {
+        // Non-interactive: these are context under the pins, and a clickable
+        // road would swallow clicks meant for the aimag polygons beneath.
+        interactive: false,
+        style: {
+          color: cfg.color, weight: cfg.weight, opacity: 0.95,
+          // Filled only for the area layers; a road drawn with fill would
+          // shade in whatever shape its ends happen to close.
+          fill: !!cfg.fill, fillColor: cfg.color, fillOpacity: cfg.fill ? 0.25 : 0,
+        },
+        // Single-node features (a mineshaft has no outline to draw) would
+        // otherwise render as Leaflet's default blue marker pin, which reads
+        // as one of our own map pins.
+        pointToLayer: (_f: any, latlng: any) => window.L.circleMarker(latlng, {
+          radius: 4, interactive: false,
+          color: cfg.color, weight: cfg.weight, opacity: 0.95,
+          fillColor: cfg.color, fillOpacity: 0.55,
+        }),
+      }).addTo(m);
+      // Filled shapes go under the line layers no matter which order the
+      // toggles were pressed in. A protected area covers a chunk of a province;
+      // drawn on top it would bury every road crossing it.
+      if (cfg.fill) this._osmLayer[cfg.key].bringToBack();
+    });
+  }
+
+  // Danger zones are tinted aimag shapes, drawn from the aimag geometry the
+  // map already loaded — no extra download, and the zones line up exactly with
+  // the borders drawn underneath them, which is what makes "энэ аймагт" legible
+  // rather than an approximate blob.
+  //
+  // One zone at a time. Six overlapping translucent fills would compost into a
+  // single brown wash that means nothing, and the traveller's question is
+  // "where are the bears", not "show me every hazard at once".
+  _dangerLayer: any = null;
+
+  // Clearance a flown-to shape needs so it lands in the part of the map pane
+  // that is actually visible, rather than behind the controls floating over it.
+  //
+  // Left is the big one: the layer and hazard panels run down that edge. The
+  // right used to reserve 385px for a pin card and an aimag panel that sat in
+  // the bottom-right corner — both have since moved out to the side rail,
+  // which is outside the map pane entirely, so that reservation was pushing
+  // every selected aimag a couple of hundred pixels left of centre with
+  // nothing filling the space it left behind.
+  static FLY_PAD = {
+    paddingTopLeft: [220, 70] as [number, number],
+    paddingBottomRight: [40, 40] as [number, number],
+  };
+
+  syncDangerZone() {
+    const m = this._mainMap;
+    if (!m || !window.L || !this.geo) return;
+    if (this._dangerLayer) { this._dangerLayer.remove(); this._dangerLayer = null; }
+    const zone = DANGER_ZONES.find((z) => z.key === this.state.dangerZone);
+    if (!zone) return;
+    const group = window.L.layerGroup();
+    this.geo.shapes.forEach((sh: any) => {
+      const id = GEO_MN[sh.name] || sh.name;
+      if (!zone.aimags.includes(id)) return;
+      this.polysOf(sh).forEach((ring: any) => {
+        window.L.polygon(ring.map(([x, y]: [number, number]) => xyToLonLat(x, y) as [number, number]), {
+          // Non-interactive like the OSM overlays: a hazard zone covering nine
+          // aimags would otherwise eat every click meant for the map beneath.
+          interactive: false,
+          color: zone.color, weight: 1.5, opacity: 0.9,
+          fillColor: zone.color, fillOpacity: 0.18,
+        }).addTo(group);
+      });
+    });
+    group.addTo(m);
+    // Under the pins and the road lines — this is a wash of context, not the
+    // thing you are meant to read first.
+    group.eachLayer((ly: any) => ly.bringToBack());
+    this._dangerLayer = group;
+  }
+
+  toggleOsmLayer = (key: string) => {
+    const cfg = BigBangLayout.OSM_LAYERS.find((l) => l.key === key);
+    if (!cfg) return;
+    const turningOn = !(this.state.osmOn || {})[key];
+    this.setState((s: any) => ({ osmOn: { ...(s.osmOn || {}), [key]: turningOn } }), () => this.syncOsmLayers());
+    if (!turningOn || this._osmData[key]) return;
+    this.setState((s: any) => ({ osmLoading: { ...(s.osmLoading || {}), [key]: true } }));
+    fetch(`/osm/${cfg.file}.geojson`)
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then((data) => { this._osmData[key] = data; })
+      .catch(() => {
+        // Leave the toggle off rather than showing it lit with nothing drawn.
+        this.setState((s: any) => ({ osmOn: { ...(s.osmOn || {}), [key]: false } }));
+      })
+      .finally(() => this.setState((s: any) => ({ osmLoading: { ...(s.osmLoading || {}), [key]: false } }), () => this.syncOsmLayers()));
+  };
+
   unmountMainMap() {
     if (this._mainMap) { try { this._mainMap.remove(); } catch (err) { /* ignore */ } }
+    // The Leaflet layers die with the map; the parsed GeoJSON in _osmData is
+    // deliberately kept so remounting redraws without downloading again.
+    this._osmLayer = {};
+    this._dangerLayer = null;
     this._mainMap = null; this._aimagPolyLayer = null; this._aimagLabelLayer = null; this._pinLayer = null;
     this._aimagLayers = {}; this._aimagBuilt = false; this._fullBounds = null; this._wasZoomed = false; this._lastFlownAimag = null; this._enclaveHost = {};
     this._lastFlownNearKey = null;
@@ -696,6 +849,8 @@ export default class BigBangLayout extends React.Component<Props, any> {
     const geo = this.geo;
     if (!m || !geo || !window.L) return;
     const { lang, mapAimag, hoverAimag, pin, bigText, nearMeActive, myLocation } = this.state;
+    this.syncOsmLayers();
+    this.syncDangerZone();
     const accent = this.props.accent ?? '#E8B84B';
     const mnOf = (n: string) => GEO_MN[n] || n;
     const pins = this.mapPins();
@@ -830,7 +985,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       const nearKey = this.state.nearRadiusKm + ':' + myLocation.lat.toFixed(4) + ':' + myLocation.lng.toFixed(4);
       if (this._lastFlownNearKey !== nearKey) {
         const bounds = radiusCircle.getBounds();
-        m.flyToBounds(bounds, { paddingTopLeft: [50, 145], paddingBottomRight: [385, 80], maxZoom: 13, duration: 0.9 });
+        m.flyToBounds(bounds, { ...BigBangLayout.FLY_PAD, maxZoom: 13, duration: 0.9 });
         this._lastFlownNearKey = nearKey;
       }
       this._wasZoomed = true;
@@ -871,12 +1026,7 @@ export default class BigBangLayout extends React.Component<Props, any> {
       // every time they'd tried to pan/zoom freely after selecting.
       if (sh && this._lastFlownAimag !== mapAimag) {
         const bounds = this.polysOf(sh).flat().map(([x, y]: number[]) => xyToLonLat(x, y));
-        // Asymmetric padding, not a plain [70,70] — a selected aimag also
-        // brings up the info panel (bottom-right) and the globe/pin-mode
-        // controls (top-right), so the fitted shape needs extra clearance
-        // on those two edges to land inside the space that's actually free,
-        // instead of ending up cropped/hidden under that chrome.
-        m.flyToBounds(bounds, { paddingTopLeft: [50, 145], paddingBottomRight: [385, 80], maxZoom: 11, duration: 0.9 });
+        m.flyToBounds(bounds, { ...BigBangLayout.FLY_PAD, maxZoom: 11, duration: 0.9 });
         this._lastFlownAimag = mapAimag;
       }
       this._wasZoomed = true;
@@ -906,9 +1056,14 @@ export default class BigBangLayout extends React.Component<Props, any> {
       // rides along so the sidebar's "Дэлгэрэнгүй" button can build the same
       // /category/:slug/place/:index URL openPlace()/the category grid use;
       // the flattened `out` array's own index doesn't match that per-category one.
+      // id/images/description/phone ride along for the map page's side panel,
+      // which shows the whole listing rather than a teaser with a link to the
+      // detail page. `desc` stays the short "subCategory · hours" meta line the
+      // map marker labels already use; `description` is the real write-up.
       this.liveCats().forEach((c) => c.items.forEach((it, idx) => out.push({
-        name: it.name, type: it.sub || c.name, aimag: it.aimag || 'Улаанбаатар',
-        img: it.img || '', desc: it.meta, cat: c.slug, idx,
+        id: (it as any).id, name: it.name, type: it.sub || c.name, aimag: it.aimag || 'Улаанбаатар',
+        img: it.img || '', images: (it as any).images || [], desc: it.meta, description: (it as any).desc || '',
+        phone: (it as any).phone || '', cat: c.slug, idx,
         lat: it.lat, lng: it.lng, mapUrl: it.mapUrl, hours: it.hours, access: it.access,
       })));
       return out;
@@ -916,7 +1071,9 @@ export default class BigBangLayout extends React.Component<Props, any> {
     if (mode === 'events') {
       return (this.state.liveEvents || []).map((ev: any) => ({
         id: ev.id, name: ev.name, type: ev.tag || 'Эвент', aimag: ev.aimag ? ev.aimag.name : 'Улаанбаатар',
-        img: (ev.images && ev.images[0]) || '', desc: [fmtEventDate(ev.startDate), ev.meta].filter(Boolean).join(' · '),
+        img: (ev.images && ev.images[0]) || '', images: ev.images || [],
+        desc: [fmtEventDate(ev.startDate), ev.meta].filter(Boolean).join(' · '), description: ev.meta || '',
+        phone: ev.phone || '',
         lat: ev.lat, lng: ev.lng,
       }));
     }
@@ -1260,8 +1417,15 @@ export default class BigBangLayout extends React.Component<Props, any> {
         if (evIdx >= 0) pinDetailOpen = () => this.openEventDetail(evIdx);
       }
     }
+    // Same '<kind>:<id>' key the detail pages rate against (see ratingTargetKey
+    // in lib/ratings.ts), so the map panel reads and writes the same rows
+    // rather than a second, parallel score. Absent when the pin has no db id
+    // to key on, and the panel hides its stars in that case.
+    const pinRatingKey = selP && selP.id != null
+      ? `${{ scenic: 'scenic', places: 'place', events: 'event' }[(this.state.pinMode || 'scenic') as 'scenic' | 'places' | 'events']}:${selP.id}`
+      : '';
     const pinSel = selP ? {
-      ...selP, rating: ratingOf(selP.name),
+      ...selP, rating: ratingOf(selP.name), ratingKey: pinRatingKey,
       accShow: (selP.access || isAccessible(selP.name)) ? 'inline-flex' : 'none',
       toggleFav: toggleFav('s:' + selP.name), ...heartOf(!!favs['s:' + selP.name]),
       aimag: aimagName(selP.aimag, lang), hours: selP.hours || '', mapUrl: mapsUrlFor(selP),
@@ -1711,6 +1875,21 @@ export default class BigBangLayout extends React.Component<Props, any> {
         return { label: m[1], color: on ? '#132a1f' : 'rgba(255,255,255,.85)', pick: () => this.setState({ pinMode: m[0], pin: -1 }) };
       }),
       pinPillShift: 'calc(' + Math.max(0, ['scenic', 'places', 'events'].indexOf(this.state.pinMode || 'scenic')) + ' * 100%)',
+      // OSM road/rail overlays: one entry per toggle button on the map page.
+      osmLayerOpts: BigBangLayout.OSM_LAYERS.map((cfg) => ({
+        key: cfg.key, label: cfg.label, color: cfg.color,
+        active: !!(st.osmOn || {})[cfg.key],
+        loading: !!(st.osmLoading || {})[cfg.key],
+        toggle: () => this.toggleOsmLayer(cfg.key),
+      })),
+      osmAnyOn: BigBangLayout.OSM_LAYERS.some((cfg) => (st.osmOn || {})[cfg.key]),
+      // Traveller hazard zones — one at a time, so the toggle is a radio in
+      // behaviour: pressing the active one clears it.
+      dangerOpts: DANGER_ZONES.map((z) => ({
+        key: z.key, label: z.label, color: z.color, advice: z.advice, season: z.season,
+        active: st.dangerZone === z.key,
+        pick: () => this.setState((s: any) => ({ dangerZone: s.dangerZone === z.key ? null : z.key })),
+      })),
       mainMapRef: this.mainMapRef, pinSel, closePin: () => this.setState({ pin: -1 }),
       isMobile, isTablet,
       mobileMenuOpen: this.state.mobileMenuOpen,
@@ -1719,9 +1898,6 @@ export default class BigBangLayout extends React.Component<Props, any> {
       heroVertLabel: aimag !== 'Бүгд' && lang === 'mn' ? AIMAG_MN_SCRIPT[aimag] || '' : '',
       heroVertPos: this.state.heroVertPos,
       mapZoomed: !!mapAimag, resetMap: () => this.setState({ mapAimag: null, pin: -1, hoverAimag: null, nearMeActive: false }),
-      aimagPanelShow: !!(mapAimag && !selP) && !this.state.nearMeActive,
-      panelName: mapAimag ? aimagName(mapAimag, lang) : '',
-      panelCount: mapAimag ? this.mapPins().filter((p) => p.aimag === mapAimag).length : 0,
       // "Ойрхон газар олох" — see requestMyLocation/syncMainMap.
       nearMeActive: this.state.nearMeActive, myLocation: this.state.myLocation,
       locating: this.state.locating, locationError: this.state.locationError,
