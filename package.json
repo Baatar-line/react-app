@@ -11,7 +11,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
-    "seed": "bun run prisma/seed.ts"
+    "seed": "bun run prisma/seed.ts",
+    "seed:coop-games": "bun run prisma/seed-coop-games.ts",
+    "seed:boardgames": "bun run prisma/seed-boardgames.ts"
     ,"sync:country-sites": "bun run prisma/sync-country-sites.ts",
     "repair:country-sites": "bun run prisma/repair-country-sites.ts",
     "repair:globe-quality": "bun run prisma/repair-globe-quality.ts",

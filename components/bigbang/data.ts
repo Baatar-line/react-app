@@ -196,9 +196,9 @@ export const FAQ: [string, string, string, string][] = [
 export interface EventItem { day: string; mon: string; name: string; meta: string; tag: string; img: string; aimag?: string; thumb?: string; featured?: boolean; }
 
 export const SUGGESTS = [
-  { slug: 'games', title: '2 хүний хурдан тоглоомууд', count: '6 тоглоом', tag: 'Тоглоом', img: '1550745165-9bc0b252726f' },
+  { slug: 'games', title: '2 хүний хурдан тоглоомууд', count: '10 тоглоом', tag: 'Тоглоом', img: '1550745165-9bc0b252726f' },
   { slug: 'movies', title: 'Хосоор үзэх 10 кино', count: '10 кино', tag: 'Кино', img: '1489599849927-2ee91cede3ba' },
-  { slug: 'boardgame', title: 'Гэр бүлээрээ тоглох board game', count: '7 тоглоом', tag: 'Тоглоом', img: '1529699211952-734e80c4d42b' },
+  { slug: 'boardgame', title: 'Гэр бүлээрээ тоглох board game', count: '12 тоглоом', tag: 'Тоглоом', img: '1529699211952-734e80c4d42b' },
 ];
 
 // Sub-cards shown when a suggest card is opened now live in the database
